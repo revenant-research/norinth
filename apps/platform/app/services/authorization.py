@@ -52,7 +52,14 @@ def require_active_actor(actor: ActorContext) -> None:
 
 
 def require_actor_scope(actor: ActorContext, target: dict[str, Any]) -> None:
-    for field in ("tenant_id", "project", "environment"):
+    # Tenant fails CLOSED: a tenant-bound actor may act only within its own
+    # tenant. A target naming a different tenant — or, since C-1 stamps a tenant
+    # on all data, failing to name one at all — is denied. Previously this check
+    # was skipped whenever either side was falsy, so NULL-tenant rows bypassed
+    # isolation entirely (audit H-1).
+    if actor.tenant_id and target.get("tenant_id") != actor.tenant_id:
+        raise AuthorizationError("Actor tenant does not match target tenant")
+    for field in ("project", "environment"):
         actor_value = getattr(actor, field)
         target_value = target.get(field)
         if actor_value and target_value and actor_value != target_value:
@@ -60,7 +67,12 @@ def require_actor_scope(actor: ActorContext, target: dict[str, Any]) -> None:
 
 
 def role_scope_matches(assignment: dict[str, Any], target: dict[str, Any]) -> bool:
-    for field in ("tenant_id", "project", "environment"):
+    # Tenant must match EXACTLY. A NULL-scoped assignment is not a cross-tenant
+    # wildcard; treating it as one let a NULL-tenant role assignment grant access
+    # to every tenant (audit H-2).
+    if assignment.get("tenant_id") != target.get("tenant_id"):
+        return False
+    for field in ("project", "environment"):
         assignment_value = assignment.get(field)
         target_value = target.get(field)
         if assignment_value is not None and assignment_value != target_value:

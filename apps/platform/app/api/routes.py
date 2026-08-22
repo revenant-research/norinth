@@ -459,7 +459,18 @@ def create_exception_route(payload: ExceptionRequest, actor: ActorContext = Depe
 
 @router.get("/api/sdk-health")
 def sdk_health(scope: ScopeFilter = Depends(scoped_dependency)):
-    return {"sdk_health": list_events(project=scope.project, environment=scope.environment, event_type="sdk.health", limit=100)}
+    # sdk.health events are stamped with the authenticated tenant at ingestion
+    # (C-1), so they must be tenant-scoped like every other read; previously the
+    # tenant filter was dropped, leaking other tenants' telemetry (audit H-4).
+    return {
+        "sdk_health": list_events(
+            tenant_id=scope.tenant_id,
+            project=scope.project,
+            environment=scope.environment,
+            event_type="sdk.health",
+            limit=100,
+        )
+    }
 
 
 @router.get("/api/traces")
