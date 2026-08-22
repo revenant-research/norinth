@@ -81,6 +81,18 @@ to Semantic Versioning once it reaches a tagged release.
   endpoints. Also: /api/decisions now returns 404 (not 500) for an unknown
   target.
 
+### Added
+- **Data retention & right-to-erasure (H-10).** New super-admin capability to
+  permanently erase a tenant's data on offboarding (GDPR Art 17, CCPA deletion,
+  HIPAA/BAA return-or-destroy): `GET /api/admin/organizations/{id}/data`
+  previews the footprint and `POST .../purge` (type-to-confirm) deletes every
+  tenant-scoped table plus the tenant's sessions and login records. A retention
+  endpoint (`POST /api/admin/retention/purge-events`) ages out raw telemetry
+  older than a configurable window. The tamper-evident audit log is deliberately
+  retained (legal-basis records retention; deleting rows would break its
+  integrity chain). Previously the only DELETE in the platform was for expired
+  sessions.
+
 ### Security
 - **Login lockout & CSRF defense-in-depth (H-6, H-8).** Failed logins are now
   throttled per email (default: 5 failures in 15 min locks the account for
