@@ -138,6 +138,30 @@ DEFAULT_RISK_RULES = [
 ]
 
 
+
+def _preserve_decided_status(
+    connection,
+    table: str,
+    id_column: str,
+    row_id: str,
+    computed_status: str,
+    computed_statuses: set[str],
+) -> str:
+    """Return the status to write, preserving a human decision.
+
+    If the existing row carries a status that is NOT one of the automatically
+    recomputed values, it was set by a reviewer (accepted, waived,
+    mitigation_required, ...) and must be preserved; otherwise use the freshly
+    computed status. ``table``/``id_column`` are internal constants.
+    """
+    existing = connection.execute(
+        f"SELECT status FROM {table} WHERE {id_column} = ?", (row_id,)
+    ).fetchone()
+    if existing and existing["status"] and existing["status"] not in computed_statuses:
+        return existing["status"]
+    return computed_status
+
+
 def init_governance_policy() -> None:
     with connect() as connection:
         connection.execute(
@@ -322,7 +346,7 @@ def assess_controls(connection, app_context: dict[str, Any], controls: list[dict
             if event.get("type") in control["evidence_event_types"]
             and event_satisfies_required_fields(event, control["required_fields"])
         ]
-        status = "passing" if evidence else "missing"
+        computed_status = "passing" if evidence else "missing"
         trace_ids = sorted({event["trace_id"] for event in evidence if event.get("trace_id")})
         assessment_id = entity_id(
             "control-assessment",
@@ -331,6 +355,13 @@ def assess_controls(connection, app_context: dict[str, Any], controls: list[dict
             app_context["environment"],
             app_context["application_name"],
             control["control_id"],
+        )
+        # Preserve a human decision (e.g. "waived" from an exception) across
+        # re-computation. Only the automated passing/missing statuses are
+        # recomputed; a reviewer's terminal decision sticks until a human changes
+        # it, instead of being silently reset on the next ingest (audit B6).
+        status = _preserve_decided_status(
+            connection, "control_assessments", "assessment_id", assessment_id, computed_status, {"passing", "missing"}
         )
         connection.execute(
             """
@@ -434,6 +465,11 @@ def upsert_rule_finding(
         app_context["application_name"],
         rule["rule_id"],
     )
+    # A reviewer's decision (accepted, mitigation_required, ...) must survive
+    # re-computation instead of being reset to "open" on the next ingest (B6).
+    status = _preserve_decided_status(
+        connection, "risk_findings", "finding_id", finding_id, "open", {"open"}
+    )
     connection.execute(
         """
         INSERT OR REPLACE INTO risk_findings (
@@ -452,7 +488,7 @@ def upsert_rule_finding(
             rule["name"],
             rule["severity"],
             rule["confidence"],
-            "open",
+            status,
             rule["rationale"],
             encode_json(rule["framework_refs"]),
             encode_json(trace_ids),
