@@ -32,6 +32,16 @@ to Semantic Versioning once it reaches a tagged release.
   content can't ride out under a governance label. Critical for HIPAA-adjacent
   deployments.
 
+### Fixed
+- **Frontend: audit-log filters now work.** `useResource` captured the first
+  loader closure permanently, so applying a tenant/actor/action filter on the
+  audit log was a silent no-op. It now always invokes the latest loader, with
+  out-of-order-response and unmount guards.
+- **Frontend a11y: confirmation dialog.** Removed the global Enter=confirm
+  binding (a keyboard user on the Cancel button pressing Enter previously
+  triggered the destructive action); Enter/Space now activate the focused button
+  natively. Added a focus trap and focus return to the invoking control on close.
+
 ### Fixed / Hardened
 - **SDK transport resilience (C-8).** A single non-serializable event (or a NaN
   score) used to crash `json.dumps` in the background worker, which had no
