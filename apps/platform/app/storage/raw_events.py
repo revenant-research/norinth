@@ -16,8 +16,14 @@ def database_path() -> Path:
 def connect() -> sqlite3.Connection:
     path = database_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(path)
+    # WAL lets readers proceed concurrently with a writer, and a busy timeout
+    # makes writers wait for the lock instead of failing immediately with
+    # "database is locked" (audit C-3). Both are set per connection; WAL is a
+    # persistent database property and idempotent to re-assert.
+    connection = sqlite3.connect(path, timeout=30)
     connection.row_factory = sqlite3.Row
+    connection.execute("PRAGMA journal_mode=WAL")
+    connection.execute("PRAGMA busy_timeout=30000")
     return connection
 
 
@@ -60,14 +66,38 @@ def init_storage() -> None:
         connection.execute("CREATE INDEX IF NOT EXISTS idx_sdk_events_project_env ON sdk_events(project, environment)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_sdk_events_type ON sdk_events(event_type)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_sdk_events_application ON sdk_events(application_name)")
+        # Composite index for the per-application evidence scans run on every
+        # ingest (governance_policy / lifecycle recompute), audit P3.
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sdk_events_app_scope "
+            "ON sdk_events(project, environment, application_name, tenant_id)"
+        )
+        # Idempotency: a retried batch re-sends the same (trace_id, span_id)
+        # spans; a unique index plus INSERT OR IGNORE prevents double-counting
+        # (audit C-6 / M4). Guarded because a legacy DB may already hold
+        # duplicates from before this constraint existed.
+        try:
+            connection.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_sdk_events_span "
+                "ON sdk_events(trace_id, span_id)"
+            )
+        except sqlite3.IntegrityError:
+            pass
 
 
 def insert_events(events: list[dict[str, Any]]) -> int:
+    """Insert events idempotently and return the number newly accepted.
+
+    Uses INSERT OR IGNORE against the unique (trace_id, span_id) index so a
+    retried batch does not double-count (audit C-6). The return value is the
+    count actually inserted, not the batch size.
+    """
     rows = [event_to_row(event) for event in events]
     with connect() as connection:
+        before = connection.total_changes
         connection.executemany(
             """
-            INSERT INTO sdk_events (
+            INSERT OR IGNORE INTO sdk_events (
                 event_type, schema_version, trace_id, span_id, parent_span_id, timestamp, service,
                 environment, project, system, name, status, duration_ms, tenant_id, user_id,
                 application_name, workflow_name, use_case, model_purpose, provider, model,
@@ -83,7 +113,7 @@ def insert_events(events: list[dict[str, Any]]) -> int:
             """,
             rows,
         )
-    return len(rows)
+        return connection.total_changes - before
 
 
 def event_to_row(event: dict[str, Any]) -> dict[str, Any]:

@@ -20,6 +20,18 @@ to Semantic Versioning once it reaches a tagged release.
 - `AUDIT_AND_ROADMAP_2026.md`: full security/architecture audit and remediation
   roadmap.
 
+### Fixed / Hardened
+- **Ingestion robustness (C-6, C-3).** A well-formed-but-incomplete event (e.g.
+  a `prompt.event` or `deployment.event` missing `artifact_ref`) previously
+  crashed ingestion with an unhandled 500 *after* a partial write. Events are
+  now validated per type before any write and a malformed batch is rejected
+  atomically with 422. Ingestion is idempotent: a unique (trace_id, span_id)
+  index plus INSERT OR IGNORE means a retried batch is not double-counted, and
+  the response reports the number actually accepted. The SQLite connection now
+  uses WAL journaling and a 30s busy timeout so concurrent reads/writes don't
+  fail with "database is locked". Added a composite index for the per-app
+  evidence scans.
+
 ### Security
 - **Deployment-gate integrity (C-2).** Deployment gates are never auto-approved.
   Previously a gate with no blocking evidence was written directly as "approved"
