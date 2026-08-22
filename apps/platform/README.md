@@ -34,6 +34,19 @@ program from the SDK and shares only the public wire protocol
 - Demo apps are a separate test harness (`../../demo-apps/`) and are not part of
   the Platform.
 
+
+## Ingestion authentication
+
+Telemetry ingestion (`POST /v1/events/batch`) authenticates with a **per-tenant
+API key** presented as `Authorization: Bearer <key>`. The tenant is derived from
+the key, never from the event payload — a batch that claims a different tenant is
+rejected. Organization admins create and revoke keys via `/api/ingestion-keys`
+(the plaintext key is returned only once, at creation).
+
+In local development (when `NORINTH_SUPER_ADMIN_PASSWORD` is unset) a well-known
+`dev` key bound to `tenant-local` is seeded so the quickstart works out of the
+box. Set `NORINTH_SIGNING_SECRET` to additionally require HMAC-signed batches.
+
 ## Run
 
 ```bash

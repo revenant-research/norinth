@@ -3,10 +3,35 @@ from __future__ import annotations
 import os
 
 from app.services.auth import hash_password
+from app.storage.ingestion_keys import seed_dev_ingestion_key
 from app.storage.workflow import count_super_admins, create_platform_user
 
 DEFAULT_SUPER_ADMIN_EMAIL = "admin@norinth.local"
 DEFAULT_SUPER_ADMIN_PASSWORD = "norinth-admin"
+DEFAULT_DEV_INGEST_TENANT = "tenant-local"
+
+
+def using_development_defaults() -> bool:
+    """True when the platform is running on documented dev defaults.
+
+    Production deployments set NORINTH_SUPER_ADMIN_PASSWORD; when it is unset we
+    are in local development and may seed developer conveniences (the well-known
+    ``dev`` ingestion key), which are never seeded otherwise.
+    """
+    return os.getenv("NORINTH_SUPER_ADMIN_PASSWORD") is None
+
+
+def seed_dev_ingestion_key_if_dev() -> None:
+    """Seed the well-known ``dev`` ingestion key in development only.
+
+    The key is bound to a single tenant, so even the dev token cannot forge
+    telemetry for another tenant (audit C-1). Production (env-configured) never
+    gets this key.
+    """
+    if not using_development_defaults():
+        return
+    tenant = os.getenv("NORINTH_DEV_INGEST_TENANT", DEFAULT_DEV_INGEST_TENANT)
+    seed_dev_ingestion_key(tenant_id=tenant)
 
 
 def seed_super_admin() -> None:

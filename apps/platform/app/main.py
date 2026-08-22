@@ -9,16 +9,18 @@ from fastapi.staticfiles import StaticFiles
 from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
 from app.api.compliance import router as compliance_router
+from app.api.ingestion_keys import router as ingestion_keys_router
 from app.api.intake import router as intake_router
 from app.api.routes import router as api_router
 from app.dashboard.html import dashboard_html
 from app.ingestion.routes import router as ingestion_router
-from app.services.bootstrap import seed_super_admin
+from app.services.bootstrap import seed_dev_ingestion_key_if_dev, seed_super_admin
 from app.storage.audit import init_audit
 from app.storage.deployments import init_deployments
 from app.storage.entities import init_entities
 from app.storage.governance_policy import init_governance_policy
 from app.storage.incidents import init_incidents
+from app.storage.ingestion_keys import init_ingestion_keys
 from app.storage.intake import init_intake
 from app.storage.lifecycle import init_lifecycle
 from app.storage.organizations import init_organizations
@@ -43,13 +45,16 @@ init_prompts()
 init_organizations()
 init_intake()
 init_audit()
+init_ingestion_keys()
 seed_super_admin()
+seed_dev_ingestion_key_if_dev()
 app.include_router(ingestion_router)
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(intake_router)
 app.include_router(api_router)
 app.include_router(compliance_router)
+app.include_router(ingestion_keys_router)
 
 if ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="platform-assets")

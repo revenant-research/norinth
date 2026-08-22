@@ -20,6 +20,17 @@ to Semantic Versioning once it reaches a tagged release.
 - `AUDIT_AND_ROADMAP_2026.md`: full security/architecture audit and remediation
   roadmap.
 
+### Security
+- **Ingestion authentication & tenant binding (C-1).** Replaced the single
+  hard-coded `Bearer dev` ingestion token with per-tenant API keys (hashed at
+  rest, shown once at creation, revocable). The ingestion endpoint now derives
+  the tenant from the authenticated key and enforces it on every event: a batch
+  claiming a different tenant is rejected (403), and events omitting a tenant are
+  stamped with the key's tenant (no NULL-tenant rows from authenticated ingest).
+  Org admins manage their keys via `/api/ingestion-keys`. A well-known `dev` key
+  (bound to `tenant-local`) is seeded in development only, keeping the local
+  quickstart working without allowing cross-tenant forgery.
+
 ### Fixed
 - Dockerfile: corrected the `requirements.txt` COPY path (the image previously
   failed to build), added a non-root runtime user and a `HEALTHCHECK`.
