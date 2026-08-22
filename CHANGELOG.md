@@ -60,6 +60,17 @@ to Semantic Versioning once it reaches a tagged release.
   target.
 
 ### Security
+- **Tenant isolation fails closed (H-1, H-2, H-4).** Authorization now enforces
+  tenant match strictly: require_actor_scope denies a tenant-bound actor acting
+  on a target that names a different tenant OR names none at all (previously it
+  skipped the check whenever either side was NULL), and role_scope_matches
+  requires an exact tenant match so a NULL-scoped role assignment can no longer
+  act as a cross-tenant wildcard. GET /api/sdk-health is tenant-scoped again
+  (the tenant filter had been dropped, leaking other tenants' telemetry), and
+  the control-evidence query no longer folds every tenant's sdk.health events
+  into one tenant's evidence set (now that C-1 stamps a tenant on them).
+
+### Security
 - **Separation of duties (C-4).** An org_admin can no longer unilaterally
   escalate to governance decision authority. Administration roles (org_admin)
   and governance-decision roles (governance_admin, risk_owner, control_owner,

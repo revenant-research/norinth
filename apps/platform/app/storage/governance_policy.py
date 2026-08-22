@@ -302,7 +302,6 @@ def list_application_events(connection, app_context: dict[str, Any]) -> list[dic
           AND (
             (:tenant_id IS NULL AND tenant_id IS NULL)
             OR tenant_id = :tenant_id
-            OR event_type = 'sdk.health'
           )
         ORDER BY id
         """,
