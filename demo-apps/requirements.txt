@@ -1,0 +1,6 @@
+-e packages/python-sdk
+anthropic
+fastapi
+openai
+uvicorn[standard]
+pydantic

@@ -1,0 +1,49 @@
+# ---- Python ----
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ---- Node / frontend ----
+node_modules/
+*.tsbuildinfo
+.vite/
+apps/platform/frontend/dist/
+
+# ---- Databases / local state (may contain credentials & PII) ----
+*.db
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+apps/platform/data/
+
+# ---- Secrets / local env ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---- OS / editor ----
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# ---- Generated scan artifacts ----
+ai-manifest.json
+
+# ---- Claude Code local runtime ----
+.claude/

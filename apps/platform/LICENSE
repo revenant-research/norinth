@@ -1,0 +1,35 @@
+Norinth Platform — Proprietary and Confidential
+Copyright 2026 Norinth. All Rights Reserved.
+
+This software and its source code (the "Platform") are the confidential and
+proprietary property of Norinth. The Platform comprises the commercial
+Norinth components, including but not limited to the telemetry ingestion
+service, the governance and framework-mapping engine, the risk and control
+assessment logic, the lifecycle and change-detection engine, the dashboards
+and buyer-facing portals, and the cross-tenant Enterprise Network APIs.
+
+NO LICENSE IS GRANTED.
+
+Except under a separate written commercial agreement signed by Norinth, you
+may NOT, in whole or in part:
+
+  1. use, execute, or operate the Platform;
+  2. copy, reproduce, or distribute the Platform or its source code;
+  3. modify, adapt, translate, or create derivative works of the Platform;
+  4. publicly display, sublicense, sell, rent, lease, or otherwise transfer
+     the Platform; or
+  5. reverse engineer, decompile, or attempt to derive the source of any
+     compiled or hosted portion of the Platform, except to the extent such
+     restriction is prohibited by applicable law.
+
+The Platform is distinct from the Norinth Logger SDK, which is published
+separately under the Apache License, Version 2.0. The Apache-licensed SDK
+communicates with the Platform only over the documented public wire protocol
+(see packages/python-sdk/PROTOCOL.md). The open license of the SDK does not
+extend to, and grants no rights in, the Platform.
+
+THE PLATFORM IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND. TO THE MAXIMUM
+EXTENT PERMITTED BY LAW, NORINTH DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED,
+AND SHALL NOT BE LIABLE FOR ANY DAMAGES ARISING FROM USE OF THE PLATFORM.
+
+For commercial licensing, contact: licensing@norinth.com

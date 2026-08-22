@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "norinth-logger"
+version = "0.1.0"
+description = "Fail-open AI governance telemetry SDK"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+keywords = ["ai-governance", "telemetry", "aibom", "compliance", "observability"]
+dependencies = []
+
+[project.urls]
+Documentation = "https://github.com/norinth/norinth-logger/blob/main/README.md"
+Protocol = "https://github.com/norinth/norinth-logger/blob/main/PROTOCOL.md"
+
+[project.scripts]
+norinth = "norinth_logger.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["norinth_logger*"]
+

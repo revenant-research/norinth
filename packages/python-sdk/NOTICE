@@ -1,0 +1,16 @@
+Norinth Logger SDK
+Copyright 2026 Norinth
+
+This product includes software developed at Norinth.
+
+The Norinth Logger SDK is the open client component of the Norinth AI
+governance system. It captures AI telemetry inside a vendor's own
+infrastructure, redacts and hashes content by default, optionally signs
+event payloads, and transmits them over the documented Norinth wire
+protocol (see PROTOCOL.md).
+
+This package is licensed under the Apache License, Version 2.0.
+
+The Norinth Platform (the ingestion, governance-mapping, and Enterprise
+Network server that receives this telemetry) is a separate, commercially
+licensed component and is NOT covered by this license.

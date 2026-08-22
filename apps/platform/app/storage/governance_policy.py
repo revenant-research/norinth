@@ -1,0 +1,559 @@
+from __future__ import annotations
+
+import sqlite3
+from typing import Any
+
+from .entities import decode_json, encode_json, entity_id
+from .raw_events import connect
+
+SUPPORTED_RISK_SIGNALS = {
+    "provider_dependency",
+    "missing_guardrail",
+    "missing_eval",
+    "missing_agent_run",
+    "operational_errors",
+}
+
+DEFAULT_CONTROLS = [
+    {
+        "control_id": "AI-INV-001",
+        "name": "AI system inventory is maintained from runtime usage",
+        "framework_refs": ["NIST AI RMF MAP 1.1", "ISO/IEC 42001 A.5.2"],
+        "evidence_event_types": ["model.call"],
+        "required_fields": ["application_name", "provider", "model", "workflow_name"],
+        "rationale": "An AI inventory must be grounded in observed application, model, provider, and workflow usage.",
+    },
+    {
+        "control_id": "AI-LOG-001",
+        "name": "AI requests are traceable to workflow and actor context",
+        "framework_refs": ["NIST AI RMF GOVERN 1.6", "EU AI Act Art 26", "SOC 2 CC7.2"],
+        "evidence_event_types": ["trace.completed"],
+        "required_fields": ["trace_id", "workflow_name", "user_id"],
+        "rationale": "Governance review requires traceable request context, actor metadata, and workflow linkage.",
+    },
+    {
+        "control_id": "AI-DATA-001",
+        "name": "Prompt and response content is summarized or hashed by default",
+        "framework_refs": ["NIST AI RMF MEASURE 2.6", "SOC 2 CC6.1"],
+        "evidence_event_types": ["model.call"],
+        "required_fields": ["prompt.hash", "response.hash"],
+        "rationale": "Runtime evidence should support auditability while limiting raw content capture by default.",
+    },
+    {
+        "control_id": "AI-RAG-001",
+        "name": "Retrieval context is linked to AI workflow traces",
+        "framework_refs": ["NIST AI RMF MAP 2.3", "NIST AI RMF MEASURE 2.7"],
+        "evidence_event_types": ["retrieval.call"],
+        "required_fields": ["retriever", "document_count", "trace_id"],
+        "rationale": "RAG systems require evidence of retrieved sources and trace linkage.",
+    },
+    {
+        "control_id": "AI-TOOL-001",
+        "name": "Tool execution is recorded for agentic workflows",
+        "framework_refs": ["NIST AI RMF GOVERN 6.1", "NIST AI RMF MANAGE 2.3"],
+        "evidence_event_types": ["tool.call"],
+        "required_fields": ["tool_name", "trace_id", "status"],
+        "rationale": "Agentic systems require auditable tool-use evidence.",
+    },
+    {
+        "control_id": "AI-GRD-001",
+        "name": "Guardrail decisions are captured for monitored AI workflows",
+        "framework_refs": ["NIST AI RMF MANAGE 1.3", "ISO/IEC 42001 A.8.2"],
+        "evidence_event_types": ["guardrail.decision"],
+        "required_fields": ["guardrail_name", "decision", "matched_rules"],
+        "rationale": "Policy, safety, and privacy controls require recorded guardrail decisions and matched rules.",
+    },
+    {
+        "control_id": "AI-EVAL-001",
+        "name": "Evaluation results are captured for AI workflow quality evidence",
+        "framework_refs": ["NIST AI RMF MEASURE 2.1", "NIST AI RMF MEASURE 2.5"],
+        "evidence_event_types": ["eval.result"],
+        "required_fields": ["eval_name", "score", "threshold", "passed"],
+        "rationale": "AI quality and safety claims require measurable eval results and thresholds.",
+    },
+    {
+        "control_id": "AI-AGT-001",
+        "name": "Agent runs are summarized with ordered steps and outcomes",
+        "framework_refs": ["NIST AI RMF MAP 5.1", "NIST AI RMF MANAGE 2.4"],
+        "evidence_event_types": ["agent.run"],
+        "required_fields": ["agent_name", "step_count", "outcome"],
+        "rationale": "Agent governance requires run-level evidence, ordered steps, and outcomes.",
+    },
+    {
+        "control_id": "AI-OPS-001",
+        "name": "SDK telemetry health and fail-open operation are visible",
+        "framework_refs": ["SOC 2 CC7.2", "NIST AI RMF GOVERN 1.5"],
+        "evidence_event_types": ["sdk.health"],
+        "required_fields": ["mode", "fail_open", "failed_sends"],
+        "rationale": "Governance telemetry must itself be observable, including delivery failures and fail-open behavior.",
+    },
+]
+
+DEFAULT_RISK_RULES = [
+    {
+        "rule_id": "RISK-TPD-001",
+        "name": "Third-party AI dependency",
+        "signal": "provider_dependency",
+        "severity": "Medium",
+        "confidence": 0.85,
+        "framework_refs": ["NIST AI RMF MAP 3.2", "NIST AI RMF GOVERN 6.1"],
+        "rationale": "Observed external model provider usage creates vendor and third-party AI dependency risk.",
+    },
+    {
+        "rule_id": "RISK-CTL-001",
+        "name": "Missing guardrail evidence",
+        "signal": "missing_guardrail",
+        "severity": "High",
+        "confidence": 0.8,
+        "framework_refs": ["NIST AI RMF MANAGE 1.3"],
+        "rationale": "Applications with model usage but no guardrail evidence lack runtime safety-control support.",
+    },
+    {
+        "rule_id": "RISK-EVL-001",
+        "name": "Missing evaluation evidence",
+        "signal": "missing_eval",
+        "severity": "High",
+        "confidence": 0.8,
+        "framework_refs": ["NIST AI RMF MEASURE 2.1"],
+        "rationale": "Applications with model usage but no eval results lack measurable quality evidence.",
+    },
+    {
+        "rule_id": "RISK-AGT-001",
+        "name": "Agentic workflow without agent run evidence",
+        "signal": "missing_agent_run",
+        "severity": "High",
+        "confidence": 0.75,
+        "framework_refs": ["NIST AI RMF MAP 5.1", "NIST AI RMF MANAGE 2.4"],
+        "rationale": "Agentic use cases require agent run evidence and step traceability.",
+    },
+    {
+        "rule_id": "RISK-OPS-001",
+        "name": "Operational reliability failures",
+        "signal": "operational_errors",
+        "severity": "High",
+        "confidence": 0.9,
+        "framework_refs": ["NIST AI RMF MANAGE 4.1", "SOC 2 CC7.2"],
+        "rationale": "Failed model or workflow events are operational reliability evidence.",
+    },
+]
+
+
+def init_governance_policy() -> None:
+    with connect() as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS control_library (
+                control_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                framework_refs TEXT NOT NULL,
+                evidence_event_types TEXT NOT NULL,
+                required_fields TEXT NOT NULL,
+                rationale TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS risk_rules (
+                rule_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                signal TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                confidence REAL NOT NULL,
+                framework_refs TEXT NOT NULL,
+                rationale TEXT NOT NULL
+            )
+            """
+        )
+        try:
+            connection.execute("ALTER TABLE risk_rules ADD COLUMN signal TEXT NOT NULL DEFAULT 'provider_dependency'")
+        except sqlite3.OperationalError:
+            pass
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS control_assessments (
+                assessment_id TEXT PRIMARY KEY,
+                tenant_id TEXT,
+                project TEXT NOT NULL,
+                environment TEXT NOT NULL,
+                application_name TEXT NOT NULL,
+                control_id TEXT NOT NULL,
+                control_name TEXT NOT NULL,
+                status TEXT NOT NULL,
+                framework_refs TEXT NOT NULL,
+                evidence_event_types TEXT NOT NULL,
+                required_fields TEXT NOT NULL,
+                evidence_trace_ids TEXT NOT NULL,
+                evidence_count INTEGER NOT NULL,
+                rationale TEXT NOT NULL,
+                evaluated_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS risk_findings (
+                finding_id TEXT PRIMARY KEY,
+                tenant_id TEXT,
+                project TEXT NOT NULL,
+                environment TEXT NOT NULL,
+                application_name TEXT NOT NULL,
+                rule_id TEXT NOT NULL,
+                risk TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                confidence REAL NOT NULL,
+                status TEXT NOT NULL,
+                rationale TEXT NOT NULL,
+                framework_refs TEXT NOT NULL,
+                evidence_trace_ids TEXT NOT NULL,
+                evidence_summary TEXT NOT NULL,
+                evaluated_at TEXT NOT NULL
+            )
+            """
+        )
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_control_assessments_scope ON control_assessments(tenant_id, project, environment)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_risk_findings_scope ON risk_findings(tenant_id, project, environment)")
+
+        # Seed default controls
+        for ctrl in DEFAULT_CONTROLS:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO control_library (
+                    control_id, name, framework_refs, evidence_event_types, required_fields, rationale
+                ) VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    ctrl["control_id"],
+                    ctrl["name"],
+                    encode_json(ctrl["framework_refs"]),
+                    encode_json(ctrl["evidence_event_types"]),
+                    encode_json(ctrl["required_fields"]),
+                    ctrl["rationale"]
+                )
+            )
+
+        # Seed default risk rules
+        for rule in DEFAULT_RISK_RULES:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO risk_rules (
+                    rule_id, name, signal, severity, confidence, framework_refs, rationale
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    rule["rule_id"],
+                    rule["name"],
+                    rule["signal"],
+                    rule["severity"],
+                    rule["confidence"],
+                    encode_json(rule["framework_refs"]),
+                    rule["rationale"]
+                )
+            )
+
+def refresh_governance_assessments() -> None:
+    with connect() as connection:
+        controls = list_control_library(connection)
+        rules = list_risk_rules(connection)
+        applications = connection.execute(
+            "SELECT DISTINCT tenant_id, project, environment, application_name FROM governance_applications"
+        ).fetchall()
+        for application in applications:
+            app_context = dict(application)
+            events = list_application_events(connection, app_context)
+            assess_controls(connection, app_context, controls, events)
+            assess_risk_rules(connection, app_context, rules, events)
+
+
+def list_control_library(connection) -> list[dict[str, Any]]:
+    rows = connection.execute("SELECT * FROM control_library ORDER BY control_id").fetchall()
+    return [
+        {
+            **dict(row),
+            "framework_refs": decode_json(row["framework_refs"], []),
+            "evidence_event_types": decode_json(row["evidence_event_types"], []),
+            "required_fields": decode_json(row["required_fields"], []),
+        }
+        for row in rows
+    ]
+
+
+def list_risk_rules(connection) -> list[dict[str, Any]]:
+    rows = connection.execute("SELECT * FROM risk_rules ORDER BY rule_id").fetchall()
+    return [
+        {
+            **dict(row),
+            "framework_refs": decode_json(row["framework_refs"], []),
+        }
+        for row in rows
+    ]
+
+
+def list_application_events(connection, app_context: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = connection.execute(
+        """
+        SELECT raw_event FROM sdk_events
+        WHERE project = :project
+          AND environment = :environment
+          AND (
+            application_name = :application_name
+            OR event_type = 'sdk.health'
+          )
+          AND (
+            (:tenant_id IS NULL AND tenant_id IS NULL)
+            OR tenant_id = :tenant_id
+            OR event_type = 'sdk.health'
+          )
+        ORDER BY id
+        """,
+        app_context,
+    ).fetchall()
+    return [dict_event(row["raw_event"]) for row in rows]
+
+
+def dict_event(raw_event: str) -> dict[str, Any]:
+    return decode_json(raw_event, {})
+
+
+def assess_controls(connection, app_context: dict[str, Any], controls: list[dict[str, Any]], events: list[dict[str, Any]]) -> None:
+    for control in controls:
+        evidence = [
+            event
+            for event in events
+            if event.get("type") in control["evidence_event_types"]
+            and event_satisfies_required_fields(event, control["required_fields"])
+        ]
+        status = "passing" if evidence else "missing"
+        trace_ids = sorted({event["trace_id"] for event in evidence if event.get("trace_id")})
+        assessment_id = entity_id(
+            "control-assessment",
+            app_context.get("tenant_id"),
+            app_context["project"],
+            app_context["environment"],
+            app_context["application_name"],
+            control["control_id"],
+        )
+        connection.execute(
+            """
+            INSERT OR REPLACE INTO control_assessments (
+                assessment_id, tenant_id, project, environment, application_name, control_id, control_name,
+                status, framework_refs, evidence_event_types, required_fields, evidence_trace_ids,
+                evidence_count, rationale, evaluated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+            """,
+            (
+                assessment_id,
+                app_context.get("tenant_id"),
+                app_context["project"],
+                app_context["environment"],
+                app_context["application_name"],
+                control["control_id"],
+                control["name"],
+                status,
+                encode_json(control["framework_refs"]),
+                encode_json(control["evidence_event_types"]),
+                encode_json(control["required_fields"]),
+                encode_json(trace_ids),
+                len(evidence),
+                control["rationale"],
+            ),
+        )
+
+
+def event_satisfies_required_fields(event: dict[str, Any], required_fields: list[str]) -> bool:
+    attrs = event.get("attributes") or {}
+    metadata = attrs.get("metadata") or {}
+    values: dict[str, Any] = {
+        "trace_id": event.get("trace_id"),
+        "status": event.get("status"),
+        "provider": attrs.get("provider"),
+        "model": attrs.get("model"),
+        "workflow_name": metadata.get("workflow_name"),
+        "application_name": metadata.get("application_name"),
+        "user_id": metadata.get("user_id"),
+        "retriever": attrs.get("retriever"),
+        "document_count": attrs.get("document_count"),
+        "tool_name": attrs.get("tool_name"),
+        "guardrail_name": attrs.get("guardrail_name"),
+        "decision": attrs.get("decision"),
+        "matched_rules": attrs.get("matched_rules"),
+        "eval_name": attrs.get("eval_name"),
+        "score": attrs.get("score"),
+        "threshold": attrs.get("threshold"),
+        "passed": attrs.get("passed"),
+        "agent_name": attrs.get("agent_name"),
+        "step_count": attrs.get("step_count"),
+        "outcome": attrs.get("outcome"),
+        "mode": attrs.get("mode"),
+        "fail_open": attrs.get("fail_open"),
+        "failed_sends": attrs.get("failed_sends"),
+        "prompt.hash": (attrs.get("prompt") or {}).get("hash"),
+        "response.hash": (attrs.get("response") or {}).get("hash"),
+    }
+    return all(values.get(field) not in (None, "", []) for field in required_fields)
+
+
+def assess_risk_rules(connection, app_context: dict[str, Any], rules: list[dict[str, Any]], events: list[dict[str, Any]]) -> None:
+    by_type = {event_type: [event for event in events if event.get("type") == event_type] for event_type in {event.get("type") for event in events}}
+    providers = sorted({(event.get("attributes") or {}).get("provider") for event in by_type.get("model.call", []) if (event.get("attributes") or {}).get("provider")})
+    app_text = " ".join(
+        [
+            app_context["application_name"],
+            " ".join((event.get("attributes") or {}).get("metadata", {}).get("use_case", "") for event in events),
+        ]
+    ).lower()
+    error_events = [event for event in events if event.get("status") == "error"]
+    for rule in rules:
+        signal = rule["signal"]
+        if signal == "provider_dependency" and providers:
+            evidence = [event for event in by_type.get("model.call", []) if (event.get("attributes") or {}).get("provider")]
+            upsert_rule_finding(connection, app_context, rule, evidence, f"Observed providers: {', '.join(providers)}")
+        if signal == "missing_guardrail" and by_type.get("model.call") and not by_type.get("guardrail.decision"):
+            upsert_rule_finding(connection, app_context, rule, by_type["model.call"], "Model calls observed without guardrail decision evidence")
+        if signal == "missing_eval" and by_type.get("model.call") and not by_type.get("eval.result"):
+            upsert_rule_finding(connection, app_context, rule, by_type["model.call"], "Model calls observed without evaluation result evidence")
+        if signal == "missing_agent_run" and any(term in app_text for term in ("agent", "agentic", "tool")) and not by_type.get("agent.run"):
+            upsert_rule_finding(connection, app_context, rule, events, "Agentic usage signal observed without agent run evidence")
+        if signal == "operational_errors" and error_events:
+            upsert_rule_finding(connection, app_context, rule, error_events, f"{len(error_events)} error events observed")
+
+
+def upsert_rule_finding(
+    connection,
+    app_context: dict[str, Any],
+    rule: dict[str, Any],
+    evidence_events: list[dict[str, Any]],
+    evidence_summary: str,
+) -> None:
+    trace_ids = sorted({event["trace_id"] for event in evidence_events if event.get("trace_id")})
+    finding_id = entity_id(
+        "risk-finding",
+        app_context.get("tenant_id"),
+        app_context["project"],
+        app_context["environment"],
+        app_context["application_name"],
+        rule["rule_id"],
+    )
+    connection.execute(
+        """
+        INSERT OR REPLACE INTO risk_findings (
+            finding_id, tenant_id, project, environment, application_name, rule_id, risk, severity,
+            confidence, status, rationale, framework_refs, evidence_trace_ids, evidence_summary, evaluated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        """,
+        (
+            finding_id,
+            app_context.get("tenant_id"),
+            app_context["project"],
+            app_context["environment"],
+            app_context["application_name"],
+            rule["rule_id"],
+            rule["name"],
+            rule["severity"],
+            rule["confidence"],
+            "open",
+            rule["rationale"],
+            encode_json(rule["framework_refs"]),
+            encode_json(trace_ids),
+            evidence_summary,
+        ),
+    )
+
+
+def upsert_control_definition(control: dict[str, Any]) -> dict[str, Any]:
+    with connect() as connection:
+        connection.execute(
+            """
+            INSERT OR REPLACE INTO control_library (
+                control_id, name, framework_refs, evidence_event_types, required_fields, rationale
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                control["control_id"],
+                control["name"],
+                encode_json(control["framework_refs"]),
+                encode_json(control["evidence_event_types"]),
+                encode_json(control["required_fields"]),
+                control["rationale"],
+            ),
+        )
+    return control
+
+
+def upsert_risk_rule(rule: dict[str, Any]) -> dict[str, Any]:
+    if rule["signal"] not in SUPPORTED_RISK_SIGNALS:
+        raise ValueError(f"unsupported risk signal: {rule['signal']}")
+    with connect() as connection:
+        connection.execute(
+            """
+            INSERT OR REPLACE INTO risk_rules (
+                rule_id, name, signal, severity, confidence, framework_refs, rationale
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                rule["rule_id"],
+                rule["name"],
+                rule["signal"],
+                rule["severity"],
+                rule["confidence"],
+                encode_json(rule["framework_refs"]),
+                rule["rationale"],
+            ),
+        )
+    return rule
+
+
+def scoped_policy_rows(table: str, *, tenant_id: str | None, project: str | None, environment: str | None) -> list[dict[str, Any]]:
+    clauses: list[str] = []
+    params: dict[str, Any] = {}
+    if tenant_id:
+        clauses.append("tenant_id = :tenant_id")
+        params["tenant_id"] = tenant_id
+    if project:
+        clauses.append("project = :project")
+        params["project"] = project
+    if environment:
+        clauses.append("environment = :environment")
+        params["environment"] = environment
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    with connect() as connection:
+        rows = connection.execute(f"SELECT * FROM {table} {where} ORDER BY application_name, evaluated_at DESC", params).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_control_assessments(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
+    return [
+        {
+            **row,
+            "framework_refs": decode_json(row["framework_refs"], []),
+            "evidence_event_types": decode_json(row["evidence_event_types"], []),
+            "required_fields": decode_json(row["required_fields"], []),
+            "evidence_trace_ids": decode_json(row["evidence_trace_ids"], []),
+        }
+        for row in scoped_policy_rows("control_assessments", tenant_id=tenant_id, project=project, environment=environment)
+    ]
+
+
+def list_risk_findings(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
+    return [
+        {
+            **row,
+            "framework_refs": decode_json(row["framework_refs"], []),
+            "evidence_trace_ids": decode_json(row["evidence_trace_ids"], []),
+        }
+        for row in scoped_policy_rows("risk_findings", tenant_id=tenant_id, project=project, environment=environment)
+    ]
+
+
+def list_controls_catalog() -> list[dict[str, Any]]:
+    with connect() as connection:
+        return list_control_library(connection)
+
+
+def list_configured_risk_rules() -> list[dict[str, Any]]:
+    with connect() as connection:
+        return list_risk_rules(connection)
