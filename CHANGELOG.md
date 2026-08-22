@@ -60,6 +60,16 @@ to Semantic Versioning once it reaches a tagged release.
   target.
 
 ### Security
+- **Tamper-evident audit log (H-9).** Every audit entry now carries a hash
+  chained to the previous entry (row_hash = SHA-256(prev_hash || entry)). Any
+  insertion, deletion, reordering, or field change breaks the chain and is
+  detected by a new integrity check, exposed to platform admins at
+  GET /api/admin/audit-logs/verify. The read-of-last-hash and the insert run in
+  a single IMMEDIATE transaction so concurrent writes cannot fork the chain.
+  This gives the trail the integrity property SOC 2 CC7.2, HIPAA 164.312(b), and
+  21 CFR Part 11 auditors require.
+
+### Security
 - **Tenant isolation fails closed (H-1, H-2, H-4).** Authorization now enforces
   tenant match strictly: require_actor_scope denies a tenant-bound actor acting
   on a target that names a different tenant OR names none at all (previously it
