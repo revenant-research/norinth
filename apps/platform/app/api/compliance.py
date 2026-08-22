@@ -4,7 +4,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.dependencies import ActorContext, current_actor, scoped_dependency
+from app.dependencies import ActorContext, current_actor, now, scoped_dependency
 from app.schemas.events import ScopeFilter
 from app.services.authorization import (
     ENTERPRISE_SUBSCRIBER,
@@ -13,6 +13,7 @@ from app.services.authorization import (
     AuthorizationError,
     require_permission,
 )
+from app.storage.audit import list_audit_logs, verify_audit_chain
 from app.storage.raw_events import list_events
 from app.storage.workflow import list_actor_role_assignments
 
@@ -22,6 +23,68 @@ router = APIRouter()
 @router.get("/api/compliance/aibom")
 def aibom(scope: ScopeFilter = Depends(scoped_dependency)) -> dict[str, Any]:
     return generate_aibom(tenant_id=scope.tenant_id, project=scope.project, environment=scope.environment)
+
+
+@router.get("/api/compliance/audit-packet")
+def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilter = Depends(scoped_dependency)) -> dict[str, Any]:
+    """Assemble an audit-ready evidence packet for the actor's tenant.
+
+    A single, self-contained export of governance posture that an auditor or a
+    certification body (SOC 2, ISO 42001, EU AI Act, Joint Commission RUAIH) can
+    review: inventory, framework-mapped control assessments, risk findings,
+    governance decisions and exceptions, deployment approvals, incidents,
+    material changes, the CycloneDX AI-BOM, and the tamper-evidence status of the
+    audit trail. This was named as a missing capability in the audit and is a
+    table-stakes feature for the evidence-automation market.
+    """
+    # Imported here to avoid a circular import at module load
+    # (services.governance imports nothing from this module).
+    from app.services.governance import (
+        build_applications,
+        build_change_events,
+        build_control_evidence,
+        build_decisions,
+        build_deployment_gates,
+        build_exceptions,
+        build_incidents,
+        build_models,
+        build_review_tasks,
+        build_risk_register,
+        build_summary,
+    )
+    from app.storage.entities import list_providers
+
+    return {
+        "packet_version": "2026-01",
+        "generated_at": now(),
+        "generated_by": actor.user_ref,
+        "tenant_id": scope.tenant_id,
+        "project": scope.project,
+        "environment": scope.environment,
+        "posture": build_summary(scope),
+        "inventory": {
+            "applications": build_applications(scope).get("applications", []),
+            "models": build_models(scope).get("models", []),
+            "providers": list_providers(
+                tenant_id=scope.tenant_id, project=scope.project, environment=scope.environment
+            ),
+        },
+        "control_assessments": build_control_evidence(scope).get("controls", []),
+        "risk_findings": build_risk_register(scope).get("risks", []),
+        "governance_decisions": build_decisions(scope).get("decisions", []),
+        "exceptions": build_exceptions(scope).get("exceptions", []),
+        "deployment_gates": build_deployment_gates(scope).get("deployment_gates", []),
+        "incidents": build_incidents(scope).get("incidents", []),
+        "material_changes": build_change_events(scope).get("changes", []),
+        "open_review_tasks": build_review_tasks(scope).get("review_tasks", []),
+        "aibom": generate_aibom(
+            tenant_id=scope.tenant_id, project=scope.project, environment=scope.environment
+        ),
+        "audit_trail": {
+            "recent_entries": list_audit_logs(tenant_id=scope.tenant_id, limit=500),
+            "integrity": verify_audit_chain(),
+        },
+    }
 
 
 def generate_aibom(tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> dict[str, Any]:
