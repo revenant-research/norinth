@@ -56,6 +56,16 @@ to Semantic Versioning once it reaches a tagged release.
   `capture_content` so a stalled transport or raw-capture mode is visible
   instead of silently misreported (P7).
 
+### Security
+- **Constrained decision & status enums (M-2).** The generic decisions route
+  accepted any string and wrote it verbatim as the target's status, so a holder
+  of a decision permission could invent a status ("totally_done") and escape the
+  review workflow; org user-creation and role-assignment accepted arbitrary
+  status values. Decisions are now validated against the known workflow verbs
+  (approve/reject/accept_risk/mitigate/waive/close), apply_decision_status
+  ignores anything else defensively, and user/role statuses are constrained to
+  their valid values.
+
 ### Fixed
 - **Human decisions survive re-computation (B6).** Every ingest re-derives
   control assessments and risk findings; it used to `INSERT OR REPLACE` them

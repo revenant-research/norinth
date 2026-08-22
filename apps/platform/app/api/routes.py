@@ -403,8 +403,19 @@ def decisions(scope: ScopeFilter = Depends(scoped_dependency)):
     return build_decisions(scope)
 
 
+# The only decisions the workflow understands. Anything else previously fell
+# through and was written verbatim as the target's status, letting a reviewer
+# escape the workflow by inventing a status string (audit M-2).
+_ALLOWED_DECISIONS = {"approve", "reject", "accept_risk", "mitigate", "waive", "close"}
+
+
 @router.post("/api/decisions")
 def create_decision(payload: DecisionRequest, actor: ActorContext = Depends(current_actor)):
+    if payload.decision not in _ALLOWED_DECISIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"decision must be one of {sorted(_ALLOWED_DECISIONS)}",
+        )
     # Deployment gates and incidents have dedicated, guarded endpoints
     # (/approve, /reject, /close) that enforce evidence and attribution. They
     # must not be transitioned through the generic decision route, which would

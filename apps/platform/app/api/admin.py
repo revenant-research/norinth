@@ -481,6 +481,8 @@ def create_org_user(payload: CreateUserRequest, actor: ActorContext = Depends(cu
         require_permission(actor, PERM_USER_MANAGE, {"tenant_id": tenant_id})
     except AuthorizationError as error:
         _raise_forbidden(error)
+    if payload.status not in {"active", "suspended"}:
+        raise HTTPException(status_code=400, detail="status must be 'active' or 'suspended'")
     if get_user_by_email(payload.email) is not None:
         raise HTTPException(status_code=409, detail="A user with that email already exists")
     generated_password = payload.password or _temp_password()
@@ -622,6 +624,8 @@ def change_org_role_assignment(payload: RoleAssignmentChange, actor: ActorContex
         _raise_forbidden(error)
     if payload.role not in ASSIGNABLE_ORG_ROLES:
         raise HTTPException(status_code=400, detail=f"role must be one of {ASSIGNABLE_ORG_ROLES}")
+    if payload.status not in {"active", "revoked"}:
+        raise HTTPException(status_code=400, detail="status must be 'active' or 'revoked'")
     # Separation of duties: an administrator must not grant or revoke their own
     # roles (no unilateral self-escalation to governance-decision authority).
     if payload.user_ref == actor.user_ref:

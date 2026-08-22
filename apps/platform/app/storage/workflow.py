@@ -713,7 +713,12 @@ def apply_decision_status(connection, target_type: str, target_id: str, decision
         "waive": "waived",
         "close": "closed",
     }
-    status = status_by_decision.get(decision, decision)
+    # Defense in depth: an unknown decision maps to no status change rather than
+    # being written verbatim as the target's status (audit M-2). The API already
+    # rejects unknown decisions.
+    status = status_by_decision.get(decision)
+    if status is None:
+        return
     if target_type == "review_task":
         connection.execute("UPDATE review_tasks SET status = ?, updated_at = datetime('now') WHERE task_id = ?", (status, target_id))
     if target_type == "risk_finding":
