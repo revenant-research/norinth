@@ -5,6 +5,12 @@ components with a clean separation of concerns. The split mirrors the product
 strategy: an **open client** for trust and adoption, a **closed platform** that
 holds the commercial value, and a **test harness** that simulates real traffic.
 
+## Key documents
+
+- [`AUDIT_AND_ROADMAP_2026.md`](AUDIT_AND_ROADMAP_2026.md) — security/architecture audit and phased remediation roadmap.
+- [`docs/GTM_STRATEGY.md`](docs/GTM_STRATEGY.md) — go-to-market strategy (ICP, wedge, motion, pricing, competitive positioning).
+- [`CHANGELOG.md`](CHANGELOG.md) — hardening history.
+
 ## Repository layout and licensing
 
 | Zone | Path | License | Role |
