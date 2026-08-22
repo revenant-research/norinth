@@ -21,6 +21,18 @@ to Semantic Versioning once it reaches a tagged release.
   roadmap.
 
 ### Security
+- **Server-side password-change enforcement (C-4).** `must_change_password` is
+  now enforced by middleware: a user holding a temporary password can log in and
+  change it, but is blocked (403) from every other `/api/*` endpoint until they
+  do. Previously this gate existed only in the frontend, so a temporary password
+  drove the whole API via curl indefinitely.
+- **Session hardening (H-7).** Session tokens are stored as SHA-256 hashes (a DB
+  or backup leak no longer yields replayable tokens); the session cookie is
+  marked `Secure` in production (relaxed automatically for local HTTP dev, or via
+  `NORINTH_COOKIE_SECURE`); and a password change revokes all of the user's
+  existing sessions and rotates the current one.
+
+### Security
 - **Ingestion authentication & tenant binding (C-1).** Replaced the single
   hard-coded `Bearer dev` ingestion token with per-tenant API keys (hashed at
   rest, shown once at creation, revocable). The ingestion endpoint now derives

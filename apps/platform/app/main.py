@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.admin import router as admin_router
@@ -13,7 +13,9 @@ from app.api.ingestion_keys import router as ingestion_keys_router
 from app.api.intake import router as intake_router
 from app.api.routes import router as api_router
 from app.dashboard.html import dashboard_html
+from app.dependencies import SESSION_COOKIE
 from app.ingestion.routes import router as ingestion_router
+from app.services.auth import resolve_session
 from app.services.bootstrap import seed_dev_ingestion_key_if_dev, seed_super_admin
 from app.storage.audit import init_audit
 from app.storage.deployments import init_deployments
@@ -26,7 +28,7 @@ from app.storage.lifecycle import init_lifecycle
 from app.storage.organizations import init_organizations
 from app.storage.prompts import init_prompts
 from app.storage.raw_events import init_storage
-from app.storage.workflow import init_workflow
+from app.storage.workflow import init_workflow, load_platform_user
 
 STATIC_DIR = Path(__file__).resolve().parent / "dashboard" / "static"
 ASSETS_DIR = STATIC_DIR / "assets"
@@ -55,6 +57,37 @@ app.include_router(intake_router)
 app.include_router(api_router)
 app.include_router(compliance_router)
 app.include_router(ingestion_keys_router)
+
+# Endpoints reachable while a user still owes a password change.
+_PASSWORD_CHANGE_ALLOWLIST = {
+    "/api/auth/login",
+    "/api/auth/logout",
+    "/api/auth/me",
+    "/api/auth/change-password",
+}
+
+
+@app.middleware("http")
+async def enforce_password_change(request: Request, call_next):
+    """Server-side gate: a user flagged must_change_password may reach only the
+    auth allowlist until they rotate their credential.
+
+    Previously this was enforced only in the frontend, so anyone holding a
+    temporary password could drive the entire API with curl indefinitely
+    (audit C-4). Ingestion (`/v1/...`) uses key auth and is unaffected.
+    """
+    path = request.url.path
+    if path.startswith("/api/") and path not in _PASSWORD_CHANGE_ALLOWLIST:
+        user_ref = resolve_session(request.cookies.get(SESSION_COOKIE))
+        if user_ref:
+            user = load_platform_user(user_ref)
+            if user and user.get("must_change_password"):
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Password change required before continuing"},
+                )
+    return await call_next(request)
+
 
 if ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="platform-assets")
