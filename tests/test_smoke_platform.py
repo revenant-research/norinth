@@ -87,7 +87,9 @@ def test_ingestion_accepts_a_batch(client):
                     "operation": "chat",
                     "usage": {"input_tokens": 10, "output_tokens": 5},
                     "metadata": {
-                        "tenant_id": "acme",
+                        # The dev ingestion key is bound to tenant-local; a batch
+                        # claiming another tenant would be rejected (see C-1 tests).
+                        "tenant_id": "tenant-local",
                         "application_name": "App",
                         "workflow_name": "wf",
                     },

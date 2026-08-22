@@ -3,10 +3,11 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from app.dependencies import require_api_key
+from app.dependencies import ingestion_tenant
 from app.schemas.events import EventBatch
 from app.storage.deployments import process_deployment_events, refresh_deployment_gates
 from app.storage.entities import process_events
@@ -20,21 +21,51 @@ from app.storage.workflow import refresh_workflow_state
 router = APIRouter()
 
 
+def _bind_events_to_tenant(events: list[dict[str, Any]], tenant_id: str) -> None:
+    """Enforce that every event belongs to the authenticated tenant.
+
+    The tenant is derived from the ingestion key (see ``ingestion_tenant``), not
+    from the client payload. Events that omit a tenant are stamped with the
+    authenticated tenant; events that claim a *different* tenant are rejected for
+    the whole batch. This closes the cross-tenant evidence-forgery hole (C-1) and
+    guarantees no NULL-tenant rows enter storage via authenticated ingestion.
+    """
+    for event in events:
+        attributes = event.setdefault("attributes", {})
+        if not isinstance(attributes, dict):
+            raise HTTPException(status_code=400, detail="event.attributes must be an object")
+        metadata = attributes.setdefault("metadata", {})
+        if not isinstance(metadata, dict):
+            raise HTTPException(status_code=400, detail="event.attributes.metadata must be an object")
+        claimed = metadata.get("tenant_id")
+        if claimed is not None and claimed != tenant_id:
+            raise HTTPException(
+                status_code=403,
+                detail="event tenant_id does not match the authenticated ingestion key",
+            )
+        metadata["tenant_id"] = tenant_id
+
+
 @router.post("/v1/events/batch")
-async def ingest_events(request: Request, batch: EventBatch, _: None = Depends(require_api_key)):
+async def ingest_events(
+    request: Request,
+    batch: EventBatch,
+    tenant_id: str = Depends(ingestion_tenant),
+):
     signing_secret = os.getenv("NORINTH_SIGNING_SECRET")
     if signing_secret:
         signature_header = request.headers.get("X-Norinth-Signature")
         if not signature_header or not signature_header.startswith("sha256="):
             raise HTTPException(status_code=401, detail="Missing or invalid signature")
-        
+
         body = await request.body()
-        expected_mac = hmac.new(signing_secret.encode('utf-8'), msg=body, digestmod=hashlib.sha256).hexdigest()
-        
+        expected_mac = hmac.new(signing_secret.encode("utf-8"), msg=body, digestmod=hashlib.sha256).hexdigest()
+
         if not hmac.compare_digest(f"sha256={expected_mac}", signature_header):
             raise HTTPException(status_code=401, detail="Signature mismatch")
 
     events = [event.model_dump() for event in batch.events]
+    _bind_events_to_tenant(events, tenant_id)
     accepted = insert_events(events)
     process_events(events)
     process_prompt_events(events)

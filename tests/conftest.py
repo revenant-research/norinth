@@ -30,12 +30,13 @@ DEFAULT_ADMIN_PASSWORD = "norinth-admin"
 
 
 def _reinitialize_database() -> None:
-    from app.services.bootstrap import seed_super_admin
+    from app.services.bootstrap import seed_dev_ingestion_key_if_dev, seed_super_admin
     from app.storage.audit import init_audit
     from app.storage.deployments import init_deployments
     from app.storage.entities import init_entities
     from app.storage.governance_policy import init_governance_policy
     from app.storage.incidents import init_incidents
+    from app.storage.ingestion_keys import init_ingestion_keys
     from app.storage.intake import init_intake
     from app.storage.lifecycle import init_lifecycle
     from app.storage.organizations import init_organizations
@@ -54,7 +55,9 @@ def _reinitialize_database() -> None:
     init_organizations()
     init_intake()
     init_audit()
+    init_ingestion_keys()
     seed_super_admin()
+    seed_dev_ingestion_key_if_dev()
 
 
 @pytest.fixture

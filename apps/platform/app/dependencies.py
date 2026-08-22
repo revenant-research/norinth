@@ -34,10 +34,31 @@ def now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def require_api_key(authorization: str | None = Header(default=None)) -> None:
-    """Bearer-token guard used only for SDK telemetry ingestion."""
-    if authorization != "Bearer dev":
-        raise HTTPException(status_code=401, detail="Invalid API key")
+def _extract_bearer(authorization: str | None) -> str | None:
+    if not authorization:
+        return None
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        return None
+    return token.strip()
+
+
+def ingestion_tenant(authorization: str | None = Header(default=None)) -> str:
+    """Resolve the ingestion Bearer token to its bound tenant.
+
+    Telemetry tenancy is derived from the authenticated key, never from the
+    client-supplied event payload. An invalid or revoked key is rejected. This
+    is the authentication half of audit finding C-1; the ingestion route then
+    enforces that every event in the batch belongs to this tenant.
+    """
+    # Imported here to avoid a circular import at module load.
+    from app.storage.ingestion_keys import resolve_ingestion_key
+
+    token = _extract_bearer(authorization)
+    key = resolve_ingestion_key(token)
+    if key is None:
+        raise HTTPException(status_code=401, detail="Invalid or missing ingestion key")
+    return key["tenant_id"]
 
 
 def scope_filter(tenant_id: str | None, project: str | None, environment: str | None) -> ScopeFilter:
