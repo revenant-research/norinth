@@ -21,6 +21,20 @@ to Semantic Versioning once it reaches a tagged release.
   roadmap.
 
 ### Fixed / Hardened
+- **SDK transport resilience (C-8).** A single non-serializable event (or a NaN
+  score) used to crash `json.dumps` in the background worker, which had no
+  exception handling, killing the thread permanently — after which every event
+  queued then dropped while the health counters still reported zero failures.
+  The worker loop is now fully guarded (no exception can terminate it),
+  serialization is defensive (`default=str`, `allow_nan=False`, wrapped so a bad
+  batch is dropped not fatal), a dead worker is restarted on the next enqueue,
+  the worker is re-created after `fork()` (gunicorn/celery prefork), an `atexit`
+  flush avoids tail loss, and the SDK logger gets a `NullHandler`. The
+  `sdk.health` event now reports `thread_alive`, `queue_depth`, and
+  `capture_content` so a stalled transport or raw-capture mode is visible
+  instead of silently misreported (P7).
+
+### Fixed / Hardened
 - **Ingestion robustness (C-6, C-3).** A well-formed-but-incomplete event (e.g.
   a `prompt.event` or `deployment.event` missing `artifact_ref`) previously
   crashed ingestion with an unhandled 500 *after* a partial write. Events are
