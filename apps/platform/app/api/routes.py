@@ -11,10 +11,8 @@ from app.schemas.workflow import (
     ExceptionRequest,
     OwnerAssignmentRequest,
     OwnerPolicyRequest,
-    PlatformUserRequest,
     ReviewQueuePolicyRequest,
     RiskRuleRequest,
-    RoleAssignmentRequest,
 )
 from app.services.authorization import (
     AuthorizationError,
@@ -43,7 +41,6 @@ from app.services.governance import (
     build_models,
     build_owner_assignments,
     build_owner_policies,
-    build_platform_users,
     build_prompt_templates,
     build_prompt_versions,
     build_resource_graph,
@@ -54,7 +51,6 @@ from app.services.governance import (
     build_review_tasks,
     build_risk_register,
     build_risk_rules,
-    build_role_assignments,
     build_summary,
     build_systems,
     build_tools,
@@ -76,9 +72,7 @@ from app.storage.workflow import (
     load_owner_assignment,
     record_decision,
     upsert_owner_policy,
-    upsert_platform_user,
     upsert_review_queue_policy,
-    upsert_role_assignment,
 )
 
 router = APIRouter()
@@ -251,34 +245,14 @@ def configure_owner_policy(payload: OwnerPolicyRequest, actor: ActorContext = De
     return {"owner_policy": upsert_owner_policy(payload.model_dump())}
 
 
-@router.get("/api/users")
-def users(scope: ScopeFilter = Depends(scoped_dependency)):
-    return build_platform_users(tenant_id=scope.tenant_id)
-
-
-@router.post("/api/users")
-def configure_user(payload: PlatformUserRequest, actor: ActorContext = Depends(current_actor)):
-    user = payload.model_dump()
-    try:
-        require_config_write(actor, user)
-    except AuthorizationError as error:
-        raise_forbidden(error)
-    return {"user": upsert_platform_user(user)}
-
-
-@router.get("/api/role-assignments")
-def role_assignments(scope: ScopeFilter = Depends(scoped_dependency)):
-    return build_role_assignments(scope)
-
-
-@router.post("/api/role-assignments")
-def configure_role_assignment(payload: RoleAssignmentRequest, actor: ActorContext = Depends(current_actor)):
-    assignment = payload.model_dump()
-    try:
-        require_config_write(actor, assignment)
-    except AuthorizationError as error:
-        raise_forbidden(error)
-    return {"role_assignment": upsert_role_assignment(assignment)}
+# NOTE: user and role-assignment management is intentionally NOT exposed on this
+# tenant-governance router. It lives only on the org-administration plane
+# (`/api/org/users`, `/api/org/role-assignments` in api/admin.py), which enforces
+# tenant scoping, role allow-lists, and separation of duties. The previous
+# `POST /api/users` / `POST /api/role-assignments` endpoints here were removed:
+# they authorized on `config.write` with no tenant scoping on the target, which
+# let any config.write holder overwrite arbitrary accounts (including the super
+# admin — a lockout DoS, audit C-7) and self-grant globally-scoped roles (H-2).
 
 
 @router.get("/api/review-queue-policies")

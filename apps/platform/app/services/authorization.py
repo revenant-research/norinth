@@ -106,13 +106,32 @@ def require_owner_assignment(actor: ActorContext, assignment: dict[str, Any]) ->
 
 
 def require_decision(actor: ActorContext, target: dict[str, Any]) -> None:
-    # The assignee of a task may always act on their own task within scope.
-    if target.get("assigned_to") == actor.user_ref:
-        require_active_actor(actor)
-        require_actor_scope(actor, target)
-        return
-    permission = _decision_permission(target)
-    require_permission(actor, permission, target)
+    # Being the assignee of a task does NOT grant a decision permission the actor
+    # lacks; the appropriate decision permission is always required (audit B3).
+    # Auto-assignment by the review queue must not become a privilege-escalation
+    # path.
+    require_permission(actor, _decision_permission(target), target)
+
+
+# --- Separation of duties: administration vs. governance decision-making ------
+#
+# A single person must not simultaneously administer the tenant (manage users,
+# assign roles) and hold governance decision authority (approve gates, accept
+# risk, close incidents, decide reviews). Enforcing this at role-assignment time
+# is the core fix for audit finding C-4.
+ADMINISTRATION_ROLES = {ORG_ADMIN}
+DECISION_ROLES = {GOVERNANCE_ADMIN, RISK_OWNER, CONTROL_OWNER, GOVERNANCE_REVIEWER}
+
+
+def would_violate_role_separation(existing_active_roles: set[str], role: str, status: str) -> bool:
+    """True if granting ``role`` (or the resulting role set) would give one user
+    both an administration role and a governance-decision role."""
+    resulting = set(existing_active_roles)
+    if status == "active":
+        resulting.add(role)
+    else:
+        resulting.discard(role)
+    return bool(resulting & ADMINISTRATION_ROLES) and bool(resulting & DECISION_ROLES)
 
 
 def _decision_permission(target: dict[str, Any]) -> str:

@@ -16,6 +16,7 @@ from app.services.authorization import (
     AuthorizationError,
     require_permission,
     require_super_admin,
+    would_violate_role_separation,
 )
 from app.services.governance import build_summary
 from app.storage.audit import list_audit_logs, record_audit
@@ -548,9 +549,31 @@ def change_org_role_assignment(payload: RoleAssignmentChange, actor: ActorContex
         _raise_forbidden(error)
     if payload.role not in ASSIGNABLE_ORG_ROLES:
         raise HTTPException(status_code=400, detail=f"role must be one of {ASSIGNABLE_ORG_ROLES}")
+    # Separation of duties: an administrator must not grant or revoke their own
+    # roles (no unilateral self-escalation to governance-decision authority).
+    if payload.user_ref == actor.user_ref:
+        raise HTTPException(
+            status_code=403,
+            detail="Segregation of duties: you cannot change your own role assignments; "
+            "another administrator must do so",
+        )
     target_user = load_platform_user(payload.user_ref)
     if target_user is None or target_user.get("tenant_id") != tenant_id:
         raise HTTPException(status_code=404, detail="User not found in this organization")
+    # A single user must not hold both an administration role and a
+    # governance-decision role (audit C-4).
+    existing_roles = {
+        assignment["role"]
+        for assignment in list_role_assignments(tenant_id=tenant_id)
+        if assignment.get("user_ref") == payload.user_ref and assignment.get("status") == "active"
+    }
+    if would_violate_role_separation(existing_roles, payload.role, payload.status):
+        raise HTTPException(
+            status_code=409,
+            detail="Segregation of duties: a user cannot hold both an administration role "
+            "(org_admin) and a governance-decision role (e.g. governance_admin, risk_owner). "
+            "Assign these to different people.",
+        )
     assignment = upsert_role_assignment(
         {
             "user_ref": payload.user_ref,
