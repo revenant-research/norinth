@@ -722,20 +722,11 @@ def apply_decision_status(connection, target_type: str, target_id: str, decision
         connection.execute("UPDATE change_events SET status = ? WHERE change_id = ?", (status, target_id))
     if target_type == "control_assessment":
         connection.execute("UPDATE control_assessments SET status = ?, evaluated_at = datetime('now') WHERE assessment_id = ?", (status, target_id))
-    if target_type == "deployment_gate":
-        connection.execute(
-            "UPDATE deployment_approval_gates SET gate_status = ?, updated_at = datetime('now') WHERE gate_id = ?",
-            (status, target_id),
-        )
-    if target_type == "incident":
-        connection.execute(
-            """
-            UPDATE governance_incidents
-            SET status = ?, last_seen = datetime('now'), closed_at = CASE WHEN ? = 'closed' THEN datetime('now') ELSE closed_at END
-            WHERE incident_id = ?
-            """,
-            (status, status, target_id),
-        )
+    # Deployment gates and incidents are intentionally NOT transitioned here.
+    # Their status changes must go through the guarded set_deployment_gate_status
+    # (evidence check + attribution) and set_incident_status, invoked by the
+    # dedicated /approve, /reject, and /close endpoints. Allowing a generic
+    # decision to flip a gate to "approved" bypassed the evidence gate (audit C-2).
 
 
 def create_exception(

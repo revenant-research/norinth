@@ -21,6 +21,19 @@ to Semantic Versioning once it reaches a tagged release.
   roadmap.
 
 ### Security
+- **Deployment-gate integrity (C-2).** Deployment gates are never auto-approved.
+  Previously a gate with no blocking evidence was written directly as "approved"
+  with no human and no attribution, and the generic /api/decisions route could
+  flip a gate to "approved" while bypassing the evidence guard — so a release
+  could ship with zero sign-off. Now every undecided gate stays `pending_review`
+  until a human approves or rejects it through the guarded /approve|/reject
+  endpoints (which require linked prompt + passing eval evidence and record the
+  actor, rationale, and timestamp), and /api/decisions rejects deployment_gate
+  and incident target types (400), directing callers to the dedicated guarded
+  endpoints. Also: /api/decisions now returns 404 (not 500) for an unknown
+  target.
+
+### Security
 - **Separation of duties (C-4).** An org_admin can no longer unilaterally
   escalate to governance decision authority. Administration roles (org_admin)
   and governance-decision roles (governance_admin, risk_owner, control_owner,

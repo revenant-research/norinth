@@ -405,7 +405,22 @@ def decisions(scope: ScopeFilter = Depends(scoped_dependency)):
 
 @router.post("/api/decisions")
 def create_decision(payload: DecisionRequest, actor: ActorContext = Depends(current_actor)):
-    target = load_decision_target(payload.target_type, payload.target_id)
+    # Deployment gates and incidents have dedicated, guarded endpoints
+    # (/approve, /reject, /close) that enforce evidence and attribution. They
+    # must not be transitioned through the generic decision route, which would
+    # bypass those guards (audit C-2).
+    if payload.target_type in {"deployment_gate", "incident"}:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Use the dedicated endpoint for this target type: deployment gates via "
+                "/api/deployment-gates/{id}/approve|reject, incidents via /api/incidents/{id}/close"
+            ),
+        )
+    try:
+        target = load_decision_target(payload.target_type, payload.target_id)
+    except ValueError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
     target["target_type"] = payload.target_type
     try:
         require_decision(actor, target)
