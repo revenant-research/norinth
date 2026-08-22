@@ -24,9 +24,15 @@ from app.storage.entities import tenant_application_stats
 from app.storage.organizations import (
     create_organization,
     list_organizations,
+    load_organization,
     set_organization_status,
 )
 from app.storage.raw_events import count_events
+from app.storage.retention import (
+    purge_events_older_than,
+    purge_tenant_data,
+    tenant_data_summary,
+)
 from app.storage.workflow import (
     count_org_admins,
     count_platform_users,
@@ -248,6 +254,62 @@ def update_organization_status(tenant_id: str, payload: OrganizationStatusReques
         detail={"status": payload.status},
     )
     return {"organization": organization}
+
+
+class TenantPurgeRequest(BaseModel):
+    # Must echo the tenant_id exactly, as a type-to-confirm safeguard against an
+    # accidental irreversible deletion.
+    confirm_tenant_id: str = Field(min_length=1)
+
+
+class RetentionPurgeRequest(BaseModel):
+    retention_days: int = Field(ge=1)
+
+
+@router.get("/api/admin/organizations/{tenant_id}/data")
+def tenant_data_preview(tenant_id: str, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
+    """Preview a tenant's data footprint before an irreversible erasure."""
+    _guard_super_admin(actor)
+    return tenant_data_summary(tenant_id)
+
+
+@router.post("/api/admin/organizations/{tenant_id}/purge")
+def purge_organization(
+    tenant_id: str, payload: TenantPurgeRequest, actor: ActorContext = Depends(current_actor)
+) -> dict[str, Any]:
+    """Permanently erase all of a tenant's data (GDPR Art 17 / CCPA / BAA
+    return-or-destroy). Irreversible; super admin only; requires typing the
+    tenant id to confirm. The tamper-evident audit log is retained (audit H-10)."""
+    _guard_super_admin(actor)
+    if payload.confirm_tenant_id != tenant_id:
+        raise HTTPException(status_code=400, detail="confirm_tenant_id must match the tenant being purged")
+    if load_organization(tenant_id) is None:
+        raise HTTPException(status_code=404, detail="organization not found")
+    counts = purge_tenant_data(tenant_id)
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="org.purge",
+        tenant_id=tenant_id,
+        target_type="organization",
+        target_id=tenant_id,
+        detail={"row_counts": counts},
+    )
+    return {"purged": True, "tenant_id": tenant_id, "row_counts": counts}
+
+
+@router.post("/api/admin/retention/purge-events")
+def purge_old_events(payload: RetentionPurgeRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
+    """Age out raw SDK events older than the retention window (super admin)."""
+    _guard_super_admin(actor)
+    deleted = purge_events_older_than(payload.retention_days)
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="retention.purge_events",
+        target_type="retention",
+        target_id=str(payload.retention_days),
+        detail={"deleted": deleted, "retention_days": payload.retention_days},
+    )
+    return {"deleted": deleted, "retention_days": payload.retention_days}
 
 
 @router.get("/api/admin/users")
