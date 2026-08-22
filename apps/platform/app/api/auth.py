@@ -18,6 +18,7 @@ from app.services.auth import (
 from app.services.authorization import effective_permissions
 from app.services.bootstrap import using_development_defaults
 from app.storage.audit import record_audit
+from app.storage.login_attempts import clear_attempts, is_locked, register_failure
 from app.storage.workflow import (
     get_user_by_email,
     load_platform_user,
@@ -69,9 +70,17 @@ def _actor_profile(actor: ActorContext) -> dict[str, Any]:
 
 @router.post("/api/auth/login")
 def login(payload: LoginRequest, response: Response) -> dict[str, Any]:
+    # Throttle credential stuffing / password spraying (audit H-6).
+    if is_locked(payload.email):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed login attempts. Try again later.",
+        )
     user = get_user_by_email(payload.email)
     if user is None or user.get("status") != "active" or not verify_password(payload.password, user.get("password_hash")):
+        register_failure(payload.email)
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    clear_attempts(payload.email)
     token = create_session(user["user_ref"])
     _set_session_cookie(response, token)
     record_audit(actor_ref=user["user_ref"], action="auth.login", tenant_id=user.get("tenant_id"))

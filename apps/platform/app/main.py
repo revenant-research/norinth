@@ -25,6 +25,7 @@ from app.storage.incidents import init_incidents
 from app.storage.ingestion_keys import init_ingestion_keys
 from app.storage.intake import init_intake
 from app.storage.lifecycle import init_lifecycle
+from app.storage.login_attempts import init_login_attempts
 from app.storage.organizations import init_organizations
 from app.storage.prompts import init_prompts
 from app.storage.raw_events import init_storage
@@ -48,6 +49,7 @@ init_organizations()
 init_intake()
 init_audit()
 init_ingestion_keys()
+init_login_attempts()
 seed_super_admin()
 seed_dev_ingestion_key_if_dev()
 app.include_router(ingestion_router)
@@ -65,6 +67,33 @@ _PASSWORD_CHANGE_ALLOWLIST = {
     "/api/auth/me",
     "/api/auth/change-password",
 }
+
+
+_MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
+@app.middleware("http")
+async def csrf_origin_check(request: Request, call_next):
+    """Defense-in-depth CSRF protection for cookie-authenticated mutations.
+
+    Browsers send an ``Origin`` header on state-changing requests and forbid
+    scripts from forging it, so requiring Origin to match the request host on
+    mutating /api/* calls blocks cross-site request forgery. Requests without an
+    Origin (non-browser API clients, which don't carry a victim's ambient
+    cookies) are unaffected. Ingestion (/v1/*) uses key auth, not cookies, so it
+    is out of scope. This complements the cookie's SameSite=lax (audit H-8).
+    """
+    if request.method in _MUTATING_METHODS and request.url.path.startswith("/api/"):
+        origin = request.headers.get("origin")
+        if origin:
+            expected = f"{request.url.scheme}://{request.headers.get('host', '')}"
+            # Compare only scheme+host+port; browsers send Origin without a path.
+            if origin.rstrip("/") != expected.rstrip("/"):
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Cross-origin request rejected"},
+                )
+    return await call_next(request)
 
 
 @app.middleware("http")
