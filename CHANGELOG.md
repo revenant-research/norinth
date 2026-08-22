@@ -56,6 +56,14 @@ to Semantic Versioning once it reaches a tagged release.
   `capture_content` so a stalled transport or raw-capture mode is visible
   instead of silently misreported (P7).
 
+### Fixed
+- **Human decisions survive re-computation (B6).** Every ingest re-derives
+  control assessments and risk findings; it used to `INSERT OR REPLACE` them
+  back to `passing`/`missing`/`open`, silently reopening a risk a reviewer had
+  accepted and clearing a waived control. Re-computation now preserves any
+  reviewer-set terminal status (accepted, waived, mitigation_required, ...) while
+  still refreshing the underlying evidence.
+
 ### Fixed / Hardened
 - **Ingestion robustness (C-6, C-3).** A well-formed-but-incomplete event (e.g.
   a `prompt.event` or `deployment.event` missing `artifact_ref`) previously
