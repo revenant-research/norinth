@@ -39,6 +39,7 @@ def _reinitialize_database() -> None:
     from app.storage.ingestion_keys import init_ingestion_keys
     from app.storage.intake import init_intake
     from app.storage.lifecycle import init_lifecycle
+    from app.storage.login_attempts import init_login_attempts
     from app.storage.organizations import init_organizations
     from app.storage.prompts import init_prompts
     from app.storage.raw_events import init_storage
@@ -56,6 +57,7 @@ def _reinitialize_database() -> None:
     init_intake()
     init_audit()
     init_ingestion_keys()
+    init_login_attempts()
     seed_super_admin()
     seed_dev_ingestion_key_if_dev()
 

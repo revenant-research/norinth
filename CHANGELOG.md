@@ -82,6 +82,15 @@ to Semantic Versioning once it reaches a tagged release.
   target.
 
 ### Security
+- **Login lockout & CSRF defense-in-depth (H-6, H-8).** Failed logins are now
+  throttled per email (default: 5 failures in 15 min locks the account for
+  15 min, cleared on success), slowing credential stuffing / password spraying
+  against well-known accounts. A CSRF middleware rejects cross-origin mutating
+  /api/* requests by verifying the browser-sent Origin against the request host
+  (requests without an Origin — non-browser clients that carry no victim cookie
+  — are unaffected), complementing the cookie's SameSite=lax.
+
+### Security
 - **Tamper-evident audit log (H-9).** Every audit entry now carries a hash
   chained to the previous entry (row_hash = SHA-256(prev_hash || entry)). Any
   insertion, deletion, reordering, or field change breaks the chain and is
