@@ -100,6 +100,16 @@ to Semantic Versioning once it reaches a tagged release.
   target.
 
 ### Added
+- **Audit-ready evidence packet.** New `GET /api/compliance/audit-packet`
+  assembles a single, self-contained export of a tenant's governance posture —
+  inventory, framework-mapped control assessments, risk findings, governance
+  decisions and exceptions, deployment approvals, incidents, material changes,
+  the CycloneDX AI-BOM, and the tamper-evidence status of the audit trail — for
+  an auditor or certification body (SOC 2, ISO 42001, EU AI Act, Joint Commission
+  RUAIH). Named as a missing capability in the audit; a table-stakes
+  evidence-automation feature.
+
+### Added
 - **Data retention & right-to-erasure (H-10).** New super-admin capability to
   permanently erase a tenant's data on offboarding (GDPR Art 17, CCPA deletion,
   HIPAA/BAA return-or-destroy): `GET /api/admin/organizations/{id}/data`
