@@ -7,7 +7,7 @@ from typing import Any
 
 from .config import NorinthConfig
 from .context import TraceContext, get_context, reset_context, set_context
-from .privacy import infer_governance_context, summarize_call, summarize_value
+from .privacy import infer_governance_context, summarize_call, summarize_error, summarize_value
 from .schemas import NorinthEvent, new_id
 from .transport import EventTransport
 
@@ -108,7 +108,7 @@ class NorinthClient:
                     return inner(*args, **kwargs)
                 except Exception as exc:
                     status = "error"
-                    error_summary = {"type": type(exc).__name__, "message": str(exc)}
+                    error_summary = summarize_error(exc, self.config.capture_content, self.config.signing_secret)
                     raise
                 finally:
                     duration_ms = (perf_counter() - started) * 1000
@@ -128,7 +128,7 @@ class NorinthClient:
                                 duration_ms=duration_ms,
                                 attributes={
                                     "function": f"{inner.__module__}.{inner.__name__}",
-                                    "call": summarize_call(args, kwargs, self.config.capture_content),
+                                    "call": summarize_call(args, kwargs, self.config.capture_content, self.config.signing_secret),
                                     "metadata": context.metadata,
                                     "error": error_summary,
                                 },
@@ -176,8 +176,8 @@ class NorinthClient:
                     "provider": provider,
                     "model": model,
                     "operation": operation,
-                    "prompt": summarize_value(prompt, self.config.capture_content),
-                    "response": summarize_value(response, self.config.capture_content),
+                    "prompt": summarize_value(prompt, self.config.capture_content, self.config.signing_secret),
+                    "response": summarize_value(response, self.config.capture_content, self.config.signing_secret),
                     "usage": usage or {},
                     "metadata": {**context.metadata, **(metadata or {})},
                     "error": error,
@@ -212,8 +212,8 @@ class NorinthClient:
                 duration_ms=duration_ms,
                 attributes={
                     "retriever": retriever,
-                    "query": summarize_value(query, self.config.capture_content),
-                    "documents": summarize_value(documents, self.config.capture_content),
+                    "query": summarize_value(query, self.config.capture_content, self.config.signing_secret),
+                    "documents": summarize_value(documents, self.config.capture_content, self.config.signing_secret),
                     "document_count": len(documents),
                     "metadata": {**context.metadata, **(metadata or {})},
                     "error": error,
@@ -248,8 +248,8 @@ class NorinthClient:
                 duration_ms=duration_ms,
                 attributes={
                     "tool_name": tool_name,
-                    "arguments": summarize_value(arguments, self.config.capture_content),
-                    "result": summarize_value(result, self.config.capture_content),
+                    "arguments": summarize_value(arguments, self.config.capture_content, self.config.signing_secret),
+                    "result": summarize_value(result, self.config.capture_content, self.config.signing_secret),
                     "metadata": {**context.metadata, **(metadata or {})},
                     "error": error,
                 },
@@ -394,8 +394,8 @@ class NorinthClient:
                     "artifact_ref": artifact_ref,
                     "prompt_status": status,
                     "owner_ref": owner_ref,
-                    "template": summarize_value(template, self.config.capture_content),
-                    "change_notes": summarize_value(change_notes, self.config.capture_content),
+                    "template": summarize_value(template, self.config.capture_content, self.config.signing_secret),
+                    "change_notes": summarize_value(change_notes, self.config.capture_content, self.config.signing_secret),
                     "metadata": event_metadata,
                 },
             )
@@ -489,7 +489,7 @@ class NorinthClient:
                     "title": title,
                     "severity": severity,
                     "incident_status": status,
-                    "description": summarize_value(description, self.config.capture_content),
+                    "description": summarize_value(description, self.config.capture_content, self.config.signing_secret),
                     "detected_by": detected_by,
                     "impacted_trace_id": impacted_trace_id,
                     "provider": provider,
