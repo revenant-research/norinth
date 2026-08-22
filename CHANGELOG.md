@@ -20,6 +20,18 @@ to Semantic Versioning once it reaches a tagged release.
 - `AUDIT_AND_ROADMAP_2026.md`: full security/architecture audit and remediation
   roadmap.
 
+### Security
+- **SDK privacy hardening (H-12, H-13).** Content fingerprints are now HMAC-keyed
+  when a signing secret is configured, so short/low-entropy prompts are no longer
+  dictionary-reversible and hashes cannot be linked across tenants; hashing is
+  also canonical (sorted-key JSON) instead of unstable `repr()`. Exception
+  messages — which provider 4xx errors and application code routinely fill with
+  PII/PHI — are hashed and length-reported by default and only emitted verbatim
+  under `NORINTH_CAPTURE_CONTENT` (previously they shipped raw). Inferred
+  governance context skips nested structures and caps value length so request
+  content can't ride out under a governance label. Critical for HIPAA-adjacent
+  deployments.
+
 ### Fixed / Hardened
 - **SDK transport resilience (C-8).** A single non-serializable event (or a NaN
   score) used to crash `json.dumps` in the background worker, which had no

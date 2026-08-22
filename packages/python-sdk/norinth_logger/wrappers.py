@@ -5,6 +5,7 @@ from time import perf_counter
 from typing import Any
 
 from .client import NorinthClient
+from .privacy import summarize_error
 
 
 def normalize_usage(usage: Any) -> dict[str, Any]:
@@ -39,7 +40,7 @@ class WrappedCallable:
             return response
         except Exception as exc:
             status = "error"
-            error = {"type": type(exc).__name__, "message": str(exc)}
+            error = summarize_error(exc, self._client.config.capture_content, self._client.config.signing_secret)
             raise
         finally:
             duration_ms = (perf_counter() - started) * 1000

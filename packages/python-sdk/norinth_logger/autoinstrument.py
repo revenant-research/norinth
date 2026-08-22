@@ -6,7 +6,7 @@ from time import perf_counter
 from typing import Any
 
 from .context import TraceContext, reset_context, set_context
-from .privacy import infer_governance_context
+from .privacy import infer_governance_context, summarize_error
 from .schemas import NorinthEvent, new_id
 from .wrappers import normalize_usage
 
@@ -75,7 +75,7 @@ def patch_provider_method(
             return response
         except Exception as exc:
             status = "error"
-            error = {"type": type(exc).__name__, "message": str(exc)}
+            error = summarize_error(exc, client.config.capture_content, client.config.signing_secret)
             raise
         finally:
             duration_ms = (perf_counter() - started) * 1000
@@ -133,7 +133,7 @@ class NorinthFastAPIMiddleware:
             await self.app(scope, replay_receive, send)
         except Exception as exc:
             status = "error"
-            error_summary = {"type": type(exc).__name__, "message": str(exc)}
+            error_summary = summarize_error(exc, self.client.config.capture_content, self.client.config.signing_secret)
             raise
         finally:
             duration_ms = (perf_counter() - started) * 1000
