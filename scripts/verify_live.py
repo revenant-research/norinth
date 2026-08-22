@@ -211,4 +211,4 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except Exception as exc:  # noqa: BLE001 - surface a clear failure for CI
         print(f"verification failed: {exc}", file=sys.stderr)
-        raise SystemExit(1)
+        raise SystemExit(1) from exc

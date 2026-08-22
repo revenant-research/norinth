@@ -16,6 +16,13 @@ from app.schemas.workflow import (
     RiskRuleRequest,
     RoleAssignmentRequest,
 )
+from app.services.authorization import (
+    AuthorizationError,
+    require_config_write,
+    require_decision,
+    require_exception,
+    require_owner_assignment,
+)
 from app.services.governance import (
     build_agents,
     build_application_detail,
@@ -23,11 +30,11 @@ from app.services.governance import (
     build_change_events,
     build_control_catalog,
     build_control_evidence,
+    build_decisions,
     build_deployment_gate_detail,
     build_deployment_gates,
     build_deployment_versions,
     build_deployments,
-    build_decisions,
     build_evals,
     build_exceptions,
     build_guardrails,
@@ -39,14 +46,14 @@ from app.services.governance import (
     build_platform_users,
     build_prompt_templates,
     build_prompt_versions,
-    build_retrievals,
     build_resource_graph,
     build_resource_graph_neighborhood,
-    build_risk_register,
-    build_risk_rules,
+    build_retrievals,
     build_review_detail,
     build_review_queue_policies,
     build_review_tasks,
+    build_risk_register,
+    build_risk_rules,
     build_role_assignments,
     build_summary,
     build_systems,
@@ -55,13 +62,6 @@ from app.services.governance import (
     build_traces,
     build_workflow_detail,
     build_workflows,
-)
-from app.services.authorization import (
-    AuthorizationError,
-    require_config_write,
-    require_decision,
-    require_exception,
-    require_owner_assignment,
 )
 from app.storage.audit import record_audit
 from app.storage.deployments import load_deployment_gate, set_deployment_gate_status
@@ -386,7 +386,7 @@ def approve_deployment_gate(gate_id: str, payload: DeploymentGateDecisionRequest
     try:
         updated_gate = set_deployment_gate_status(gate_id, "approved", actor.user_ref, payload.rationale)
     except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error))
+        raise HTTPException(status_code=400, detail=str(error)) from error
     decision = record_decision("deployment_gate", gate_id, "approve", payload.rationale, actor.user_ref)
     record_audit(actor_ref=actor.user_ref, action="gate.approve", tenant_id=gate.get("tenant_id"), target_type="deployment_gate", target_id=gate_id)
     return {"deployment_gate": updated_gate, "decision": decision}

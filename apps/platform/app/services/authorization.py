@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.dependencies import PLATFORM_SUPER_ADMIN, ActorContext
+from app.dependencies import ActorContext
 from app.storage.workflow import (
     list_actor_role_assignments,
     list_role_permissions,

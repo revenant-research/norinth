@@ -26,7 +26,7 @@ class NorinthConfig:
     timeout_seconds: float = 2.0
 
     @classmethod
-    def from_env(cls, **overrides: object) -> "NorinthConfig":
+    def from_env(cls, **overrides: object) -> NorinthConfig:
         values = {
             "api_key": getenv("NORINTH_API_KEY", "dev"),
             "signing_secret": getenv("NORINTH_SIGNING_SECRET"),

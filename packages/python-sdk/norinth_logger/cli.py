@@ -3,7 +3,7 @@ import ast
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -70,7 +70,7 @@ def scan_directory(directory: str) -> dict[str, Any]:
     root_path = Path(directory).resolve()
     manifest: dict[str, Any] = {
         "schema_version": "2026-01",
-        "scanned_at": datetime.now(timezone.utc).isoformat(),
+        "scanned_at": datetime.now(UTC).isoformat(),
         "root_directory": str(root_path),
         "total_files_scanned": 0,
         "providers_detected": set(),
@@ -91,7 +91,7 @@ def scan_directory(directory: str) -> dict[str, Any]:
             manifest["total_files_scanned"] += 1
             
             try:
-                with open(filepath, "r", encoding="utf-8") as f:
+                with open(filepath, encoding="utf-8") as f:
                     content = f.read()
                 
                 tree = ast.parse(content, filename=str(filepath))

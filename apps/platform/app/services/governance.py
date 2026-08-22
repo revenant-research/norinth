@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
+from app.schemas.events import Event, ScopeFilter
+from app.storage.deployments import list_deployment_gates, list_deployment_versions, list_deployments
 from app.storage.entities import (
     list_applications,
     list_controls,
@@ -12,9 +14,12 @@ from app.storage.entities import (
     list_risks,
     list_workflows,
 )
-from app.schemas.events import Event, ScopeFilter
-from app.storage.deployments import list_deployment_gates, list_deployment_versions, list_deployments
-from app.storage.governance_policy import list_configured_risk_rules, list_control_assessments, list_controls_catalog, list_risk_findings
+from app.storage.governance_policy import (
+    list_configured_risk_rules,
+    list_control_assessments,
+    list_controls_catalog,
+    list_risk_findings,
+)
 from app.storage.incidents import list_incidents
 from app.storage.lifecycle import list_change_events, list_review_tasks
 from app.storage.prompts import list_prompt_templates, list_prompt_versions

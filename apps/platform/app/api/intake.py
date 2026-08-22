@@ -8,9 +8,9 @@ from pydantic import BaseModel, Field
 from app.dependencies import ActorContext, current_actor, scoped_dependency
 from app.schemas.events import ScopeFilter
 from app.services.authorization import (
-    AuthorizationError,
     PERM_INTAKE_SUBMIT,
     PERM_LIFECYCLE_MANAGE,
+    AuthorizationError,
     require_permission,
 )
 from app.storage.audit import record_audit

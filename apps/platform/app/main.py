@@ -6,11 +6,11 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.api.routes import router as api_router
 from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
 from app.api.compliance import router as compliance_router
 from app.api.intake import router as intake_router
+from app.api.routes import router as api_router
 from app.dashboard.html import dashboard_html
 from app.ingestion.routes import router as ingestion_router
 from app.services.bootstrap import seed_super_admin

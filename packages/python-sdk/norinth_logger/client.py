@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import wraps
 from time import perf_counter
-from typing import Any, Callable
+from typing import Any
 
 from .config import NorinthConfig
 from .context import TraceContext, get_context, reset_context, set_context

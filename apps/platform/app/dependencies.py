@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from fastapi import Cookie, Depends, Header, HTTPException
 
@@ -31,7 +31,7 @@ class ActorContext:
 
 
 def now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def require_api_key(authorization: str | None = Header(default=None)) -> None:
