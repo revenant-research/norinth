@@ -188,17 +188,16 @@ def refresh_deployment_gates() -> None:
 
 def upsert_deployment_gate(connection, version: dict[str, Any]) -> None:
     evidence = gate_evidence_counts(connection, version)
-    required = (
-        evidence["risk_count"] > 0
-        or evidence["missing_control_count"] > 0
-        or evidence["material_change_count"] > 0
-        or evidence["prompt_evidence_status"] != "linked"
-        or evidence["passing_eval_count"] == 0
-    )
     gate_id = entity_id("deployment-gate", version["version_id"])
     existing = connection.execute("SELECT * FROM deployment_approval_gates WHERE gate_id = ?", (gate_id,)).fetchone()
     current_status = existing["gate_status"] if existing else None
-    gate_status = current_status if current_status in {"approved", "rejected"} else "pending_review" if required else "approved"
+    # A gate is NEVER auto-approved (audit C-2). Undecided gates stay
+    # pending_review until a human approves or rejects them through the guarded
+    # /approve|/reject endpoints; an existing human decision is preserved. Whether
+    # a gate is approvable (has linked prompt + passing eval and no open blockers)
+    # is enforced at approval time by set_deployment_gate_status, and the blocking
+    # reasons below tell the reviewer what is still outstanding.
+    gate_status = current_status if current_status in {"approved", "rejected"} else "pending_review"
     reason_parts = []
     if evidence["risk_count"]:
         reason_parts.append(f"{evidence['risk_count']} open risk findings")
