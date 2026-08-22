@@ -19,7 +19,7 @@ from app.services.authorization import (
     would_violate_role_separation,
 )
 from app.services.governance import build_summary
-from app.storage.audit import list_audit_logs, record_audit
+from app.storage.audit import list_audit_logs, record_audit, verify_audit_chain
 from app.storage.entities import tenant_application_stats
 from app.storage.organizations import (
     create_organization,
@@ -379,6 +379,17 @@ def audit_logs(
             tenant_id=own_tenant, actor_ref=actor_ref, action=action, limit=limit
         )
     }
+
+
+@router.get("/api/admin/audit-logs/verify")
+def verify_audit_logs(actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
+    """Verify the integrity of the append-only audit chain (super admin only).
+
+    Recomputes the hash chain and reports whether any entry was deleted,
+    reordered, or modified (audit H-9).
+    """
+    _guard_super_admin(actor)
+    return verify_audit_chain()
 
 
 @router.get("/api/org/users")

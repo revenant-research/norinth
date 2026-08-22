@@ -1,9 +1,23 @@
+"""Append-only, tamper-evident audit log.
+
+Each entry carries a hash that chains it to the previous entry
+(row_hash = SHA-256(prev_hash || canonical(entry))). Any insertion, deletion,
+reordering, or field modification breaks the chain and is detectable by
+verify_audit_chain(). This gives the audit trail the integrity property that
+SOC 2 CC7.2, HIPAA 45 CFR 164.312(b), and 21 CFR Part 11 auditors expect
+(audit finding H-9).
+"""
+
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 from .entities import encode_json
 from .raw_events import connect
+
+# Chain anchor for the very first entry.
+GENESIS_HASH = "0" * 64
 
 
 def init_audit() -> None:
@@ -18,12 +32,45 @@ def init_audit() -> None:
                 action TEXT NOT NULL,
                 target_type TEXT,
                 target_id TEXT,
-                detail TEXT
+                detail TEXT,
+                prev_hash TEXT,
+                row_hash TEXT
             )
             """
         )
+        # Idempotent migration for pre-existing databases.
+        for column in ("prev_hash TEXT", "row_hash TEXT"):
+            try:
+                connection.execute(f"ALTER TABLE audit_logs ADD COLUMN {column}")
+            except Exception:
+                pass
         connection.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant ON audit_logs(tenant_id)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor_ref)")
+
+
+def _compute_row_hash(
+    prev_hash: str,
+    created_at: str,
+    actor_ref: str,
+    tenant_id: str | None,
+    action: str,
+    target_type: str | None,
+    target_id: str | None,
+    detail_json: str | None,
+) -> str:
+    payload = "|".join(
+        [
+            prev_hash,
+            created_at,
+            actor_ref,
+            tenant_id or "",
+            action,
+            target_type or "",
+            target_id or "",
+            detail_json or "",
+        ]
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def record_audit(
@@ -35,24 +82,68 @@ def record_audit(
     target_id: str | None = None,
     detail: dict[str, Any] | None = None,
 ) -> None:
-    """Append an immutable audit entry. Recording must never break the request,
-    so callers may wrap this if they need defensive behavior, but the table is
-    intentionally append-only with no update path."""
-    with connect() as connection:
+    """Append a tamper-evident audit entry, chained to the prior entry.
+
+    The read-of-last-hash and the insert run inside a single IMMEDIATE
+    transaction so concurrent audit writes cannot fork the chain. The table is
+    append-only; there is no update path.
+    """
+    detail_json = encode_json(detail) if detail is not None else None
+    connection = connect()
+    connection.isolation_level = None  # manage the transaction explicitly
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        last = connection.execute("SELECT row_hash FROM audit_logs ORDER BY id DESC LIMIT 1").fetchone()
+        prev_hash = last["row_hash"] if last and last["row_hash"] else GENESIS_HASH
+        created_at = connection.execute("SELECT datetime('now') AS now").fetchone()["now"]
+        row_hash = _compute_row_hash(
+            prev_hash, created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json
+        )
         connection.execute(
             """
-            INSERT INTO audit_logs (created_at, actor_ref, tenant_id, action, target_type, target_id, detail)
-            VALUES (datetime('now'), ?, ?, ?, ?, ?, ?)
+            INSERT INTO audit_logs
+                (created_at, actor_ref, tenant_id, action, target_type, target_id, detail, prev_hash, row_hash)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (
-                actor_ref,
-                tenant_id,
-                action,
-                target_type,
-                target_id,
-                encode_json(detail) if detail is not None else None,
-            ),
+            (created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json, prev_hash, row_hash),
         )
+        connection.execute("COMMIT")
+    finally:
+        connection.close()
+
+
+def verify_audit_chain(*, tenant_id: str | None = None) -> dict[str, Any]:
+    """Recompute the hash chain and report its integrity.
+
+    Returns {ok, entries, broken_at}. broken_at is the id of the first entry
+    whose stored hash or prev-link does not match a recomputation — evidence of
+    deletion, reordering, or modification. The chain is global (ordered by id);
+    ``tenant_id`` is accepted for API symmetry but verification always covers the
+    whole chain, since a per-tenant view cannot prove nothing was removed.
+    """
+    with connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT id, created_at, actor_ref, tenant_id, action, target_type, target_id, detail, prev_hash, row_hash
+            FROM audit_logs ORDER BY id
+            """
+        ).fetchall()
+    expected_prev = GENESIS_HASH
+    for row in rows:
+        recomputed = _compute_row_hash(
+            expected_prev,
+            row["created_at"],
+            row["actor_ref"],
+            row["tenant_id"],
+            row["action"],
+            row["target_type"],
+            row["target_id"],
+            row["detail"],
+        )
+        if row["prev_hash"] != expected_prev or row["row_hash"] != recomputed:
+            return {"ok": False, "entries": len(rows), "broken_at": row["id"]}
+        expected_prev = row["row_hash"]
+    return {"ok": True, "entries": len(rows), "broken_at": None}
 
 
 def list_audit_logs(
