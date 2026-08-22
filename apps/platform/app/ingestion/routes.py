@@ -21,6 +21,32 @@ from app.storage.workflow import refresh_workflow_state
 router = APIRouter()
 
 
+# Attributes each event type requires beyond the envelope. The entity
+# processors access these without a default, so a missing one previously crashed
+# ingestion with an unhandled 500 after a partial write (audit C-6). Validation
+# runs before any write, so a malformed batch is rejected atomically with 422.
+_REQUIRED_ATTRIBUTES: dict[str, tuple[str, ...]] = {
+    "deployment.event": ("deployment_id", "version", "artifact_ref"),
+    "prompt.event": ("prompt_id", "version", "artifact_ref"),
+}
+
+
+def _validate_event_attributes(events: list[dict[str, Any]]) -> None:
+    for index, event in enumerate(events):
+        required = _REQUIRED_ATTRIBUTES.get(event.get("type", ""))
+        if not required:
+            continue
+        attributes = event.get("attributes") or {}
+        if not isinstance(attributes, dict):
+            raise HTTPException(status_code=422, detail=f"events[{index}].attributes must be an object")
+        missing = [field for field in required if attributes.get(field) in (None, "")]
+        if missing:
+            raise HTTPException(
+                status_code=422,
+                detail=f"events[{index}] ({event.get('type')}) is missing required attributes: {', '.join(missing)}",
+            )
+
+
 def _bind_events_to_tenant(events: list[dict[str, Any]], tenant_id: str) -> None:
     """Enforce that every event belongs to the authenticated tenant.
 
@@ -65,6 +91,9 @@ async def ingest_events(
             raise HTTPException(status_code=401, detail="Signature mismatch")
 
     events = [event.model_dump() for event in batch.events]
+    # Validate and bind BEFORE any write, so a malformed batch is rejected
+    # atomically (422) rather than crashing mid-pipeline after a partial insert.
+    _validate_event_attributes(events)
     _bind_events_to_tenant(events, tenant_id)
     accepted = insert_events(events)
     process_events(events)
