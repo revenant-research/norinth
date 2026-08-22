@@ -79,12 +79,28 @@ def client(fresh_db):
         yield test_client
 
 
+ROTATED_ADMIN_PASSWORD = "rotated-admin-pw-123456"
+
+
 @pytest.fixture
 def super_admin_client(client):
-    """A client already logged in as the bootstrap super admin."""
-    resp = client.post(
+    """A super-admin client that has completed first-login password rotation.
+
+    The bootstrap admin is created with must_change_password=True, so the real
+    flow is: log in, change the password, then operate. This fixture performs
+    that rotation and returns an operational client.
+    """
+    login = client.post(
         "/api/auth/login",
         json={"email": DEFAULT_ADMIN_EMAIL, "password": DEFAULT_ADMIN_PASSWORD},
     )
-    assert resp.status_code == 200, resp.text
+    assert login.status_code == 200, login.text
+    changed = client.post(
+        "/api/auth/change-password",
+        json={
+            "current_password": DEFAULT_ADMIN_PASSWORD,
+            "new_password": ROTATED_ADMIN_PASSWORD,
+        },
+    )
+    assert changed.status_code == 200, changed.text
     return client

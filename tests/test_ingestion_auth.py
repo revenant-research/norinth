@@ -8,6 +8,8 @@ Now the tenant is derived from a per-tenant key and enforced on every event.
 
 from __future__ import annotations
 
+from tests.helpers import login_and_activate
+
 
 def _model_call_event(tenant_id: str | None) -> dict:
     metadata: dict = {"application_name": "App", "workflow_name": "wf"}
@@ -89,10 +91,7 @@ def test_ingestion_key_lifecycle(super_admin_client):
     from fastapi.testclient import TestClient
 
     with TestClient(app) as org:
-        org.post(
-            "/api/auth/login",
-            json={"email": "admin@beta.test", "password": "beta-admin-pw-1"},
-        )
+        login_and_activate(org, "admin@beta.test", "beta-admin-pw-1")
         created = org.post("/api/ingestion-keys", json={"name": "prod app"})
         assert created.status_code == 200, created.text
         body = created.json()
@@ -130,11 +129,11 @@ def test_org_admin_cannot_manage_another_tenants_keys(super_admin_client):
     from fastapi.testclient import TestClient
 
     with TestClient(app) as gamma:
-        gamma.post("/api/auth/login", json={"email": "a@gamma.test", "password": "gamma-admin-pw-1"})
+        login_and_activate(gamma, "a@gamma.test", "gamma-admin-pw-1")
         gamma.post("/api/ingestion-keys", json={"name": "gamma key"})
 
     with TestClient(app) as beta:
-        beta.post("/api/auth/login", json={"email": "a@beta.test", "password": "beta-admin-pw-1"})
+        login_and_activate(beta, "a@beta.test", "beta-admin-pw-1")
         listing = beta.get("/api/ingestion-keys")
         assert listing.status_code == 200
         # beta sees only its own (zero) keys, not gamma's.

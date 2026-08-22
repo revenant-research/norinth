@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 
 from app.storage.workflow import (
     delete_session,
+    delete_sessions_for_user,
     insert_session,
     load_session,
     purge_expired_sessions,
@@ -45,21 +46,36 @@ def verify_password(password: str, stored: str | None) -> bool:
     return hmac.compare_digest(derived.hex(), expected_hex)
 
 
+def _hash_token(token: str) -> str:
+    """Hash a session token for storage.
+
+    Session tokens are high-entropy bearer secrets; storing only their SHA-256
+    means a database read (or backup leak) never yields a usable, replayable
+    token (audit H-7).
+    """
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def create_session(user_ref: str) -> str:
     purge_expired_sessions()
     token = secrets.token_urlsafe(32)
     expires_at = (datetime.now(UTC) + timedelta(hours=SESSION_TTL_HOURS)).isoformat()
-    insert_session(token, user_ref, expires_at)
+    insert_session(_hash_token(token), user_ref, expires_at)
     return token
 
 
 def resolve_session(token: str | None) -> str | None:
     if not token:
         return None
-    session = load_session(token)
+    session = load_session(_hash_token(token))
     return None if session is None else session["user_ref"]
 
 
 def end_session(token: str | None) -> None:
     if token:
-        delete_session(token)
+        delete_session(_hash_token(token))
+
+
+def end_all_sessions(user_ref: str) -> None:
+    """Revoke every active session for a user (e.g. after a password change)."""
+    delete_sessions_for_user(user_ref)

@@ -531,6 +531,11 @@ def delete_session(token: str) -> None:
         connection.execute("DELETE FROM sessions WHERE token = ?", (token,))
 
 
+def delete_sessions_for_user(user_ref: str) -> None:
+    with connect() as connection:
+        connection.execute("DELETE FROM sessions WHERE user_ref = ?", (user_ref,))
+
+
 def purge_expired_sessions() -> None:
     with connect() as connection:
         connection.execute("DELETE FROM sessions WHERE datetime(expires_at) <= datetime('now')")
