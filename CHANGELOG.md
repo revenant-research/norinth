@@ -21,6 +21,22 @@ to Semantic Versioning once it reaches a tagged release.
   roadmap.
 
 ### Security
+- **Separation of duties (C-4).** An org_admin can no longer unilaterally
+  escalate to governance decision authority. Administration roles (org_admin)
+  and governance-decision roles (governance_admin, risk_owner, control_owner,
+  governance_reviewer) are now mutually exclusive: a role assignment that would
+  give one user both is rejected (409). Administrators also cannot change their
+  own role assignments (403) — another administrator must. And being the
+  auto-assigned reviewer of a task no longer bypasses the required decision
+  permission (B3).
+- **Removed dangerous governance-plane endpoints (C-7, H-2).** `POST /api/users`
+  and `POST /api/role-assignments` (on the tenant-governance router) authorized
+  on `config.write` with no tenant scoping on the target, which let any holder
+  overwrite arbitrary accounts including the super admin (a lockout DoS) and
+  self-grant globally-scoped roles. User and role management now lives only on
+  the properly-scoped org-administration plane (`/api/org/*`).
+
+### Security
 - **Server-side password-change enforcement (C-4).** `must_change_password` is
   now enforced by middleware: a user holding a temporary password can log in and
   change it, but is blocked (403) from every other `/api/*` endpoint until they
