@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from time import perf_counter
-from typing import Any, Callable
+from typing import Any
 
 from .context import TraceContext, reset_context, set_context
 from .privacy import infer_governance_context

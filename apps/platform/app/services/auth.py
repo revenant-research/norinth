@@ -4,7 +4,7 @@ import hashlib
 import hmac
 import os
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from app.storage.workflow import (
     delete_session,
@@ -48,7 +48,7 @@ def verify_password(password: str, stored: str | None) -> bool:
 def create_session(user_ref: str) -> str:
     purge_expired_sessions()
     token = secrets.token_urlsafe(32)
-    expires_at = (datetime.now(timezone.utc) + timedelta(hours=SESSION_TTL_HOURS)).isoformat()
+    expires_at = (datetime.now(UTC) + timedelta(hours=SESSION_TTL_HOURS)).isoformat()
     insert_session(token, user_ref, expires_at)
     return token
 

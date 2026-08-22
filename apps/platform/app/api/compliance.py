@@ -1,19 +1,19 @@
 from __future__ import annotations
 
 from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.schemas.events import ScopeFilter
-from app.storage.raw_events import list_events
 from app.dependencies import ActorContext, current_actor, scoped_dependency
+from app.schemas.events import ScopeFilter
 from app.services.authorization import (
-    AuthorizationError,
     ENTERPRISE_SUBSCRIBER,
     GOVERNANCE_ADMIN,
     PERM_NETWORK_READ,
-    require_active_actor,
+    AuthorizationError,
     require_permission,
 )
+from app.storage.raw_events import list_events
 from app.storage.workflow import list_actor_role_assignments
 
 router = APIRouter()
@@ -137,7 +137,7 @@ def list_network_vendors(actor: ActorContext = Depends(current_actor)):
     try:
         require_permission(actor, PERM_NETWORK_READ)
     except AuthorizationError as error:
-        raise HTTPException(status_code=403, detail=str(error))
+        raise HTTPException(status_code=403, detail=str(error)) from error
     assignments = list_actor_role_assignments(actor.user_ref)
 
     authorized_tenants = [

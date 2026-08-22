@@ -9,14 +9,14 @@
     "preview": "vite preview --host 127.0.0.1 --port 5174"
   },
   "dependencies": {
-    "react": "latest",
-    "react-dom": "latest"
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
   },
   "devDependencies": {
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.7.0",
-    "typescript": "latest",
+    "typescript": "~6.0.3",
     "vite": "^5.4.21"
   }
 }

@@ -9,21 +9,20 @@ from pydantic import BaseModel, Field
 from app.dependencies import ActorContext, current_actor
 from app.schemas.events import ScopeFilter
 from app.services.auth import hash_password
-from app.services.governance import build_summary
 from app.services.authorization import (
-    AuthorizationError,
     ORG_ADMIN,
     PERM_ROLE_ASSIGN,
     PERM_USER_MANAGE,
+    AuthorizationError,
     require_permission,
     require_super_admin,
 )
+from app.services.governance import build_summary
 from app.storage.audit import list_audit_logs, record_audit
 from app.storage.entities import tenant_application_stats
 from app.storage.organizations import (
     create_organization,
     list_organizations,
-    load_organization,
     set_organization_status,
 )
 from app.storage.raw_events import count_events
@@ -190,7 +189,7 @@ def provision_organization(payload: CreateOrganizationRequest, actor: ActorConte
     try:
         organization = create_organization(payload.tenant_id, payload.name, actor.user_ref)
     except ValueError as error:
-        raise HTTPException(status_code=409, detail=str(error))
+        raise HTTPException(status_code=409, detail=str(error)) from error
     generated_password = payload.admin_password or _temp_password()
     admin_user = create_platform_user(
         user_ref=payload.admin_email,
@@ -238,7 +237,7 @@ def update_organization_status(tenant_id: str, payload: OrganizationStatusReques
     try:
         organization = set_organization_status(tenant_id, payload.status)
     except ValueError as error:
-        raise HTTPException(status_code=404, detail=str(error))
+        raise HTTPException(status_code=404, detail=str(error)) from error
     record_audit(
         actor_ref=actor.user_ref,
         action="org.status",
@@ -282,7 +281,7 @@ def update_account_status(user_ref: str, payload: AccountStatusRequest, actor: A
     try:
         updated = set_user_status(user_ref, payload.status)
     except ValueError as error:
-        raise HTTPException(status_code=404, detail=str(error))
+        raise HTTPException(status_code=404, detail=str(error)) from error
     record_audit(
         actor_ref=actor.user_ref,
         action="account.status",

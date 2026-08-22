@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from .autoinstrument import NorinthFastAPIMiddleware, autoinstrument as run_autoinstrument
+from .autoinstrument import NorinthFastAPIMiddleware
+from .autoinstrument import autoinstrument as run_autoinstrument
 from .client import NorinthClient
 from .config import NorinthConfig
 from .wrappers import wrap_client

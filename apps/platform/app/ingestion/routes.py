@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import hmac
 import hashlib
+import hmac
 import os
 
-from fastapi import APIRouter, Depends, Request, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.dependencies import require_api_key
 from app.schemas.events import EventBatch

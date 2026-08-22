@@ -1,0 +1,35 @@
+# Repo-wide tooling configuration for the Norinth platform.
+# Package builds live in packages/python-sdk/pyproject.toml; this file
+# configures linting, typing, and tests for the whole monorepo.
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = [".venv", "node_modules", "apps/platform/app/dashboard/static"]
+
+[tool.ruff.lint]
+# Pragmatic starter ruleset: pyflakes (F), pycodestyle errors (E), import
+# sorting (I), bugbears (B), and pyupgrade (UP). Tightened over time.
+select = ["E", "F", "I", "B", "UP"]
+ignore = [
+    "E501",   # line length handled by formatter, not enforced hard yet
+    "B008",   # FastAPI uses function calls (Depends(), Header()) in defaults by design
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra -q"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.mypy]
+python_version = "3.11"
+# Lenient baseline for the existing codebase; new modules should be stricter.
+ignore_missing_imports = true
+warn_unused_ignores = false
+warn_redundant_casts = true
+check_untyped_defs = false
+exclude = ["\\.venv", "node_modules", "apps/platform/app/dashboard/static", "demo-apps"]

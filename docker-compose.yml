@@ -1,8 +1,6 @@
-version: '3.8'
-
 services:
   norinth-platform:
-    build: 
+    build:
       context: .
       dockerfile: apps/platform/Dockerfile
     container_name: norinth-platform
@@ -11,7 +9,8 @@ services:
     volumes:
       - norinth-data:/app/data
     environment:
-      - NORINTH_DB_PATH=/app/data/norinth.db
+      # Must match the variable the application actually reads (storage/raw_events.py).
+      - NORINTH_PLATFORM_DB=/app/data/norinth.sqlite3
     restart: unless-stopped
 
 volumes:
