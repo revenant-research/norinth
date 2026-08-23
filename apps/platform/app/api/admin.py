@@ -21,6 +21,7 @@ from app.services.authorization import (
 from app.services.governance import build_summary
 from app.storage.audit import list_audit_logs, record_audit, verify_audit_chain
 from app.storage.entities import tenant_application_stats
+from app.storage.migrations import schema_status
 from app.storage.organizations import (
     create_organization,
     list_organizations,
@@ -310,6 +311,13 @@ def purge_old_events(payload: RetentionPurgeRequest, actor: ActorContext = Depen
         detail={"deleted": deleted, "retention_days": payload.retention_days},
     )
     return {"deleted": deleted, "retention_days": payload.retention_days}
+
+
+@router.get("/api/admin/schema")
+def schema(actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
+    """Database backend and applied/pending schema migrations (super admin)."""
+    _guard_super_admin(actor)
+    return schema_status()
 
 
 @router.get("/api/admin/users")
