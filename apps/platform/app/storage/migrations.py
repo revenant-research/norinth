@@ -92,9 +92,17 @@ def _0002_event_ingest_indexes(connection) -> None:
     connection.execute("CREATE INDEX IF NOT EXISTS idx_risk_findings_rule ON risk_findings(rule_id)")
 
 
+def _0003_saml(connection) -> None:
+    """SAML 2.0 SSO: per-tenant IdP configuration and in-flight request ids."""
+    from app.storage.saml import ensure_saml_tables
+
+    ensure_saml_tables(connection)
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
+    Migration(3, "SAML 2.0 configuration and request state", _0003_saml),
 ]
 
 

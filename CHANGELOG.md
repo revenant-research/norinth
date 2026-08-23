@@ -123,6 +123,20 @@ to Semantic Versioning once it reaches a tagged release.
   target.
 
 ### Added
+- **SSO via SAML 2.0.** Alongside OIDC, organizations can now federate with
+  SAML-only identity providers (ADFS, Okta/Entra SAML apps): SP-initiated Web
+  Browser SSO with an HTTP-Redirect AuthnRequest and HTTP-POST Response,
+  SP metadata at `/api/auth/saml/metadata`, and org-admin configuration at
+  `/api/org/saml` (IdP entity id, SSO URL, signing certificate, JIT default
+  role, optional email-domain restriction). Responses are parsed with a hardened
+  XML parser and their signature verified (signxml) against the configured IdP
+  certificate only — never one embedded in the message — then Issuer, Audience,
+  InResponseTo (single-use), NotBefore/NotOnOrAfter, StatusCode, and the bearer
+  SubjectConfirmation Recipient are validated. JIT provisioning shares the OIDC
+  path (tenant-bound, non-admin default role, no password). Schema added as
+  migration 3.
+
+### Added
 - **Compliance UI.** A new "Compliance" workspace view shows per-framework
   coverage (NIST AI RMF, ISO/IEC 42001, EU AI Act, SOC 2, OWASP Agentic, ...)
   with accessible progress bars toned by percentage and expandable lists of the
