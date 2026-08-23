@@ -122,6 +122,15 @@ to Semantic Versioning once it reaches a tagged release.
   endpoints. Also: /api/decisions now returns 404 (not 500) for an unknown
   target.
 
+### Added
+- **Compliance UI.** A new "Compliance" workspace view shows per-framework
+  coverage (NIST AI RMF, ISO/IEC 42001, EU AI Act, SOC 2, OWASP Agentic, ...)
+  with accessible progress bars toned by percentage and expandable lists of the
+  specific outstanding requirements, plus one-click **audit-packet export**
+  (timestamped JSON download) that surfaces the audit-trail integrity verdict
+  and packet counts. Makes the evidence deliverables self-serve for reviewers
+  and auditors. Verified live in the browser; 3 new component tests.
+
 ### Security
 - **Stored secrets encrypted at rest.** Tenant OIDC client secrets are now
   encrypted with AES-256-GCM under a master key (`NORINTH_SECRET_KEY`, injected

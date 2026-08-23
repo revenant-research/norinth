@@ -1385,3 +1385,46 @@ button.secondary.danger {
   color: #7a1c13;
   border-color: rgba(180, 35, 24, 0.35);
 }
+
+/* --- Compliance ---------------------------------------------------------------- */
+.coverage-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line, #e5e5e0);
+  overflow: hidden;
+  margin: 8px 0;
+}
+.coverage-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 200ms ease;
+}
+.coverage-fill.good {
+  background: #1f6b3a;
+}
+.coverage-fill.mid {
+  background: #b06c00;
+}
+.coverage-fill.low {
+  background: #b42318;
+}
+.gap-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+button.linklike {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 13px;
+}
+.muted {
+  color: var(--muted, #5a5a55);
+  font-size: 13px;
+}
