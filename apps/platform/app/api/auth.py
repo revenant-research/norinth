@@ -4,6 +4,7 @@ import os
 from typing import Any
 
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
+from pydantic import BaseModel, Field
 
 from app.dependencies import SESSION_COOKIE, ActorContext, current_actor
 from app.schemas.auth import ChangePasswordRequest, LoginRequest
@@ -19,6 +20,8 @@ from app.services.authorization import effective_permissions
 from app.services.bootstrap import using_development_defaults
 from app.storage.audit import record_audit
 from app.storage.login_attempts import clear_attempts, email_subject, ip_subject, is_locked, register_failure
+from app.storage.notifications import consume_invite, peek_invite
+from app.storage.organizations import load_organization
 from app.storage.workflow import (
     get_user_by_email,
     load_platform_user,
@@ -141,3 +144,36 @@ def change_password(
     _set_session_cookie(response, token)
     record_audit(actor_ref=actor.user_ref, action="auth.change_password", tenant_id=actor.tenant_id)
     return {"ok": True, "must_change_password": False}
+
+
+@router.get("/api/auth/invite/{token}")
+def invite_preview(token: str) -> dict[str, Any]:
+    """What the invite page shows before the user sets a password."""
+    invite = peek_invite(token)
+    if invite is None:
+        raise HTTPException(status_code=404, detail="This invite link is invalid, expired, or already used")
+    user = load_platform_user(invite["user_ref"]) or {}
+    organization = load_organization(invite["tenant_id"]) or {}
+    return {"email": invite["user_ref"], "display_name": user.get("display_name"), "organization": organization.get("name") or invite["tenant_id"]}
+
+
+class AcceptInviteRequest(BaseModel):
+    token: str = Field(min_length=10, max_length=200)
+    password: str = Field(min_length=12, max_length=256)
+
+
+@router.post("/api/auth/accept-invite")
+def accept_invite(payload: AcceptInviteRequest, response: Response) -> dict[str, Any]:
+    invite = consume_invite(payload.token)
+    if invite is None:
+        raise HTTPException(status_code=404, detail="This invite link is invalid, expired, or already used")
+    user = load_platform_user(invite["user_ref"])
+    if user is None or user.get("status") != "active":
+        raise HTTPException(status_code=403, detail="This account is not active")
+    set_user_password(invite["user_ref"], hash_password(payload.password))  # also clears must_change_password
+    end_all_sessions(invite["user_ref"])
+    token = create_session(invite["user_ref"])
+    _set_session_cookie(response, token)
+    record_audit(actor_ref=invite["user_ref"], action="auth.accept_invite", tenant_id=invite["tenant_id"], target_type="user", target_id=invite["user_ref"])
+    actor = ActorContext(user_ref=invite["user_ref"], tenant_id=invite["tenant_id"], platform_role=None)
+    return {"user": _actor_profile(actor)}

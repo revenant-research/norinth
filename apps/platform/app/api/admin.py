@@ -20,17 +20,20 @@ from app.services.authorization import (
     would_violate_role_separation,
 )
 from app.services.governance import build_summary
+from app.services.notifications import emit as notify
+from app.services.notifications import public_base_url, smtp_configured
 from app.storage.audit import count_audit_logs, list_audit_logs, record_audit, verify_audit_chain
 from app.storage.entities import tenant_application_stats
 from app.storage.leads import list_leads, set_lead_status
 from app.storage.migrations import schema_status
+from app.storage.notifications import INVITE_TTL_DAYS, create_invite
 from app.storage.organizations import (
     create_organization,
     list_organizations,
     load_organization,
     set_organization_status,
 )
-from app.storage.raw_events import count_events
+from app.storage.raw_events import connect, count_events
 from app.storage.retention import (
     purge_events_older_than,
     purge_tenant_data,
@@ -512,10 +515,32 @@ def create_org_user(payload: CreateUserRequest, actor: ActorContext = Depends(cu
         target_type="user",
         target_id=payload.email,
     )
+    # Invite link: the user sets their own password through it (no password in
+    # transit). Emailed when SMTP is configured; always returned so the admin
+    # can send it through their own channel when it is not.
+    token = create_invite(payload.email, tenant_id, actor.user_ref)
+    invite_url = f"{public_base_url()}/#invite/{token}"
+    organization = load_organization(tenant_id) or {}
+    with connect() as connection:
+        notify(
+            connection,
+            tenant_id=tenant_id,
+            event_type="user.invited",
+            subject=f"You have been invited to Norinth by {organization.get('name') or tenant_id}",
+            text=(
+                f"{actor.user_ref} invited you to {organization.get('name') or tenant_id}'s AI governance workspace.\n\n"
+                f"Set your password and sign in with this link (valid for {INVITE_TTL_DAYS} days):"
+            ),
+            data={"user_ref": payload.email, "invited_by": actor.user_ref},
+            to_users=[payload.email],
+            link=invite_url,
+        )
     return {
         "user": {key: value for key, value in user.items() if key != "password_hash"},
         # Only returned when the platform generated the password.
         "temporary_password": None if payload.password else generated_password,
+        "invite_url": invite_url,
+        "invite_emailed": smtp_configured(),
     }
 
 

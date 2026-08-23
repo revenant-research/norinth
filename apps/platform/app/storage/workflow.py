@@ -181,6 +181,27 @@ def init_workflow() -> None:
         connection.execute("CREATE INDEX IF NOT EXISTS idx_platform_users_tenant ON platform_users(tenant_id)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_ref)")
         seed_role_permissions(connection)
+        seed_review_queue_policies(connection)
+
+
+# Out-of-the-box routing so reviews reach a named person from the first day.
+# Organization administrators can change these under Review Work.
+DEFAULT_REVIEW_QUEUE_POLICIES: list[dict[str, Any]] = [
+    {"policy_id": "default-intake", "task_type": "intake_review", "assigned_role": "governance_reviewer", "due_days": 5, "escalation_days": 3},
+    {"policy_id": "default-material-change", "task_type": "material_change_review", "assigned_role": "governance_admin", "due_days": 3, "escalation_days": 2},
+]
+
+
+def seed_review_queue_policies(connection) -> None:
+    for policy in DEFAULT_REVIEW_QUEUE_POLICIES:
+        connection.execute(
+            """
+            INSERT INTO review_queue_policies (policy_id, task_type, assigned_role, due_days, escalation_days, source, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'default', datetime('now'), datetime('now'))
+            ON CONFLICT(policy_id) DO NOTHING
+            """,
+            (policy["policy_id"], policy["task_type"], policy["assigned_role"], policy["due_days"], policy["escalation_days"]),
+        )
 
 
 # Default role-to-permission grants. Platform super admins are not listed here
@@ -325,6 +346,52 @@ def queue_status(connection, due_at: str, escalation_days: int, assignee: str | 
     return "escalated" if now > escalated_at else "overdue"
 
 
+def _notify_queue_transition(connection, task, assigned_role, assigned_to, due_at, escalation_status) -> None:
+    """Emit notifications only on transitions: newly assigned, newly overdue,
+    newly escalated. Queue refresh runs on every ingest, so comparing with the
+    stored row keeps this from repeating."""
+    from app.services.notifications import emit, public_base_url
+
+    tenant_id = task.get("tenant_id")
+    link = f"{public_base_url()}/#review/{task['task_id']}"
+    title = task.get("title") or task.get("task_type") or task["task_id"]
+    if assigned_to and assigned_to != task.get("assigned_to"):
+        emit(
+            connection,
+            tenant_id=tenant_id,
+            event_type="review.assigned",
+            subject=f"Review assigned to you: {title}",
+            text=f"A {task.get('task_type', 'review')} for {task.get('application_name')} is routed to you as {assigned_role}. Due {due_at}.",
+            data={"task_id": task["task_id"], "task_type": task.get("task_type"), "application_name": task.get("application_name"), "due_at": due_at},
+            to_users=[assigned_to],
+            link=link,
+        )
+    previous = task.get("escalation_status")
+    if escalation_status == "overdue" and previous not in {"overdue", "escalated"}:
+        emit(
+            connection,
+            tenant_id=tenant_id,
+            event_type="review.overdue",
+            subject=f"Review overdue: {title}",
+            text=f"The {task.get('task_type', 'review')} for {task.get('application_name')} was due {due_at} and has not been decided.",
+            data={"task_id": task["task_id"], "assigned_to": assigned_to, "due_at": due_at},
+            to_users=[assigned_to] if assigned_to else [],
+            link=link,
+        )
+    if escalation_status == "escalated" and previous != "escalated":
+        emit(
+            connection,
+            tenant_id=tenant_id,
+            event_type="review.escalated",
+            subject=f"Review escalated: {title}",
+            text=f"The {task.get('task_type', 'review')} for {task.get('application_name')} assigned to {assigned_to or 'nobody'} is past its escalation deadline (due {due_at}). An administrator should reassign or decide it.",
+            data={"task_id": task["task_id"], "assigned_to": assigned_to, "due_at": due_at},
+            to_users=[assigned_to] if assigned_to else [],
+            to_roles=["org_admin"],
+            link=link,
+        )
+
+
 def mark_review_task_queue_state(
     connection,
     task: dict[str, Any],
@@ -336,6 +403,7 @@ def mark_review_task_queue_state(
     escalated_at = None
     if escalation_status == "escalated":
         escalated_at = connection.execute("SELECT datetime('now') AS now").fetchone()["now"]
+    _notify_queue_transition(connection, task, assigned_role, assigned_to, due_at, escalation_status)
     connection.execute(
         """
         UPDATE review_tasks

@@ -20,6 +20,7 @@ import {
 import { LandingPage } from "./components/landing";
 import { LeadsView } from "./components/leads";
 import { SetupWizard } from "./components/setup";
+import { InviteScreen } from "./components/invite";
 import { GettingStarted } from "./components/guide";
 import { DocsView } from "./components/docs";
 import { Sidebar, SkipLink, useRouteAnnouncement } from "./components/shell";
@@ -118,6 +119,19 @@ export function App() {
 
   function content() {
     if (!bootstrapped) return <div className="boot">Loading workspace</div>;
+    // Invite links work regardless of sign-in state: #invite/<token>.
+    const hash = currentHash();
+    if (hash[0] === "invite" && hash[1]) {
+      return (
+        <InviteScreen
+          token={hash[1]}
+          onAccepted={(invited) => {
+            window.location.hash = "#portfolio";
+            setUser(invited);
+          }}
+        />
+      );
+    }
     // A fresh install: no organizations yet. Guide the operator instead of
     // showing a landing page to someone who just ran the installer.
     if (needsSetup && (!user || user.is_super_admin)) {

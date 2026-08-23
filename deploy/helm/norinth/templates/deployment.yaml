@@ -50,6 +50,18 @@ spec:
               value: {{ .Values.config.trustProxy | quote }}
             - name: NORINTH_SESSION_TTL_HOURS
               value: {{ .Values.config.sessionTtlHours | quote }}
+            {{- if .Values.config.smtp.host }}
+            - name: NORINTH_SMTP_HOST
+              value: {{ .Values.config.smtp.host | quote }}
+            - name: NORINTH_SMTP_PORT
+              value: {{ .Values.config.smtp.port | quote }}
+            - name: NORINTH_SMTP_USER
+              value: {{ .Values.config.smtp.user | quote }}
+            - name: NORINTH_SMTP_FROM
+              value: {{ .Values.config.smtp.from | quote }}
+            - name: NORINTH_SMTP_STARTTLS
+              value: {{ .Values.config.smtp.starttls | quote }}
+            {{- end }}
             {{- with .Values.config.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
