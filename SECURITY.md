@@ -30,4 +30,7 @@ Phase 0 items in that roadmap are complete.
   documented dev default (`admin@norinth.local` / `norinth-admin`) is for local
   use only.
 - `NORINTH_SIGNING_SECRET` — required to authenticate SDK ingestion batches.
+- `NORINTH_SECRET_KEY` — 32-byte base64 master key used to encrypt stored
+  secrets (SSO client secrets) with AES-256-GCM. Without it, secrets are stored
+  in plaintext (development only).
 - `NORINTH_COOKIE_SECURE=1` — set behind TLS so session cookies are `Secure`.
