@@ -178,6 +178,126 @@ export function SsoSettings({ tenantId }: { tenantId: string }) {
   );
 }
 
+// --- SAML -------------------------------------------------------------------------
+
+type SamlPayload = {
+  saml: { idp_entity_id: string; idp_sso_url: string; idp_certificate: string; default_role: string; allowed_email_domain: string | null; enabled: number | boolean } | null;
+  sp_entity_id: string;
+  acs_url: string;
+  login_url: string;
+};
+
+export function SamlSettings() {
+  const { value, error, reload } = useResource(() => getJson<SamlPayload>("/api/org/saml"));
+  const [form, setForm] = useState({ idp_entity_id: "", idp_sso_url: "", idp_certificate: "", default_role: "governance_reviewer", allowed_email_domain: "" });
+  const [saving, setSaving] = useState(false);
+  const config = value?.saml;
+  const enabled = !!(config && config.enabled);
+
+  useEffect(() => {
+    if (config) {
+      setForm((current) => ({
+        ...current,
+        idp_entity_id: config.idp_entity_id,
+        idp_sso_url: config.idp_sso_url,
+        idp_certificate: config.idp_certificate,
+        default_role: config.default_role,
+        allowed_email_domain: config.allowed_email_domain || "",
+      }));
+    }
+  }, [config]);
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      await putJson("/api/org/saml", { ...form, allowed_email_domain: form.allowed_email_domain || null });
+      toast.success("SAML configured.");
+      reload();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "SAML configuration failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function disable() {
+    const ok = await confirm({ title: "Disable SAML SSO?", body: "Users who sign in through this identity provider will be unable to sign in until it is re-enabled.", confirmLabel: "Disable SAML", tone: "danger" });
+    if (!ok) return;
+    try {
+      await deleteJson("/api/org/saml");
+      toast.success("SAML disabled.");
+      reload();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Could not disable SAML.");
+    }
+  }
+
+  return (
+    <Section title="Single sign-on (SAML 2.0)" description="For SAML-only identity providers (ADFS, Okta or Entra SAML apps). Import the SP metadata below into your provider, then paste its entity ID, SSO URL, and signing certificate here.">
+      {error ? <p className="feedback error" role="alert">{error}</p> : null}
+      <div className="status-row">
+        <Badge value={enabled ? "enabled" : "not configured"} />
+        {enabled && config ? <span>IdP {config.idp_entity_id}</span> : null}
+      </div>
+      <form className="admin-form" onSubmit={save} aria-label="Configure SAML">
+        <label>
+          IdP entity ID
+          <input value={form.idp_entity_id} onChange={(e) => setForm({ ...form, idp_entity_id: e.target.value })} required placeholder="https://idp.company.com/saml" />
+        </label>
+        <label>
+          IdP SSO URL
+          <input value={form.idp_sso_url} onChange={(e) => setForm({ ...form, idp_sso_url: e.target.value })} required placeholder="https://idp.company.com/sso" />
+        </label>
+        <label className="wide">
+          IdP signing certificate (PEM)
+          <textarea value={form.idp_certificate} onChange={(e) => setForm({ ...form, idp_certificate: e.target.value })} required rows={6} placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"} spellCheck={false} />
+        </label>
+        <label>
+          Default role for new users
+          <select value={form.default_role} onChange={(e) => setForm({ ...form, default_role: e.target.value })}>
+            {JIT_ROLES.map((role) => (
+              <option key={role} value={role}>
+                {role}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Restrict to email domain (optional)
+          <input value={form.allowed_email_domain} onChange={(e) => setForm({ ...form, allowed_email_domain: e.target.value })} placeholder="company.com" />
+        </label>
+        <div className="wide form-actions">
+          <button type="submit" disabled={saving}>
+            {saving ? "Saving…" : enabled ? "Update SAML" : "Enable SAML"}
+          </button>
+          {enabled ? (
+            <button type="button" className="secondary danger" onClick={disable}>
+              Disable SAML
+            </button>
+          ) : null}
+        </div>
+      </form>
+      {value ? (
+        <dl className="kv">
+          <dt>SP entity ID / metadata URL</dt>
+          <dd>
+            <code>{value.sp_entity_id}</code>
+          </dd>
+          <dt>Assertion Consumer Service (ACS) URL</dt>
+          <dd>
+            <code>{value.acs_url}</code>
+          </dd>
+          <dt>Sign-in link for your users</dt>
+          <dd>
+            <code>{value.login_url}</code>
+          </dd>
+        </dl>
+      ) : null}
+    </Section>
+  );
+}
+
 // --- generic token list (SCIM tokens / ingestion keys) --------------------------
 
 type TokenRecord = { status: string; name: string; created_at: string; last_used_at?: string | null } & Record<string, any>;
@@ -326,6 +446,7 @@ export function IdentityView({ tenantId }: { tenantId: string }) {
   return (
     <>
       <SsoSettings tenantId={tenantId} />
+      <SamlSettings />
       <ScimSettings />
       <IngestionKeySettings />
     </>
