@@ -70,3 +70,14 @@ def organization_is_active(tenant_id: str | None) -> bool:
     with connect() as connection:
         row = connection.execute("SELECT status FROM organizations WHERE tenant_id = ?", (tenant_id,)).fetchone()
     return row is not None and row["status"] == "active"
+
+
+def organization_is_suspended(tenant_id: str | None) -> bool:
+    """True only when an organization row exists and is not active. A missing
+    row (e.g. the local development tenant, which has no organization) is not
+    'suspended' -- the ingestion key is the authority there."""
+    if not tenant_id:
+        return False
+    with connect() as connection:
+        row = connection.execute("SELECT status FROM organizations WHERE tenant_id = ?", (tenant_id,)).fetchone()
+    return row is not None and row["status"] != "active"

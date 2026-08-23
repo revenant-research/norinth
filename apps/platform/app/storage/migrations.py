@@ -248,6 +248,7 @@ MIGRATIONS: list[Migration] = [
     Migration(8, "outbox delivery claims for multi-replica workers", _0008_outbox_claims),
     Migration(9, "tenant-scoped config tables (control library, risk rules, routing, owner policies)", _0009_config_table_tenancy),
     Migration(10, "tenant-scoped record keys (deployments, incidents, prompts, event dedup)", _0010_cross_tenant_keys),
+    Migration(11, "audit-chain HMAC anchor column", _0011_audit_hmac),
 ]
 
 
