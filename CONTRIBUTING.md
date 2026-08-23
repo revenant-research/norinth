@@ -29,6 +29,9 @@ make run              # run the platform on :8001
   test that fails on `main` and passes on the branch.
 - **CI must be green**: ruff lint, `pytest` (SQLite and PostgreSQL), and the frontend `vitest` + `tsc` build are required checks.
 - Frontend components get a `*.test.tsx` beside them (`make test-frontend`).
+- Never commit the compiled dashboard (`apps/platform/app/dashboard/static/` is
+  git-ignored). CI builds it from source, checks the platform serves it, and the
+  Docker image builds it in its own stage. Locally: `make build-frontend`.
 - **Never commit** secrets, `.env`, databases, `node_modules`, or virtualenvs
   (all git-ignored). `check-added-large-files` and `detect-private-key`
   pre-commit hooks guard this.

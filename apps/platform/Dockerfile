@@ -1,4 +1,17 @@
 # syntax=docker/dockerfile:1
+
+# ---- Stage 1: build the dashboard bundle from source -------------------------
+# The compiled bundle is a build artifact (not committed), so the image is
+# reproducible from source and reviewers never have to trust a minified blob.
+FROM node:20-alpine AS frontend
+WORKDIR /src/frontend
+COPY apps/platform/frontend/package.json apps/platform/frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY apps/platform/frontend/ ./
+# vite.config.ts emits to ../app/dashboard/static, i.e. /src/app/dashboard/static
+RUN npm run build
+
+# ---- Stage 2: runtime ----------------------------------------------------------
 FROM python:3.11-slim
 
 # Non-root runtime user
@@ -15,8 +28,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 COPY apps/platform/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code (includes the pre-built dashboard bundle under app/dashboard/static)
+# Application code, then the freshly built dashboard bundle on top
 COPY apps/platform/app /app/app
+COPY --from=frontend /src/app/dashboard/static /app/app/dashboard/static
 
 # Data directory for the SQLite database, owned by the runtime user
 RUN mkdir -p /app/data && chown -R norinth:norinth /app

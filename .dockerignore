@@ -1,0 +1,13 @@
+.git
+.venv
+venv
+**/__pycache__
+**/node_modules
+apps/platform/app/dashboard/static
+apps/platform/data
+*.sqlite3*
+.env
+.env.*
+tests
+docs
+demo-apps

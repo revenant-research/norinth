@@ -22,7 +22,8 @@ program from the SDK and shares only the public wire protocol
   generation and the cross-tenant `/api/network/vendors` endpoint.
 - **Authorization** (`app/services/authorization.py`) — roles including
   `ENTERPRISE_SUBSCRIBER` (the paid network access tier).
-- **Dashboard / buyer UI** (`app/dashboard/`, `frontend/`).
+- **Dashboard / buyer UI** (`frontend/` source; compiled into `app/dashboard/static/`
+  by `make build-frontend` / CI / Docker — never committed).
 
 ## Boundary rules
 
