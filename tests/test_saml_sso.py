@@ -139,6 +139,63 @@ def _start(browser) -> str:
     return authn.get("ID")
 
 
+_SAML_NS = "urn:oasis:names:tc:SAML:2.0:assertion"
+
+
+def _strip(payload: str, xpath: str) -> str:
+    root = etree.fromstring(base64.b64decode(payload))
+    for node in root.findall(xpath, {"saml": _SAML_NS}):
+        node.getparent().remove(node)
+    return base64.b64encode(etree.tostring(root)).decode()
+
+
+def test_response_level_inresponseto_rewrite_is_rejected(super_admin_client, idp):
+    """The M96 wrapping attack: an assertion signed alone (Entra default) is
+    wrapped in a Response whose root InResponseTo is swapped to a different
+    pending request. The signed SubjectConfirmationData still names the original
+    request, so the mismatch must be rejected."""
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    org = _org(super_admin_client)
+    _configure(org, idp)
+    with TestClient(app) as browser:
+        victim_req = _start(browser)
+        attacker_req = _start(browser)  # a second, distinct pending request
+        payload = idp.response(victim_req)  # assertion bound to victim_req
+        root = etree.fromstring(base64.b64decode(payload))
+        root.set("InResponseTo", attacker_req)  # rewrite only the unsigned root
+        mangled = base64.b64encode(etree.tostring(root)).decode()
+        resp = browser.post("/api/auth/saml/acs", data={"SAMLResponse": mangled}, follow_redirects=False)
+        assert resp.status_code == 401, resp.text
+    org.close()
+
+
+@pytest.mark.parametrize(
+    "xpath",
+    [
+        "saml:Assertion/saml:Subject/saml:SubjectConfirmation",
+        "saml:Assertion/saml:Conditions/saml:AudienceRestriction",
+    ],
+)
+def test_missing_mandatory_bindings_are_rejected(super_admin_client, idp, xpath):
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    org = _org(super_admin_client)
+    _configure(org, idp)
+    with TestClient(app) as browser:
+        req = _start(browser)
+        # Strip a mandatory element from an otherwise-valid (signed) response. The
+        # assertion signature covers its subtree, so removing SubjectConfirmation
+        # or AudienceRestriction also breaks the signature — either way the
+        # response must never be accepted (fail-closed, audit M96).
+        payload = _strip(idp.response(req), xpath)
+        resp = browser.post("/api/auth/saml/acs", data={"SAMLResponse": payload}, follow_redirects=False)
+        assert resp.status_code == 401, resp.text
+    org.close()
+
+
 def test_full_saml_login_with_jit(super_admin_client, idp):
     from app.main import app
     from fastapi.testclient import TestClient

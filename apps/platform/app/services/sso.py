@@ -77,7 +77,11 @@ def _pkce_challenge(verifier: str) -> str:
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
 
 
-def start_login(tenant_id: str, redirect_uri: str) -> str:
+def start_login(tenant_id: str, redirect_uri: str) -> tuple[str, str]:
+    """Return (authorization URL, state). The state is also set as a browser
+    cookie by the caller and re-checked at the callback, binding the flow to the
+    browser that started it so a victim cannot be signed into an attacker's
+    account via a planted callback (audit finding M97)."""
     config = load_sso_configuration(tenant_id)
     if config is None or not config.get("enabled"):
         raise SsoError("SSO is not configured for this organization")
@@ -92,7 +96,7 @@ def start_login(tenant_id: str, redirect_uri: str) -> str:
         "code_challenge": _pkce_challenge(state["code_verifier"]),
         "code_challenge_method": "S256",
     }
-    return f"{config['authorization_endpoint']}?{parse.urlencode(params)}"
+    return f"{config['authorization_endpoint']}?{parse.urlencode(params)}", state["state"]
 
 
 def _verify_id_token(id_token: str, config: dict[str, Any], nonce: str) -> dict[str, Any]:

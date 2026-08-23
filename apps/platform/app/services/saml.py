@@ -77,7 +77,7 @@ def build_authn_redirect(tenant_id: str, base_url: str) -> str:
     deflated = zlib.compress(xml.encode("utf-8"))[2:-4]
     saml_request = base64.b64encode(deflated).decode("ascii")
     separator = "&" if "?" in config["idp_sso_url"] else "?"
-    return f"{config['idp_sso_url']}{separator}{parse.urlencode({'SAMLRequest': saml_request, 'RelayState': tenant_id})}"
+    return f"{config['idp_sso_url']}{separator}{parse.urlencode({'SAMLRequest': saml_request, 'RelayState': tenant_id})}", request_id
 
 
 # --- Response ---------------------------------------------------------------------
@@ -102,8 +102,12 @@ def _verify_signed(root: etree._Element, certificate_pem: str) -> etree._Element
     return verified.signed_xml
 
 
-def process_response(saml_response_b64: str, base_url: str) -> dict[str, Any]:
-    """Verify a SAML Response (HTTP-POST binding) and return the provisioned user."""
+def process_response(saml_response_b64: str, base_url: str, expected_request_id: str | None = None) -> dict[str, Any]:
+    """Verify a SAML Response (HTTP-POST binding) and return the provisioned user.
+
+    ``expected_request_id`` is the AuthnRequest id this browser was issued at
+    /start (from a cookie). When provided, the response's InResponseTo must match
+    it, binding the login to the browser that began it (audit finding M97)."""
     try:
         raw = base64.b64decode(saml_response_b64)
         root = etree.fromstring(raw, parser=_PARSER)
@@ -114,6 +118,8 @@ def process_response(saml_response_b64: str, base_url: str) -> dict[str, Any]:
     in_response_to = root.get("InResponseTo")
     if not in_response_to:
         raise SamlError("SAML Response lacks InResponseTo; unsolicited responses are not accepted")
+    if expected_request_id is not None and in_response_to != expected_request_id:
+        raise SamlError("SAML Response does not match the login request from this browser")
     request = consume_saml_request(in_response_to)
     if request is None:
         raise SamlError("SAML Response does not match a pending login request (unknown, expired, or replayed)")
@@ -144,31 +150,46 @@ def process_response(saml_response_b64: str, base_url: str) -> dict[str, Any]:
         raise SamlError("assertion Issuer does not match the configured identity provider")
 
     now = datetime.now(UTC)
+    # Conditions (validity window + audience) are REQUIRED, not fail-open on
+    # absence: an assertion with no AudienceRestriction or no expiry must not be
+    # accepted (audit finding M96).
     conditions = assertion.find("saml:Conditions", NS)
-    if conditions is not None:
-        not_before = _parse_time(conditions.get("NotBefore"))
-        not_after = _parse_time(conditions.get("NotOnOrAfter"))
-        if not_before and now + CLOCK_SKEW < not_before:
-            raise SamlError("assertion is not yet valid")
-        if not_after and now - CLOCK_SKEW >= not_after:
-            raise SamlError("assertion has expired")
-        audiences = [a.text.strip() for a in conditions.findall("saml:AudienceRestriction/saml:Audience", NS) if a.text]
-        if audiences and sp_entity_id(base_url) not in audiences:
-            raise SamlError("assertion audience does not include this service provider")
+    if conditions is None:
+        raise SamlError("assertion lacks Conditions")
+    not_before = _parse_time(conditions.get("NotBefore"))
+    not_after = _parse_time(conditions.get("NotOnOrAfter"))
+    if not_after is None:
+        raise SamlError("assertion Conditions lack NotOnOrAfter")
+    if not_before and now + CLOCK_SKEW < not_before:
+        raise SamlError("assertion is not yet valid")
+    if now - CLOCK_SKEW >= not_after:
+        raise SamlError("assertion has expired")
+    audiences = [a.text.strip() for a in conditions.findall("saml:AudienceRestriction/saml:Audience", NS) if a.text]
+    if not audiences:
+        raise SamlError("assertion lacks an AudienceRestriction")
+    if sp_entity_id(base_url) not in audiences:
+        raise SamlError("assertion audience does not include this service provider")
 
+    # The bearer SubjectConfirmationData binds the SIGNED assertion to THIS
+    # request and ACS. Every field is mandatory: an assertion signed alone (Entra
+    # default) could otherwise be wrapped in a Response with a forged
+    # InResponseTo, and an absent Recipient/NotOnOrAfter left the check
+    # fail-open, enabling replay (audit finding M96).
     confirmation = assertion.find("saml:Subject/saml:SubjectConfirmation", NS)
     if confirmation is None or confirmation.get("Method") != BEARER:
         raise SamlError("assertion lacks a bearer SubjectConfirmation")
     data = confirmation.find("saml:SubjectConfirmationData", NS)
-    if data is not None:
-        if data.get("InResponseTo") and data.get("InResponseTo") != in_response_to:
-            raise SamlError("SubjectConfirmationData InResponseTo mismatch")
-        recipient = data.get("Recipient")
-        if recipient and recipient != acs_url(base_url):
-            raise SamlError("SubjectConfirmationData Recipient is not this ACS URL")
-        scd_not_after = _parse_time(data.get("NotOnOrAfter"))
-        if scd_not_after and now - CLOCK_SKEW >= scd_not_after:
-            raise SamlError("subject confirmation has expired")
+    if data is None:
+        raise SamlError("assertion lacks SubjectConfirmationData")
+    if data.get("InResponseTo") != in_response_to:
+        raise SamlError("SubjectConfirmationData InResponseTo does not match the login request")
+    if data.get("Recipient") != acs_url(base_url):
+        raise SamlError("SubjectConfirmationData Recipient is not this ACS URL")
+    scd_not_after = _parse_time(data.get("NotOnOrAfter"))
+    if scd_not_after is None:
+        raise SamlError("SubjectConfirmationData lacks NotOnOrAfter")
+    if now - CLOCK_SKEW >= scd_not_after:
+        raise SamlError("subject confirmation has expired")
 
     name_id = (assertion.findtext("saml:Subject/saml:NameID", namespaces=NS) or "").strip()
     attributes: dict[str, str] = {}

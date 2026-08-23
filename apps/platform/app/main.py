@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.admin import router as admin_router
 from app.api.agents import router as agents_router
@@ -37,6 +39,27 @@ ASSETS_DIR = STATIC_DIR / "assets"
 INDEX_FILE = STATIC_DIR / "index.html"
 
 app = FastAPI(title="Norinth Platform", description="AI governance platform API: ingestion, inventory, risk, review workflow, release gates, compliance evidence.")
+
+def _allowed_hosts() -> list[str]:
+    """Hosts this deployment answers to. The SAML Audience/Recipient and OIDC
+    redirect_uri are derived from the request when NORINTH_PUBLIC_BASE_URL is
+    unset, so an un-validated Host header could point them at an attacker
+    (audit finding M98). NORINTH_ALLOWED_HOSTS (comma-separated) pins them; the
+    host of NORINTH_PUBLIC_BASE_URL is added automatically. With neither set the
+    check is disabled (["*"]) for local development."""
+    hosts: list[str] = []
+    raw = os.getenv("NORINTH_ALLOWED_HOSTS")
+    if raw:
+        hosts.extend(h.strip() for h in raw.split(",") if h.strip())
+    public = os.getenv("NORINTH_PUBLIC_BASE_URL")
+    if public:
+        host = urlsplit(public).hostname
+        if host and host not in hosts:
+            hosts.append(host)
+    return hosts or ["*"]
+
+
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=_allowed_hosts())
 
 run_migrations()
 start_notification_worker()

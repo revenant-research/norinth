@@ -139,6 +139,23 @@ def _start_and_capture(client, idp):
     return params["state"]
 
 
+def test_callback_without_matching_state_cookie_is_rejected(super_admin_client, idp):
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    org = _org_admin(super_admin_client)
+    _configure(org)
+
+    # A different browser (fresh cookie jar) that never started the flow cannot
+    # complete it, even with a valid state value — login-CSRF defense (M97).
+    with TestClient(app) as starter, TestClient(app) as victim:
+        state = _start_and_capture(starter, idp)
+        resp = victim.get(
+            f"/api/auth/sso/callback?code=good-code&state={state}", follow_redirects=False
+        )
+        assert resp.status_code == 401, resp.text
+
+
 def test_full_sso_login_with_jit_provisioning(super_admin_client, idp):
     from app.main import app
     from fastapi.testclient import TestClient

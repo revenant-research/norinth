@@ -105,22 +105,41 @@ def sp_metadata(request: Request) -> Response:
     return Response(content=xml, media_type="application/samlmetadata+xml")
 
 
+# Binds a SAML flow to the browser that started it. The ACS receives a cross-site
+# POST from the IdP, so this cookie must be SameSite=None (and therefore Secure)
+# to be sent — production SAML is always over https (audit finding M97).
+_SAML_REQUEST_COOKIE = "norinth_saml_req"
+
+
 @router.get("/api/auth/saml/{tenant_id}/start")
 def saml_start(tenant_id: str, request: Request):
     try:
-        return RedirectResponse(build_authn_redirect(tenant_id, _base_url(request)), status_code=302)
+        url, request_id = build_authn_redirect(tenant_id, _base_url(request))
     except SamlError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+    redirect = RedirectResponse(url, status_code=302)
+    redirect.set_cookie(
+        _SAML_REQUEST_COOKIE,
+        request_id,
+        max_age=600,
+        httponly=True,
+        samesite="none",
+        secure=request.url.scheme == "https",
+        path="/api/auth/saml",
+    )
+    return redirect
 
 
 @router.post("/api/auth/saml/acs")
 def saml_acs(request: Request, SAMLResponse: str = Form(...), RelayState: str | None = Form(default=None)):  # noqa: N803 - SAML field names
+    expected_request_id = request.cookies.get(_SAML_REQUEST_COOKIE)
     try:
-        user = process_response(SAMLResponse, _base_url(request))
+        user = process_response(SAMLResponse, _base_url(request), expected_request_id=expected_request_id)
     except SamlError as error:
         raise HTTPException(status_code=401, detail=str(error)) from error
     token = create_session(user["user_ref"])
     redirect = RedirectResponse("/", status_code=303)
     _set_session_cookie(redirect, token)
+    redirect.delete_cookie(_SAML_REQUEST_COOKIE, path="/api/auth/saml")
     record_audit(actor_ref=user["user_ref"], action="auth.saml_login", tenant_id=user.get("tenant_id"))
     return redirect

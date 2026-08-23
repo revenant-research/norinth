@@ -114,19 +114,39 @@ def remove_sso(actor: ActorContext = Depends(current_actor)) -> dict[str, bool]:
     return {"ok": True}
 
 
+# Transient cookie that binds an OIDC flow to the browser that started it. The
+# callback is a top-level GET navigation, so a SameSite=Lax cookie is returned.
+_SSO_STATE_COOKIE = "norinth_sso_state"
+
+
 @router.get("/api/auth/sso/{tenant_id}/start")
 def sso_start(tenant_id: str, request: Request):
     try:
-        url = start_login(tenant_id, _callback_url(request))
+        url, state = start_login(tenant_id, _callback_url(request))
     except SsoError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
-    return RedirectResponse(url, status_code=302)
+    redirect = RedirectResponse(url, status_code=302)
+    redirect.set_cookie(
+        _SSO_STATE_COOKIE,
+        state,
+        max_age=600,
+        httponly=True,
+        samesite="lax",
+        secure=request.url.scheme == "https",
+        path="/api/auth/sso",
+    )
+    return redirect
 
 
 @router.get("/api/auth/sso/callback", name="sso_callback")
 def sso_callback(request: Request, response: Response, code: str | None = None, state: str | None = None):
     if not code or not state:
         raise HTTPException(status_code=400, detail="missing code or state")
+    # Login-CSRF defense: the state returned by the IdP must match the state this
+    # browser was given at /start (audit finding M97).
+    cookie_state = request.cookies.get(_SSO_STATE_COOKIE)
+    if not cookie_state or cookie_state != state:
+        raise HTTPException(status_code=401, detail="SSO state does not match this browser session")
     try:
         user = complete_login(code, state, _callback_url(request))
     except SsoError as error:
@@ -134,5 +154,6 @@ def sso_callback(request: Request, response: Response, code: str | None = None, 
     token = create_session(user["user_ref"])
     redirect = RedirectResponse("/", status_code=302)
     _set_session_cookie(redirect, token)
+    redirect.delete_cookie(_SSO_STATE_COOKIE, path="/api/auth/sso")
     record_audit(actor_ref=user["user_ref"], action="auth.sso_login", tenant_id=user.get("tenant_id"))
     return redirect
