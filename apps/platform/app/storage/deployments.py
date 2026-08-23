@@ -14,8 +14,8 @@ def init_deployments() -> None:
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS governance_deployments (
-                deployment_id TEXT PRIMARY KEY,
-                tenant_id TEXT,
+                deployment_id TEXT NOT NULL,
+                tenant_id TEXT NOT NULL DEFAULT '',
                 project TEXT NOT NULL,
                 environment TEXT NOT NULL,
                 application_name TEXT NOT NULL,
@@ -26,7 +26,8 @@ def init_deployments() -> None:
                 model TEXT,
                 artifact_ref TEXT NOT NULL,
                 first_seen TEXT NOT NULL,
-                last_seen TEXT NOT NULL
+                last_seen TEXT NOT NULL,
+                PRIMARY KEY (tenant_id, project, environment, deployment_id)
             )
             """
         )
@@ -110,7 +111,8 @@ def upsert_deployment_event(connection, event: dict[str, Any]) -> None:
     if not application_name or not workflow_name:
         return
     status = attrs.get("deployment_status") or event.get("status", "observed")
-    version_id = entity_id("deployment-version", metadata.get("tenant_id"), event["project"], event["environment"], deployment_id, version)
+    tenant = metadata.get("tenant_id") or ""
+    version_id = entity_id("deployment-version", tenant, event["project"], event["environment"], deployment_id, version)
     connection.execute(
         """
         INSERT INTO governance_deployments (
@@ -118,7 +120,7 @@ def upsert_deployment_event(connection, event: dict[str, Any]) -> None:
             current_version, current_status, provider, model, artifact_ref, first_seen, last_seen
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(deployment_id) DO UPDATE SET
+        ON CONFLICT(tenant_id, project, environment, deployment_id) DO UPDATE SET
             current_version=excluded.current_version,
             current_status=excluded.current_status,
             provider=excluded.provider,
@@ -128,7 +130,7 @@ def upsert_deployment_event(connection, event: dict[str, Any]) -> None:
         """,
         (
             deployment_id,
-            metadata.get("tenant_id"),
+            metadata.get("tenant_id") or "",
             event["project"],
             event["environment"],
             application_name,
@@ -162,7 +164,7 @@ def upsert_deployment_event(connection, event: dict[str, Any]) -> None:
         (
             version_id,
             deployment_id,
-            metadata.get("tenant_id"),
+            tenant,
             event["project"],
             event["environment"],
             application_name,
