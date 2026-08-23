@@ -51,6 +51,7 @@ def _reinitialize_database() -> None:
     from app.storage.organizations import init_organizations
     from app.storage.prompts import init_prompts
     from app.storage.raw_events import init_storage
+    from app.storage.scim import init_scim
     from app.storage.sso import init_sso
     from app.storage.workflow import init_workflow
 
@@ -68,6 +69,7 @@ def _reinitialize_database() -> None:
     init_ingestion_keys()
     init_login_attempts()
     init_sso()
+    init_scim()
     seed_super_admin()
     seed_dev_ingestion_key_if_dev()
 
