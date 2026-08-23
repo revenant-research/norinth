@@ -3,7 +3,50 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import re
 from typing import Any
+
+# Patterns masked from captured content before it leaves the process. This is
+# the redaction the README refers to: even with content capture enabled, common
+# secrets and direct identifiers are replaced (audit finding H15). It is
+# deliberately conservative — high-signal patterns only — so it does not mangle
+# ordinary prose.
+_REDACTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"), "[redacted-email]"),
+    (re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), "[redacted-ssn]"),
+    (re.compile(r"\b(?:\d[ -]?){13,16}\b"), "[redacted-card]"),
+    (re.compile(r"\b(?:sk|rk|pk)-[A-Za-z0-9]{16,}\b"), "[redacted-key]"),
+    (re.compile(r"\b[A-Za-z0-9_-]{40,}\b"), "[redacted-token]"),
+)
+
+# Sentinel: this value has no representable content and must be omitted entirely
+# (never repr'd, which would leak object state such as API keys held on a config
+# dataclass or client instance passed to a traced function).
+_OMIT_CONTENT = object()
+
+
+def redact_text(value: str) -> str:
+    for pattern, replacement in _REDACTIONS:
+        value = pattern.sub(replacement, value)
+    return value
+
+
+def _capture_content(value: Any) -> Any:
+    """Return redacted, JSON-native content, or ``_OMIT_CONTENT``.
+
+    Only JSON-native scalars and containers are ever captured; any other object
+    (a provider client, a config dataclass, an arbitrary instance) is omitted
+    rather than repr'd, closing the API-key-via-repr leak in audit finding H15.
+    """
+    if value is None or isinstance(value, (int, float, bool)):
+        return value
+    if isinstance(value, str):
+        return redact_text(value)
+    if isinstance(value, (list, tuple)):
+        return [_capture_content(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _capture_content(item) for key, item in value.items()}
+    return _OMIT_CONTENT
 
 GOVERNANCE_CONTEXT_FIELDS = {
     "user_id",
@@ -69,7 +112,9 @@ def summarize_value(value: Any, capture_content: bool, hash_key: str | None = No
     if isinstance(value, (str, bytes, list, tuple, dict, set)):
         summary["size"] = len(value)
     if capture_content:
-        summary["content"] = value if isinstance(value, (str, int, float, bool, list, dict)) else repr(value)
+        content = _capture_content(value)
+        if content is not _OMIT_CONTENT:
+            summary["content"] = content
     return summary
 
 
@@ -89,7 +134,7 @@ def summarize_error(exc: BaseException, capture_content: bool, hash_key: str | N
         "message_size": len(message),
     }
     if capture_content:
-        result["message"] = message
+        result["message"] = redact_text(message)
     return result
 
 

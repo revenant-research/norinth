@@ -3,15 +3,16 @@
 **Open client (Apache-2.0)** for the Norinth AI governance system.
 
 This package is the part of Norinth that runs inside *your* infrastructure. It
-captures AI telemetry, redacts and hashes content by default, optionally signs
-the payload, and transmits it over the documented Norinth wire protocol. It
+captures AI telemetry, hashes inputs and outputs by default (and redacts common
+secrets and identifiers from any content you opt into capturing), optionally
+signs the payload, and transmits it over the documented Norinth wire protocol. It
 contains no dashboard, no database, and no governance logic — it is a thin,
 auditable client. The server that receives this telemetry (the Norinth
 Platform, also Apache-2.0) is a separate program that shares only the wire protocol.
 
 Because this SDK runs next to your prompts and responses, it is open by design:
-you can read exactly what is captured, how it is redacted, and what leaves your
-network.
+you can read exactly what is captured, how content is hashed and redacted, and
+what leaves your network.
 
 ## Install
 
@@ -115,11 +116,18 @@ themselves; the platform strips it and sets it only after verification.
 ## Safety defaults
 
 - **Observe-only by default.** The SDK records structured metadata and hashes
-  of inputs and outputs, not raw content.
-- **Fail-open.** If the platform is unreachable or transport fails, your code
-  keeps running; events are dropped rather than raised.
+  of inputs and outputs, not raw content. The hash is SHA-256; set
+  `NORINTH_SIGNING_SECRET` to make it a keyed HMAC so short prompts and codes
+  cannot be recovered by a dictionary attack on the digest.
+- **Fail-open with durability.** If the platform is unreachable or transport
+  fails, your code keeps running. Transient failures are retried with backoff;
+  set `NORINTH_SPOOL_DIR` to persist un-delivered batches to disk and redeliver
+  them on recovery instead of dropping evidence.
 - **Content capture is opt-in.** Set `NORINTH_CAPTURE_CONTENT=true` only in a
-  controlled environment where raw prompt/response capture is intended.
+  controlled environment where raw prompt/response capture is intended. Even
+  then, only JSON-native content is captured (never a repr of a client or config
+  object), and emails, national ID numbers, card numbers and API-key-shaped
+  tokens are masked before the content leaves the process.
 - **Optional payload signing.** Set a signing secret to attach an
   `X-Norinth-Signature` (HMAC-SHA256) header so a receiver can verify the
   payload was not tampered with in transit.

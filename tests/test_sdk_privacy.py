@@ -42,8 +42,12 @@ def test_exception_message_is_hidden_by_default():
     assert summary["message_hash"].startswith("sha256:")
     assert summary["message_size"] > 0
 
+    # With capture enabled the message is included but still redacted (H15):
+    # the exception type is preserved while SSNs/emails are masked.
     revealed = summarize_error(exc, capture_content=True, hash_key="k")
-    assert revealed["message"] == str(exc)
+    assert "123-45-6789" not in revealed["message"]
+    assert "jane@hospital.org" not in revealed["message"]
+    assert "[redacted-ssn]" in revealed["message"]
 
 
 def test_inferred_context_caps_length_and_skips_nested():
