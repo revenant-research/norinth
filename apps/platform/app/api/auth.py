@@ -14,6 +14,7 @@ from app.services.auth import (
     end_all_sessions,
     end_session,
     hash_password,
+    needs_rehash,
     verify_password,
 )
 from app.services.authorization import effective_permissions
@@ -109,6 +110,10 @@ def login(payload: LoginRequest, request: Request, response: Response) -> dict[s
         register_failure(source)
         raise HTTPException(status_code=401, detail="Invalid email or password")
     clear_attempts(account)
+    # Transparently upgrade a hash weaker than the current KDF parameters now that
+    # we hold the plaintext and it has verified (audit finding M101).
+    if needs_rehash(user.get("password_hash")):
+        set_user_password(user["user_ref"], hash_password(payload.password))
     token = create_session(user["user_ref"])
     _set_session_cookie(response, token)
     record_audit(actor_ref=user["user_ref"], action="auth.login", tenant_id=user.get("tenant_id"))

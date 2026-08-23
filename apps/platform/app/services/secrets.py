@@ -54,13 +54,30 @@ def encryption_enabled() -> bool:
     return master_key() is not None
 
 
+def _plaintext_allowed() -> bool:
+    return os.getenv("NORINTH_ALLOW_PLAINTEXT_SECRETS", "0").lower() in {"1", "true", "yes"}
+
+
 def encrypt(value: str, *, associated_data: str = "") -> str:
-    """Encrypt a secret for storage. Returns the value unchanged (with a
-    warning) when no master key is configured."""
+    """Encrypt a secret for storage.
+
+    Fails closed (audit finding M101): without a configured NORINTH_SECRET_KEY it
+    raises rather than silently storing the secret in plaintext. A developer who
+    genuinely wants plaintext storage must opt in with
+    NORINTH_ALLOW_PLAINTEXT_SECRETS=1.
+    """
     key = master_key()
     if key is None:
-        logger.warning("NORINTH_SECRET_KEY is not set; storing a secret unencrypted (development only)")
-        return value
+        if _plaintext_allowed():
+            logger.warning(
+                "NORINTH_SECRET_KEY is not set; storing a secret unencrypted "
+                "(NORINTH_ALLOW_PLAINTEXT_SECRETS=1, development only)"
+            )
+            return value
+        raise SecretKeyMissing(
+            "Refusing to store a secret without encryption. Set NORINTH_SECRET_KEY, "
+            "or set NORINTH_ALLOW_PLAINTEXT_SECRETS=1 to allow plaintext (development only)."
+        )
     nonce = os.urandom(12)
     ciphertext = AESGCM(key).encrypt(nonce, value.encode("utf-8"), associated_data.encode("utf-8") or None)
     return _PREFIX + base64.urlsafe_b64encode(nonce).decode() + ":" + base64.urlsafe_b64encode(ciphertext).decode()

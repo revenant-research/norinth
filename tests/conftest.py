@@ -18,6 +18,11 @@ import pytest
 
 os.environ.setdefault("NORINTH_NOTIFICATIONS_WORKER", "0")  # deliver synchronously in tests
 os.environ.setdefault("NORINTH_ALLOW_PRIVATE_EGRESS", "1")  # test webhook receivers run on 127.0.0.1
+# Secret storage fails closed without a key (M101); give the suite a real key so
+# SSO/webhook secrets are actually encrypted at rest, as in production.
+os.environ.setdefault("NORINTH_SECRET_KEY", "bm9yaW50aC10ZXN0LW9ubHktbWFzdGVyLWtleS0zMmI")
+# Keep password hashing fast in tests; production uses the 600k default (M101).
+os.environ.setdefault("NORINTH_PBKDF2_ITERATIONS", "20000")
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 PLATFORM_DIR = REPO_ROOT / "apps" / "platform"

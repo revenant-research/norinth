@@ -16,10 +16,16 @@ from app.storage.workflow import (
 
 # Password hashing parameters. PBKDF2-HMAC-SHA256 is part of the standard
 # library, which keeps the open/closed dependency boundary clean (no external
-# crypto dependency) while remaining a defensible KDF for an internal app.
+# crypto dependency) while remaining a defensible KDF for an internal app. The
+# iteration count meets OWASP's 2023 guidance for PBKDF2-SHA256 (600k); it is
+# env-tunable so tests can lower it, and hashes weaker than the current setting
+# are transparently upgraded on the next successful login (audit finding M101).
 _PBKDF2_ALGORITHM = "sha256"
-_PBKDF2_ITERATIONS = 240_000
+_PBKDF2_ITERATIONS = int(os.getenv("NORINTH_PBKDF2_ITERATIONS", "600000"))
 _SALT_BYTES = 16
+# A hash string names its own KDF; only these are ever executed, so a tampered
+# DB row cannot make the verifier run a weak or attacker-chosen digest.
+_ALLOWED_ALGORITHMS = {"sha256", "sha512"}
 
 SESSION_TTL_HOURS = int(os.getenv("NORINTH_SESSION_TTL_HOURS", "12"))
 
@@ -42,8 +48,32 @@ def verify_password(password: str, stored: str | None) -> bool:
     if not scheme.startswith("pbkdf2_"):
         return False
     algorithm = scheme.removeprefix("pbkdf2_")
-    derived = hashlib.pbkdf2_hmac(algorithm, password.encode("utf-8"), bytes.fromhex(salt_hex), int(iterations))
+    if algorithm not in _ALLOWED_ALGORITHMS:
+        return False
+    try:
+        rounds = int(iterations)
+    except ValueError:
+        return False
+    derived = hashlib.pbkdf2_hmac(algorithm, password.encode("utf-8"), bytes.fromhex(salt_hex), rounds)
     return hmac.compare_digest(derived.hex(), expected_hex)
+
+
+def needs_rehash(stored: str | None) -> bool:
+    """True when a stored hash is weaker than the current parameters and should
+    be upgraded (different algorithm or fewer iterations)."""
+    if not stored:
+        return True
+    try:
+        scheme, iterations, _, _ = stored.split("$")
+    except ValueError:
+        return True
+    if not scheme.startswith("pbkdf2_"):
+        return True
+    algorithm = scheme.removeprefix("pbkdf2_")
+    try:
+        return algorithm != _PBKDF2_ALGORITHM or int(iterations) < _PBKDF2_ITERATIONS
+    except ValueError:
+        return True
 
 
 def _hash_token(token: str) -> str:
