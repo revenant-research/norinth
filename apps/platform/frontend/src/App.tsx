@@ -27,6 +27,7 @@ import {
   TeamConsole,
 } from "./components/admin";
 import { AgentsView } from "./components/agents";
+import { ComplianceView } from "./components/compliance";
 import { IdentityView } from "./components/identity";
 import { Badge, Chip, EmptyState, MetricCard, RecordList, Section, SkeletonCards, SkeletonMetrics, formatList } from "./components/ui";
 import { ToastHost, toast } from "./components/toast";
@@ -42,6 +43,7 @@ const baseRoutes: RouteDef[] = [
   { id: "inventory", label: "Inventory", description: "Applications, workflows, providers, prompts, and releases in your organization." },
   { id: "reviews", label: "Review Work", description: "Open review tasks, owner follow-up, decisions, and active exceptions." },
   { id: "risk", label: "Risk", description: "Open findings, accepted exceptions, and records that need a risk owner." },
+  { id: "compliance", label: "Compliance", description: "Framework coverage per regulation and the audit-evidence packet for auditors and certification bodies." },
   { id: "controls", label: "Controls", description: "Control checks, missing records, and trace links for auditors and control owners." },
   { id: "deployments", label: "Deployments", description: "Release records, approval gates, blockers, and reviewer decisions." },
   { id: "monitoring", label: "Monitoring", description: "Request traces, model calls, tool use, guardrails, and evaluation records." },
@@ -495,7 +497,7 @@ function roleLabel(user: User): string {
   return "Member";
 }
 
-const ADMIN_ROUTES = new Set(["overview", "intake", "team", "audit", "agents", "identity"]);
+const ADMIN_ROUTES = new Set(["overview", "intake", "team", "audit", "agents", "identity", "compliance"]);
 
 function isAdminRoute(active: string): boolean {
   return ADMIN_ROUTES.has(active);
@@ -519,6 +521,8 @@ function AdminRoutes({ active, scope, user }: { active: string; scope: Scope; us
       return <TeamConsole />;
     case "identity":
       return <IdentityView tenantId={user.tenant_id || ""} />;
+    case "compliance":
+      return <ComplianceView scope={scope} tenantId={user.tenant_id || ""} />;
     case "audit":
       return <AuditLog />;
     default:
