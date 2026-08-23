@@ -72,13 +72,22 @@ def _actor_profile(actor: ActorContext) -> dict[str, Any]:
 
 
 def client_ip(request: Request) -> str | None:
-    """Source address for throttling. X-Forwarded-For is honoured only when the
-    deployment declares a trusted proxy (NORINTH_TRUST_PROXY=1); otherwise a
-    client could spoof the header to dodge the IP throttle."""
+    """Source address for throttling.
+
+    X-Forwarded-For is honoured only when the deployment declares a trusted proxy
+    (NORINTH_TRUST_PROXY=1). Even then, the *leftmost* hop is attacker-controlled:
+    proxies append, so a client can prefix a forged address and the real client
+    is further right (audit finding M99). We therefore read the entry
+    NORINTH_TRUSTED_PROXY_HOPS positions from the right — the address the
+    outermost trusted proxy actually observed — never the client's leading claim.
+    """
     if os.getenv("NORINTH_TRUST_PROXY", "0").lower() in {"1", "true", "yes"}:
         forwarded = request.headers.get("x-forwarded-for")
         if forwarded:
-            return forwarded.split(",")[0].strip()
+            parts = [part.strip() for part in forwarded.split(",") if part.strip()]
+            if parts:
+                hops = max(1, int(os.getenv("NORINTH_TRUSTED_PROXY_HOPS", "1")))
+                return parts[max(0, len(parts) - hops)]
     return request.client.host if request.client else None
 
 

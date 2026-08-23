@@ -74,29 +74,50 @@ def is_locked(subject: str) -> bool:
 
 
 def register_failure(subject: str) -> None:
+    """Atomically record one failed attempt.
+
+    The previous read-compute-write lost concurrent increments (40 parallel
+    failures were recorded as 8), letting an attacker outrun the lockout (audit
+    finding M99). The increment is now a single atomic UPSERT; a separate guarded
+    UPDATE first resets an expired, unlocked window. Both statements compare ISO
+    timestamps, which sort lexicographically because every value is UTC in the
+    same format.
+    """
     threshold, window_minutes, lockout_minutes = _policy(subject)
     now = _now()
+    now_iso = now.isoformat()
+    window_cutoff = (now - timedelta(minutes=window_minutes)).isoformat()
+    locked_iso = (now + timedelta(minutes=lockout_minutes)).isoformat()
     with connect() as connection:
-        row = connection.execute(
-            "SELECT failed_count, first_failed_at FROM login_throttle WHERE subject = ?", (subject,)
-        ).fetchone()
-        first_failed = _parse(row["first_failed_at"]) if row else None
-        if first_failed is None or (now - first_failed) > timedelta(minutes=window_minutes):
-            failed_count = 1
-            first_failed = now
-        else:
-            failed_count = int(row["failed_count"]) + 1
-        locked_until = now + timedelta(minutes=lockout_minutes) if failed_count >= threshold else None
+        # Reset a window that has expired, but only when the subject is not
+        # currently locked (so a reset can never lift an active lockout).
+        connection.execute(
+            """
+            UPDATE login_throttle
+            SET failed_count = 0, first_failed_at = ?, locked_until = NULL
+            WHERE subject = ?
+              AND first_failed_at IS NOT NULL
+              AND first_failed_at < ?
+              AND (locked_until IS NULL OR locked_until < ?)
+            """,
+            (now_iso, subject, window_cutoff, now_iso),
+        )
+        # Atomic increment: the DB serialises concurrent writers on the row, so
+        # no increment is lost. locked_until is set the moment the count reaches
+        # the threshold.
         connection.execute(
             """
             INSERT INTO login_throttle (subject, failed_count, first_failed_at, locked_until)
-            VALUES (?, ?, ?, ?)
+            VALUES (?, 1, ?, NULL)
             ON CONFLICT(subject) DO UPDATE SET
-                failed_count = excluded.failed_count,
-                first_failed_at = excluded.first_failed_at,
-                locked_until = excluded.locked_until
+                failed_count = login_throttle.failed_count + 1,
+                first_failed_at = COALESCE(login_throttle.first_failed_at, ?),
+                locked_until = CASE
+                    WHEN login_throttle.failed_count + 1 >= ? THEN ?
+                    ELSE login_throttle.locked_until
+                END
             """,
-            (subject, failed_count, first_failed.isoformat(), locked_until.isoformat() if locked_until else None),
+            (subject, now_iso, now_iso, threshold, locked_iso),
         )
 
 
