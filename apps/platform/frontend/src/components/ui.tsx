@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 export function Badge({ value }: { value: ReactNode }) {
   return <span className={`badge badge-${String(value || "unknown").toLowerCase().replace(/[^a-z0-9_-]/g, "_")}`}>{value || "unknown"}</span>;
@@ -34,8 +34,58 @@ export function Section({ title, description, children }: { title: string; descr
   );
 }
 
-export function RecordList({ children, empty }: { children: ReactNode[]; empty: string }) {
-  return children.length ? <div className="record-list">{children}</div> : <EmptyState>{empty}</EmptyState>;
+export const RECORD_LIST_PAGE_SIZE = 25;
+
+/**
+ * Renders a bounded window of records with a "Show more" control instead of
+ * mounting every card at once (the audit flagged unbounded lists melting the
+ * DOM on large tenants). `total` is the server-side total when the caller only
+ * holds the first page, so the footer can say how many records exist overall.
+ */
+export function RecordList({
+  children,
+  empty,
+  pageSize = RECORD_LIST_PAGE_SIZE,
+  total,
+  label = "records",
+}: {
+  children: ReactNode[];
+  empty: string;
+  pageSize?: number;
+  total?: number;
+  label?: string;
+}) {
+  const [visible, setVisible] = useState(pageSize);
+  // A new result set (filter change, refresh) resets the window.
+  useEffect(() => setVisible(pageSize), [children.length, pageSize]);
+  if (!children.length) return <EmptyState>{empty}</EmptyState>;
+  const shown = children.slice(0, visible);
+  const loaded = children.length;
+  const overall = typeof total === "number" && total > loaded ? total : loaded;
+  const hasMore = visible < loaded;
+  return (
+    <div className="record-list-wrap">
+      <div className="record-list">{shown}</div>
+      {hasMore || overall > loaded ? (
+        <div className="record-list-footer" role="status" aria-live="polite">
+          <span className="muted">
+            Showing {Math.min(visible, loaded)} of {overall} {label}
+            {overall > loaded ? ` (${loaded} loaded)` : ""}
+          </span>
+          {hasMore ? (
+            <button type="button" className="secondary" onClick={() => setVisible((v) => v + pageSize)}>
+              Show {Math.min(pageSize, loaded - visible)} more
+            </button>
+          ) : null}
+          {hasMore && loaded - visible > pageSize ? (
+            <button type="button" className="linklike" onClick={() => setVisible(loaded)}>
+              Show all {loaded}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export function formatList(values: unknown): string {

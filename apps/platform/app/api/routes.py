@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.api.pagination import PageParams, paginate
 from app.dependencies import ActorContext, current_actor, now, scoped_dependency
 from app.schemas.events import ScopeFilter
 from app.schemas.workflow import (
@@ -64,7 +65,7 @@ from app.storage.deployments import load_deployment_gate, set_deployment_gate_st
 from app.storage.governance_policy import upsert_control_definition, upsert_risk_rule
 from app.storage.incidents import load_incident, set_incident_status
 from app.storage.intake import intake_submitter
-from app.storage.raw_events import count_events, list_events, list_scopes
+from app.storage.raw_events import count_events, count_scoped_events, list_events, list_scopes
 from app.storage.workflow import (
     assign_owner,
     create_exception,
@@ -117,9 +118,25 @@ def scopes(actor: ActorContext = Depends(current_actor)):
     }
 
 
+def _event_page(scope: ScopeFilter, page: PageParams, key: str, event_type: str | None = None) -> dict:
+    """SQL-level window over sdk_events (never materialises the whole table)."""
+    filters = scope.model_dump()
+    items = list_events(**filters, event_type=event_type, limit=page.limit, offset=page.offset)
+    total = count_scoped_events(**filters, event_type=event_type)
+    return {
+        key: items,
+        "page": {
+            "offset": page.offset,
+            "limit": page.limit,
+            "total": total,
+            "has_more": page.offset + len(items) < total,
+        },
+    }
+
+
 @router.get("/api/events")
-def events(scope: ScopeFilter = Depends(scoped_dependency)):
-    return {"events": list_events(**scope.model_dump(), limit=200)}
+def events(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
+    return _event_page(scope, page, "events")
 
 
 @router.get("/api/systems")
@@ -169,38 +186,38 @@ def resource_graph_neighborhood(node_id: str, scope: ScopeFilter = Depends(scope
 
 
 @router.get("/api/retrievals")
-def retrievals(scope: ScopeFilter = Depends(scoped_dependency)):
-    return build_retrievals(scope)
+def retrievals(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
+    return paginate(build_retrievals(scope), "retrievals", page)
 
 
 @router.get("/api/tools")
-def tools(scope: ScopeFilter = Depends(scoped_dependency)):
-    return build_tools(scope)
+def tools(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
+    return paginate(build_tools(scope), "tools", page)
 
 
 @router.get("/api/guardrails")
-def guardrails(scope: ScopeFilter = Depends(scoped_dependency)):
-    return build_guardrails(scope)
+def guardrails(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
+    return paginate(build_guardrails(scope), "guardrails", page)
 
 
 @router.get("/api/evals")
-def evals(scope: ScopeFilter = Depends(scoped_dependency)):
-    return build_evals(scope)
+def evals(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
+    return paginate(build_evals(scope), "evals", page)
 
 
 @router.get("/api/agents")
-def agents(scope: ScopeFilter = Depends(scoped_dependency)):
-    return build_agents(scope)
+def agents(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
+    return paginate(build_agents(scope), "agents", page)
 
 
 @router.get("/api/risk-register")
-def risk_register(scope: ScopeFilter = Depends(scoped_dependency)):
-    return build_risk_register(scope)
+def risk_register(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
+    return paginate(build_risk_register(scope), "risks", page)
 
 
 @router.get("/api/control-evidence")
-def control_evidence(scope: ScopeFilter = Depends(scoped_dependency)):
-    return build_control_evidence(scope)
+def control_evidence(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
+    return paginate(build_control_evidence(scope), "controls", page)
 
 
 @router.get("/api/control-catalog")
@@ -270,13 +287,13 @@ def configure_review_queue_policy(payload: ReviewQueuePolicyRequest, actor: Acto
 
 
 @router.get("/api/change-events")
-def change_events(scope: ScopeFilter = Depends(scoped_dependency)):
-    return build_change_events(scope)
+def change_events(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
+    return paginate(build_change_events(scope), "changes", page)
 
 
 @router.get("/api/review-tasks")
-def review_tasks(scope: ScopeFilter = Depends(scoped_dependency)):
-    return build_review_tasks(scope)
+def review_tasks(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
+    return paginate(build_review_tasks(scope), "review_tasks", page)
 
 
 @router.get("/api/reviews/{task_id}")
@@ -298,8 +315,8 @@ def deployment_versions(scope: ScopeFilter = Depends(scoped_dependency)):
 
 
 @router.get("/api/deployment-gates")
-def deployment_gates(scope: ScopeFilter = Depends(scoped_dependency)):
-    return build_deployment_gates(scope)
+def deployment_gates(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
+    return paginate(build_deployment_gates(scope), "deployment_gates", page)
 
 
 @router.get("/api/deployment-gates/{gate_id}")
@@ -321,8 +338,8 @@ def prompt_versions(scope: ScopeFilter = Depends(scoped_dependency)):
 
 
 @router.get("/api/incidents")
-def incidents(scope: ScopeFilter = Depends(scoped_dependency)):
-    return build_incidents(scope)
+def incidents(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
+    return paginate(build_incidents(scope), "incidents", page)
 
 
 @router.get("/api/incidents/{incident_id}")
@@ -382,8 +399,8 @@ def reject_deployment_gate(gate_id: str, payload: DeploymentGateDecisionRequest,
 
 
 @router.get("/api/owner-assignments")
-def owner_assignments(scope: ScopeFilter = Depends(scoped_dependency)):
-    return build_owner_assignments(scope)
+def owner_assignments(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
+    return paginate(build_owner_assignments(scope), "owners", page)
 
 
 @router.post("/api/owner-assignments/{owner_assignment_id}/assign")
@@ -399,8 +416,8 @@ def assign_owner_route(owner_assignment_id: str, payload: OwnerAssignmentRequest
 
 
 @router.get("/api/decisions")
-def decisions(scope: ScopeFilter = Depends(scoped_dependency)):
-    return build_decisions(scope)
+def decisions(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
+    return paginate(build_decisions(scope), "decisions", page)
 
 
 # The only decisions the workflow understands. Anything else previously fell
@@ -444,8 +461,8 @@ def create_decision(payload: DecisionRequest, actor: ActorContext = Depends(curr
 
 
 @router.get("/api/exceptions")
-def exceptions(scope: ScopeFilter = Depends(scoped_dependency)):
-    return build_exceptions(scope)
+def exceptions(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
+    return paginate(build_exceptions(scope), "exceptions", page)
 
 
 @router.post("/api/exceptions")
@@ -469,24 +486,16 @@ def create_exception_route(payload: ExceptionRequest, actor: ActorContext = Depe
 
 
 @router.get("/api/sdk-health")
-def sdk_health(scope: ScopeFilter = Depends(scoped_dependency)):
+def sdk_health(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
     # sdk.health events are stamped with the authenticated tenant at ingestion
     # (C-1), so they must be tenant-scoped like every other read; previously the
     # tenant filter was dropped, leaking other tenants' telemetry (audit H-4).
-    return {
-        "sdk_health": list_events(
-            tenant_id=scope.tenant_id,
-            project=scope.project,
-            environment=scope.environment,
-            event_type="sdk.health",
-            limit=100,
-        )
-    }
+    return _event_page(scope, page, "sdk_health", event_type="sdk.health")
 
 
 @router.get("/api/traces")
-def traces(scope: ScopeFilter = Depends(scoped_dependency)):
-    return build_traces(scope)
+def traces(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
+    return paginate(build_traces(scope), "traces", page)
 
 
 @router.get("/api/traces/{trace_id}")
@@ -498,8 +507,8 @@ def trace_detail(trace_id: str, scope: ScopeFilter = Depends(scoped_dependency))
 
 
 @router.get("/api/model-calls")
-def model_calls(scope: ScopeFilter = Depends(scoped_dependency)):
-    return {"model_calls": list_events(**scope.model_dump(), event_type="model.call", limit=100)}
+def model_calls(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
+    return _event_page(scope, page, "model_calls", event_type="model.call")
 
 
 @router.get("/api/summary")

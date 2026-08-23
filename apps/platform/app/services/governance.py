@@ -720,7 +720,7 @@ def build_traces(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
     return {
         "traces": [
             {"trace_id": trace_id, "event_count": count}
-            for trace_id, count in trace_ids.most_common(100)
+            for trace_id, count in trace_ids.most_common()
         ]
     }
 

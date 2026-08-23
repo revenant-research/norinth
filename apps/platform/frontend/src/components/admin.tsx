@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { type Scope, getJson, postJson } from "../api";
+import { type PageMeta, type Scope, getJson, postJson } from "../api";
 import { useResource } from "./useResource";
 import { Badge, EmptyState, MetricCard, RecordList, Section, SkeletonCards, SkeletonMetrics } from "./ui";
 import { toast } from "./toast";
@@ -757,32 +757,39 @@ function RolePermissionMatrix({
 
 // --- Audit log ---------------------------------------------------------------
 
+const AUDIT_PAGE_SIZE = 50;
+
 export function AuditLog({ superAdmin = false }: { superAdmin?: boolean }) {
   const [filters, setFilters] = useState({ tenant_id: "", actor_ref: "", action: "" });
   const [applied, setApplied] = useState({ tenant_id: "", actor_ref: "", action: "" });
+  const [offset, setOffset] = useState(0);
 
   const query = useCallback(() => {
     const params = new URLSearchParams();
     if (superAdmin && applied.tenant_id) params.set("tenant_id", applied.tenant_id);
     if (applied.actor_ref) params.set("actor_ref", applied.actor_ref);
     if (applied.action) params.set("action", applied.action);
-    const suffix = params.toString();
-    return getJson<{ audit_logs: Array<Record<string, any>> }>(`/api/audit-logs${suffix ? `?${suffix}` : ""}`);
-    // applied is the stable input; refetch is triggered via reload below
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applied, superAdmin]);
+    params.set("offset", String(offset));
+    params.set("limit", String(AUDIT_PAGE_SIZE));
+    return getJson<{ audit_logs: Array<Record<string, any>>; page: PageMeta }>(`/api/audit-logs?${params.toString()}`);
+  }, [applied, offset, superAdmin]);
 
   const { value, error, reload } = useResource(query);
   const rows = value?.audit_logs || [];
+  const page = value?.page;
+  const total = page?.total ?? rows.length;
+  const pageNumber = Math.floor(offset / AUDIT_PAGE_SIZE) + 1;
+  const pageCount = Math.max(1, Math.ceil(total / AUDIT_PAGE_SIZE));
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
+    setOffset(0);
     setApplied({ ...filters });
   }
 
   useEffect(() => {
     reload();
-  }, [applied, reload]);
+  }, [applied, offset, reload]);
 
   return (
     <>
@@ -805,7 +812,7 @@ export function AuditLog({ superAdmin = false }: { superAdmin?: boolean }) {
           </label>
           <button type="submit">Apply filters</button>
         </form>
-        <RecordList empty="No audit entries match the current filters.">
+        <RecordList empty="No audit entries match the current filters." pageSize={AUDIT_PAGE_SIZE} label="entries">
           {rows.map((entry) => (
             <article className="record-card" key={entry.id}>
               <div className="record-main">
@@ -817,6 +824,19 @@ export function AuditLog({ superAdmin = false }: { superAdmin?: boolean }) {
             </article>
           ))}
         </RecordList>
+        {total > AUDIT_PAGE_SIZE ? (
+          <nav className="pager" aria-label="Audit log pages">
+            <button type="button" className="secondary" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - AUDIT_PAGE_SIZE))}>
+              Newer
+            </button>
+            <span className="muted" role="status" aria-live="polite">
+              Page {pageNumber} of {pageCount} · {total} entries
+            </span>
+            <button type="button" className="secondary" disabled={!page?.has_more} onClick={() => setOffset(offset + AUDIT_PAGE_SIZE)}>
+              Older
+            </button>
+          </nav>
+        ) : null}
       </Section>
     </>
   );
