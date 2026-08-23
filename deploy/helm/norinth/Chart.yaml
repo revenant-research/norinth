@@ -1,0 +1,13 @@
+apiVersion: v2
+name: norinth
+description: Open-source AI governance from runtime evidence. Stateless web service in front of PostgreSQL.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/revenant-research/norinth
+sources:
+  - https://github.com/revenant-research/norinth
+maintainers:
+  - name: Revenant Research
+    url: https://www.revenantresearch.com/
+keywords: [ai-governance, compliance, evidence, opentelemetry]

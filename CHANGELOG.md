@@ -7,6 +7,24 @@ to Semantic Versioning once it reaches a tagged release.
 ## [Unreleased]
 
 ### Added
+- **Release pipeline** (`.github/workflows/release.yml`): on a `v*` tag, builds
+  the multi-arch image to `ghcr.io/revenant-research/norinth` (`:<version>`,
+  `:<major.minor>`, `:latest`; `:edge` on every push to main), signs it with
+  cosign (keyless, Sigstore), attaches an SPDX SBOM attestation and GitHub
+  build provenance, gates on Trivy CRITICAL, packages and pushes the Helm
+  chart to `oci://ghcr.io/revenant-research/charts/norinth`, publishes
+  `norinth-logger` to PyPI via trusted publishing (tag must equal the package
+  version), and creates a GitHub Release with the changelog section, SBOM,
+  checksums, installer and compose file attached.
+- **Helm chart** (`deploy/helm/norinth`): stateless Deployment with probes,
+  non-root security context, PDB, Service, Ingress, chart-managed or existing
+  Secrets for the database URL and platform secrets; refuses to render without
+  them. CI lints and renders it.
+- **`docs/threat-model.md`**: system summary and data flow, data inventory
+  with sensitivity and storage, trust boundaries and principals, threats
+  mapped to the controls in code, residual risks and operator
+  responsibilities, and how to verify.
+
 - **First-run setup wizard.** A fresh install (no organizations yet) opens a
   six-step wizard instead of the landing page: sign in as the platform
   administrator (credentials from the installer), choose your own password,

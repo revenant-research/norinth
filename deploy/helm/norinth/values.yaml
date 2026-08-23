@@ -1,0 +1,78 @@
+# Norinth Helm values. The platform is stateless; all state is in PostgreSQL.
+
+image:
+  repository: ghcr.io/revenant-research/norinth
+  tag: ""            # defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
+  pullSecrets: []
+
+replicaCount: 2
+
+# --- Database -----------------------------------------------------------------
+# Bring your own PostgreSQL (recommended). Provide the URL directly, or via an
+# existing Secret holding the NORINTH_DATABASE_URL key.
+database:
+  url: ""                       # postgresql://norinth:password@host:5432/norinth
+  existingSecret: ""            # name of a Secret with key NORINTH_DATABASE_URL
+  existingSecretKey: NORINTH_DATABASE_URL
+
+# --- Secrets --------------------------------------------------------------------
+# Either set values here (rendered into a chart-managed Secret) or point at an
+# existing Secret with keys NORINTH_SECRET_KEY and NORINTH_SUPER_ADMIN_PASSWORD.
+secrets:
+  existingSecret: ""
+  secretKey: ""                 # 32-byte base64; generate: openssl rand -base64 32
+  superAdminEmail: admin@norinth.local
+  superAdminPassword: ""        # required; the setup wizard asks you to rotate it
+
+# --- Application config ---------------------------------------------------------
+config:
+  publicBaseUrl: ""             # https://norinth.example.com (needed for SSO)
+  cookieSecure: "1"
+  trustProxy: "1"               # ingress sets X-Forwarded-For
+  sessionTtlHours: "12"
+  extraEnv: []                  # - {name: NORINTH_LOGIN_IP_THRESHOLD, value: "100"}
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8001
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: norinth.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  #  - secretName: norinth-tls
+  #    hosts: [norinth.example.com]
+
+resources:
+  requests: {cpu: 250m, memory: 512Mi}
+  limits: {cpu: "1", memory: 1Gi}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 999
+  fsGroup: 999
+  seccompProfile: {type: RuntimeDefault}
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities: {drop: [ALL]}
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+serviceAccount:
+  create: true
+  annotations: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

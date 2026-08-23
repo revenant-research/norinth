@@ -46,7 +46,7 @@ Already on OpenTelemetry? Point any collector or LLM gateway at
 ## Key documents
 
 - [`docs/operations.md`](docs/operations.md) — deploy, configure, upgrade, back up.
-- [`SECURITY.md`](SECURITY.md) — security model and disclosure.
+- [`SECURITY.md`](SECURITY.md) — security model and disclosure; [`docs/threat-model.md`](docs/threat-model.md) — data flow, adversaries, controls, residual risk.
 - [`AUDIT_AND_ROADMAP_2026.md`](AUDIT_AND_ROADMAP_2026.md) — security/architecture audit and remediation roadmap.
 - [`docs/GTM_STRATEGY.md`](docs/GTM_STRATEGY.md) — adoption strategy (ICP, wedge, open-source motion).
 - [`CHANGELOG.md`](CHANGELOG.md) — change history.

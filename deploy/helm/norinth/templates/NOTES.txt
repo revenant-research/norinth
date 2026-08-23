@@ -1,0 +1,14 @@
+Norinth is deploying.
+
+  Release:   {{ .Release.Name }}  (chart {{ .Chart.Version }}, app {{ .Values.image.tag | default .Chart.AppVersion }})
+  Service:   {{ include "norinth.fullname" . }}:{{ .Values.service.port }}
+{{- if .Values.ingress.enabled }}
+  URL:       https://{{ (index .Values.ingress.hosts 0).host }}
+{{- else }}
+  URL:       kubectl port-forward svc/{{ include "norinth.fullname" . }} 8001:{{ .Values.service.port }}  ->  http://localhost:8001
+{{- end }}
+
+First visit opens the setup wizard. Sign in with {{ .Values.secrets.superAdminEmail }}
+and the NORINTH_SUPER_ADMIN_PASSWORD you provided, then create your organization.
+
+Migrations run automatically on boot. Back up PostgreSQL; everything is there.
