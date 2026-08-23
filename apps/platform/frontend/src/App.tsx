@@ -16,6 +16,7 @@ import {
   logout,
   postJson,
 } from "./api";
+import { Sidebar, SkipLink, useRouteAnnouncement } from "./components/shell";
 import {
   AdminConsole,
   AuditLog,
@@ -35,6 +36,18 @@ import { ToastHost, toast } from "./components/toast";
 import { ConfirmHost, confirm } from "./components/confirm";
 
 type RouteDef = { id: string; label: string; description: string; permission?: string };
+
+// Detail routes (#gate/<id>, #incident/<id>, ...) previously fell back to the
+// "Overview" heading and title, which misreported the page to screen readers
+// and in the tab strip.
+const DETAIL_ROUTE_META: Record<string, RouteDef> = {
+  application: { id: "application", label: "Application", description: "Application inventory record, evidence, and linked governance work." },
+  workflow: { id: "workflow", label: "Workflow", description: "Workflow record, models, and linked governance work." },
+  review: { id: "review", label: "Review Task", description: "Evidence packet and reviewer decision for one review task." },
+  gate: { id: "gate", label: "Release Gate", description: "Release readiness evidence and approval decision." },
+  incident: { id: "incident", label: "Incident", description: "Incident evidence, linked risks, and closure record." },
+  trace: { id: "trace", label: "Trace", description: "Request trace and the events captured for it." },
+};
 
 const baseRoutes: RouteDef[] = [
   { id: "overview", label: "Overview", description: "Posture, accountability staffing, and segregation of duties.", permission: "user.manage" },
@@ -131,6 +144,7 @@ function PlatformConsole({ user, onSignOut }: { user: User; onSignOut: () => voi
 
   const active = PLATFORM_ROUTES.some((item) => item.id === route[0]) ? route[0] : "overview";
   const routeMeta = PLATFORM_ROUTES.find((item) => item.id === active) || PLATFORM_ROUTES[0];
+  const headingRef = useRouteAnnouncement(routeMeta.label);
 
   async function signOut() {
     await logout().catch(() => undefined);
@@ -139,21 +153,12 @@ function PlatformConsole({ user, onSignOut }: { user: User; onSignOut: () => voi
 
   return (
     <div className="shell">
-      <aside className="sidebar">
-        <div className="brand">Norinth</div>
-        <p>Platform administration.</p>
-        <nav>
-          {PLATFORM_ROUTES.map((item) => (
-            <a className={active === item.id ? "active" : ""} href={`#${item.id}`} key={item.id}>
-              {item.label}
-            </a>
-          ))}
-        </nav>
-      </aside>
-      <main className="main">
+      <SkipLink />
+      <Sidebar tagline="Platform administration." routes={PLATFORM_ROUTES} active={active} />
+      <main className="main" id="main-content">
         <header className="topbar">
           <div>
-            <h1>{routeMeta.label}</h1>
+            <h1 ref={headingRef} tabIndex={-1}>{routeMeta.label}</h1>
             <p>{routeMeta.description}</p>
           </div>
           <div className="session-summary">
@@ -318,7 +323,7 @@ function LoginScreen({
           Password
           <input type="password" value={password} autoComplete="current-password" onChange={(event) => setPassword(event.target.value)} required />
         </label>
-        {error ? <div className="auth-error">{error}</div> : null}
+        {error ? <div className="auth-error" role="alert">{error}</div> : null}
         <button type="submit" disabled={busy}>{busy ? "Signing in" : "Sign in"}</button>
         {onBack ? (
           <button type="button" className="link-button" onClick={onBack}>Back to home</button>
@@ -367,7 +372,7 @@ function ChangePasswordScreen({ user, onChanged }: { user: User; onChanged: (use
           <input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required />
           <span className="field-hint">At least 8 characters.</span>
         </label>
-        {error ? <div className="auth-error">{error}</div> : null}
+        {error ? <div className="auth-error" role="alert">{error}</div> : null}
         <button type="submit" disabled={busy}>{busy ? "Saving" : "Update password"}</button>
       </form>
     </div>
@@ -385,7 +390,12 @@ function Workspace({ user, onSignOut }: { user: User; onSignOut: () => void }) {
   // daily work queue.
   const defaultRoute = user.permissions.includes("user.manage") ? "overview" : "portfolio";
   const active = route[0] || defaultRoute;
-  const routeMeta = routes.find((item) => item.id === active) || baseRoutes.find((item) => item.id === active) || baseRoutes[0];
+  const routeMeta =
+    routes.find((item) => item.id === active) ||
+    baseRoutes.find((item) => item.id === active) ||
+    DETAIL_ROUTE_META[active] ||
+    baseRoutes[0];
+  const headingRef = useRouteAnnouncement(routeMeta.label);
 
   // Tenant actors are pinned server-side to their own organization; the scope
   // here is informational and never widens access.
@@ -438,21 +448,12 @@ function Workspace({ user, onSignOut }: { user: User; onSignOut: () => void }) {
 
   return (
     <div className="shell">
-      <aside className="sidebar">
-        <div className="brand">Norinth</div>
-        <p>Governance workspace for your organization.</p>
-        <nav>
-          {routes.map((item) => (
-            <a className={active === item.id ? "active" : ""} href={`#${item.id}`} key={item.id}>
-              {item.label}
-            </a>
-          ))}
-        </nav>
-      </aside>
-      <main className="main">
+      <SkipLink />
+      <Sidebar tagline="Governance workspace for your organization." routes={routes} active={active} />
+      <main className="main" id="main-content" aria-busy={isLoading}>
         <header className="topbar">
           <div>
-            <h1>{routeMeta.label}</h1>
+            <h1 ref={headingRef} tabIndex={-1}>{routeMeta.label}</h1>
             <p>{routeMeta.description}</p>
           </div>
           <div className="session-summary">
@@ -570,11 +571,19 @@ function View({ route, data, scope, user, mutate }: { route: string[]; data: Das
   }
 }
 
-function DetailRoute({ kind, id, scope, mutate }: { kind: DetailKind; id: string; scope: Scope; mutate: Mutate }) {
-  const [detail, setDetail] = useState<Record<string, any> | null>(null);
+export function DetailRoute({ kind, id, scope, mutate }: { kind: DetailKind; id: string; scope: Scope; mutate: Mutate }) {
+  // The loaded record is tagged with the route it belongs to. When the hash
+  // changes (e.g. gate -> incident) the component re-renders *before* the
+  // effect below starts the next load, so without the tag a stale gate payload
+  // would be handed to IncidentDetail and crash the whole app on
+  // `detail.incident.title`.
+  const [loaded, setLoaded] = useState<{ kind: DetailKind; id: string; detail: Record<string, any> | null }>({ kind, id, detail: null });
   const [graph, setGraph] = useState<Record<string, any> | null>(null);
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const isCurrent = loaded.kind === kind && loaded.id === id;
+  const detail = isCurrent ? loaded.detail : null;
+  const setDetail = (value: Record<string, any> | null) => setLoaded({ kind, id, detail: value });
 
   useEffect(() => {
     let cancelled = false;
@@ -612,7 +621,7 @@ function DetailRoute({ kind, id, scope, mutate }: { kind: DetailKind; id: string
     };
   }, [kind, id, scope]);
 
-  if (isLoading) return <EmptyState>Loading the selected record.</EmptyState>;
+  if (isLoading || !isCurrent) return <div role="status" aria-live="polite"><EmptyState>Loading the selected record.</EmptyState></div>;
   if (!detail) return <EmptyState>{message || "The requested object was not found in the current scope."}</EmptyState>;
 
   switch (kind) {
@@ -690,7 +699,7 @@ function Inventory({ data }: { data: DashboardData }) {
   return (
     <>
       <div className="toolbar">
-        <input className="search" placeholder="Search applications, workflows, models, prompts, deployments" value={query} onChange={(event) => setQuery(event.target.value)} />
+        <input className="search" placeholder="Search applications, workflows, models, prompts, deployments" aria-label="Search inventory" value={query} onChange={(event) => setQuery(event.target.value)} />
       </div>
       <Section title="Applications" description="Business applications in the selected tenant.">
         <ApplicationCards rows={data.applications.filter((row) => matches(row, ["application_name", "tenant_id", "environment"]))} />
@@ -817,6 +826,7 @@ function Incidents({ data, mutate }: { data: DashboardData; mutate: (path: strin
 
 function ApplicationDetail({ detail, graph, mutate }: { detail: Record<string, any>; graph: Record<string, any> | null; mutate: Mutate }) {
   const application = detail.application;
+  if (!application) return <EmptyState>The requested record is no longer available.</EmptyState>;
   return (
     <ObjectWorkspace title={application.application_name} subtitle={`${application.tenant_id || "Unscoped"} / ${application.environment || "unknown environment"}`}>
       <div className="detail-rail">
@@ -864,6 +874,7 @@ function ApplicationDetail({ detail, graph, mutate }: { detail: Record<string, a
 
 function WorkflowDetail({ detail, graph, mutate }: { detail: Record<string, any>; graph: Record<string, any> | null; mutate: Mutate }) {
   const workflow = detail.workflow;
+  if (!workflow) return <EmptyState>The requested record is no longer available.</EmptyState>;
   return (
     <ObjectWorkspace title={workflow.workflow_name} subtitle={formatList(workflow.applications) || "No application links"}>
       <div className="detail-rail">
@@ -901,6 +912,7 @@ function WorkflowDetail({ detail, graph, mutate }: { detail: Record<string, any>
 
 function ReviewDetail({ detail, mutate }: { detail: Record<string, any>; mutate: Mutate }) {
   const task = detail.review_task;
+  if (!task) return <EmptyState>The requested record is no longer available.</EmptyState>;
   return (
     <ObjectWorkspace title={task.title} subtitle={`${task.application_name} / ${task.assigned_role || "unrouted"} / ${task.assigned_to || "no assignee"}`}>
       <div className="detail-rail">
@@ -934,6 +946,7 @@ function ReviewDetail({ detail, mutate }: { detail: Record<string, any>; mutate:
 
 function GateDetail({ detail, mutate }: { detail: Record<string, any>; mutate: Mutate }) {
   const gate = detail.deployment_gate;
+  if (!gate) return <EmptyState>The requested record is no longer available.</EmptyState>;
   return (
     <ObjectWorkspace title={`${gate.application_name} release gate`} subtitle={`${gate.workflow_name} / ${gate.gate_status}`}>
       <div className="detail-rail">
@@ -980,6 +993,7 @@ function GateDetail({ detail, mutate }: { detail: Record<string, any>; mutate: M
 
 function IncidentDetail({ detail, mutate }: { detail: Record<string, any>; mutate: Mutate }) {
   const incident = detail.incident;
+  if (!incident) return <EmptyState>The requested record is no longer available.</EmptyState>;
   return (
     <ObjectWorkspace title={incident.title} subtitle={`${incident.application_name} / ${incident.workflow_name} / ${incident.severity}`}>
       <div className="detail-rail">
@@ -1334,8 +1348,8 @@ function OwnerAssignmentPanel({ owner, mutate }: { owner: Record<string, any>; m
         <span>{owner.application_name} / {owner.owner_role} / {owner.status}</span>
       </div>
       <div className="inline-form owner-action">
-        <input placeholder="owner@company.com" value={ownerRef} onChange={(event) => setOwnerRef(event.target.value)} />
-        <input placeholder="Why this owner is accountable" value={reason} onChange={(event) => setReason(event.target.value)} />
+        <input placeholder="owner@company.com" aria-label="Owner email" value={ownerRef} onChange={(event) => setOwnerRef(event.target.value)} />
+        <input placeholder="Why this owner is accountable" aria-label="Assignment rationale" value={reason} onChange={(event) => setReason(event.target.value)} />
         <button onClick={() => mutate(`/api/owner-assignments/${owner.owner_assignment_id}/assign`, { owner_ref: ownerRef, rationale: assignmentPacket }, "Owner assigned.")}>Assign owner</button>
       </div>
     </div>
@@ -1376,9 +1390,9 @@ function RiskExceptionPanel({ risk, mutate }: { risk: Record<string, any>; mutat
         <span>{risk.application_name} / {risk.severity} / {risk.status}</span>
       </div>
       <div className="inline-form risk-action">
-        <input placeholder="Business reason for exception" value={reason} onChange={(event) => setReason(event.target.value)} />
-        <input placeholder="Compensating control or owner" value={compensatingControl} onChange={(event) => setCompensatingControl(event.target.value)} />
-        <input placeholder="YYYY-MM-DD expiry" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} />
+        <input placeholder="Business reason for exception" aria-label="Business reason for exception" value={reason} onChange={(event) => setReason(event.target.value)} />
+        <input placeholder="Compensating control or owner" aria-label="Compensating control or owner" value={compensatingControl} onChange={(event) => setCompensatingControl(event.target.value)} />
+        <input placeholder="YYYY-MM-DD expiry" aria-label="Exception expiry date (YYYY-MM-DD)" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} />
         <button className="secondary" onClick={() => mutate("/api/exceptions", { target_type: "risk_finding", target_id: risk.finding_id, reason: exceptionPacket, compensating_control: compensatingControl, expires_at: expiresAt }, "Exception created.")}>Create exception</button>
       </div>
     </div>
@@ -1418,13 +1432,13 @@ function ReviewDecisionPanel({ task, mutate }: { task: Record<string, any>; muta
         </label>
       </div>
       <div className="inline-form workflow-action">
-        <select value={decision} onChange={(event) => setDecision(event.target.value)}>
+        <select aria-label="Decision" value={decision} onChange={(event) => setDecision(event.target.value)}>
           <option value="approve">Approve</option>
           <option value="reject">Reject</option>
           <option value="request_changes">Request changes</option>
           <option value="mitigate">Require mitigation</option>
         </select>
-        <textarea placeholder="Rationale, required changes, or residual risk accepted by the reviewer" value={rationale} onChange={(event) => setRationale(event.target.value)} />
+        <textarea placeholder="Rationale, required changes, or residual risk accepted by the reviewer" aria-label="Reviewer rationale" value={rationale} onChange={(event) => setRationale(event.target.value)} />
         <button onClick={() => mutate("/api/decisions", { target_type: "review_task", target_id: task.task_id, decision, rationale: decisionPacket }, "Review decision recorded.")}>Record decision</button>
       </div>
     </div>
@@ -1463,7 +1477,7 @@ function GateDecisionPanel({ gate, mutate }: { gate: Record<string, any>; mutate
         </label>
       </div>
       <div className="inline-form workflow-action">
-        <textarea placeholder="Decision rationale, production condition, or blocker that prevents release" value={rationale} onChange={(event) => setRationale(event.target.value)} />
+        <textarea placeholder="Decision rationale, production condition, or blocker that prevents release" aria-label="Release decision rationale" value={rationale} onChange={(event) => setRationale(event.target.value)} />
         <button
           onClick={async () => {
             const ok = await confirm({
@@ -1517,10 +1531,10 @@ function IncidentClosurePanel({ incident, mutate }: { incident: Record<string, a
         <h3>Incident Closure Record</h3>
       </div>
       <div className="workflow-grid">
-        <textarea placeholder="Root cause" value={rootCause} onChange={(event) => setRootCause(event.target.value)} />
-        <textarea placeholder="Customer or business impact" value={customerImpact} onChange={(event) => setCustomerImpact(event.target.value)} />
-        <textarea placeholder="Remediation completed" value={remediation} onChange={(event) => setRemediation(event.target.value)} />
-        <textarea placeholder="Recurrence prevention or follow-up owner" value={recurrencePrevention} onChange={(event) => setRecurrencePrevention(event.target.value)} />
+        <textarea placeholder="Root cause" aria-label="Root cause" value={rootCause} onChange={(event) => setRootCause(event.target.value)} />
+        <textarea placeholder="Customer or business impact" aria-label="Customer or business impact" value={customerImpact} onChange={(event) => setCustomerImpact(event.target.value)} />
+        <textarea placeholder="Remediation completed" aria-label="Remediation completed" value={remediation} onChange={(event) => setRemediation(event.target.value)} />
+        <textarea placeholder="Recurrence prevention or follow-up owner" aria-label="Recurrence prevention or follow-up owner" value={recurrencePrevention} onChange={(event) => setRecurrencePrevention(event.target.value)} />
       </div>
       <div className="inline-form workflow-action">
         <button

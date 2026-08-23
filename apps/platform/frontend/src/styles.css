@@ -4,7 +4,7 @@
   --surface-muted: #f4f4f2;
   --text: #171717;
   --muted: #6b6b66;
-  --faint: #9a9a92;
+  --faint: #767670; /* 4.6:1 on white (WCAG AA for body text) */
   --line: #e5e3dc;
   --line-strong: #d4d0c7;
   --accent: #111111;
@@ -1462,3 +1462,23 @@ button.linklike {
   gap: 14px;
   padding: 12px 0 0;
 }
+/* Accessibility: skip link is visually hidden until focused. */
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: -48px;
+  z-index: 1000;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  transition: top 120ms ease;
+}
+.skip-link:focus-visible {
+  top: 8px;
+  outline-color: #fff;
+}
+/* Focused page headings (moved on route change) should not show a ring. */
+.topbar h1:focus { outline: none; }
