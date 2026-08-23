@@ -123,6 +123,18 @@ to Semantic Versioning once it reaches a tagged release.
   target.
 
 ### Added
+- **SCIM 2.0 user provisioning.** Identity providers (Okta, Microsoft Entra ID,
+  ...) can now create, update, and deprovision users automatically via a
+  per-tenant SCIM endpoint (`/scim/v2`: ServiceProviderConfig, Users
+  list/filter/paginate, create, get, replace, patch, delete). Bearer tokens are
+  issued and revoked by org admins (`/api/org/scim-tokens`), hashed at rest.
+  Deactivation suspends the account and revokes its sessions immediately (the
+  record is kept for the audit trail); provisioned users get the tenant's
+  non-admin default role and sign in via SSO. Automated deprovisioning is a
+  SOC 2 CC6 / HIPAA 164.308(a)(3) control and a universal enterprise checklist
+  item.
+
+### Added
 - **SSO via OpenID Connect with JIT provisioning.** Organizations can configure
   their identity provider (Okta, Entra ID, Auth0, ...) at `PUT /api/org/sso`,
   which runs OpenID discovery against the issuer. Users sign in through

@@ -12,6 +12,7 @@ from app.api.compliance import router as compliance_router
 from app.api.ingestion_keys import router as ingestion_keys_router
 from app.api.intake import router as intake_router
 from app.api.routes import router as api_router
+from app.api.scim import router as scim_router
 from app.api.sso import router as sso_router
 from app.dashboard.html import dashboard_html
 from app.dependencies import SESSION_COOKIE
@@ -30,6 +31,7 @@ from app.storage.login_attempts import init_login_attempts
 from app.storage.organizations import init_organizations
 from app.storage.prompts import init_prompts
 from app.storage.raw_events import init_storage
+from app.storage.scim import init_scim
 from app.storage.sso import init_sso
 from app.storage.workflow import init_workflow, load_platform_user
 
@@ -53,6 +55,7 @@ init_audit()
 init_ingestion_keys()
 init_login_attempts()
 init_sso()
+init_scim()
 seed_super_admin()
 seed_dev_ingestion_key_if_dev()
 app.include_router(ingestion_router)
@@ -63,6 +66,7 @@ app.include_router(api_router)
 app.include_router(compliance_router)
 app.include_router(ingestion_keys_router)
 app.include_router(sso_router)
+app.include_router(scim_router)
 
 # Endpoints reachable while a user still owes a password change.
 _PASSWORD_CHANGE_ALLOWLIST = {
