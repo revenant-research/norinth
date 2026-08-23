@@ -142,6 +142,72 @@ async def enforce_password_change(request: Request, call_next):
     return await call_next(request)
 
 
+# Paths that serve interactive API docs from a bundled Swagger/ReDoc CDN; the
+# strict Content-Security-Policy below would block those third-party scripts, so
+# the developer-tooling routes are exempted from CSP (they carry no tenant data).
+_CSP_EXEMPT_PREFIXES = ("/docs", "/redoc", "/openapi.json")
+
+_CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "font-src 'self' data:; "
+    "connect-src 'self'; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'; "
+    "frame-ancestors 'none'"
+)
+
+
+# Reject request bodies larger than this before reading them, so a single huge
+# payload cannot exhaust memory (audit finding H10). Override with
+# NORINTH_MAX_BODY_BYTES; 0 disables the check.
+_MAX_BODY_BYTES = int(os.getenv("NORINTH_MAX_BODY_BYTES", str(16 * 1024 * 1024)))
+
+
+@app.middleware("http")
+async def limit_body_size(request: Request, call_next):
+    if _MAX_BODY_BYTES and request.method in _MUTATING_METHODS:
+        declared = request.headers.get("content-length")
+        if declared is not None:
+            try:
+                if int(declared) > _MAX_BODY_BYTES:
+                    return JSONResponse(status_code=413, content={"detail": "Request body too large"})
+            except ValueError:
+                return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length"})
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Attach hardening response headers absent before audit finding H10.
+
+    Clickjacking (X-Frame-Options / frame-ancestors), MIME sniffing
+    (X-Content-Type-Options), referrer leakage (Referrer-Policy), and a
+    default-deny CSP that keeps the self-hosted dashboard from loading any
+    third-party origin. HSTS is emitted only when the effective scheme is https
+    (directly or via a trusted proxy) so plain-http dev is not pinned.
+    """
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("X-Permitted-Cross-Domain-Policies", "none")
+    if not request.url.path.startswith(_CSP_EXEMPT_PREFIXES):
+        response.headers.setdefault("Content-Security-Policy", _CONTENT_SECURITY_POLICY)
+
+    scheme = request.url.scheme
+    if os.getenv("NORINTH_TRUST_PROXY", "0").lower() in {"1", "true", "yes"}:
+        scheme = (request.headers.get("x-forwarded-proto", scheme).split(",")[0].strip()) or scheme
+    if scheme == "https":
+        response.headers.setdefault(
+            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+        )
+    return response
+
+
 if ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="platform-assets")
 
