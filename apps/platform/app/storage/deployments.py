@@ -401,6 +401,14 @@ def set_deployment_gate_status(gate_id: str, status: str, actor_ref: str, ration
         return dict(connection.execute("SELECT * FROM deployment_approval_gates WHERE gate_id = ?", (gate_id,)).fetchone())
 
 
+def gate_deployer(version_id: str) -> str | None:
+    """The user who deployed the version a gate is for (maker-checker: they must
+    not also approve it)."""
+    with connect() as connection:
+        row = connection.execute("SELECT deployed_by FROM deployment_versions WHERE version_id = ?", (version_id,)).fetchone()
+    return None if row is None else row["deployed_by"]
+
+
 def load_deployment_gate(gate_id: str) -> dict[str, Any]:
     with connect() as connection:
         row = connection.execute("SELECT * FROM deployment_approval_gates WHERE gate_id = ?", (gate_id,)).fetchone()

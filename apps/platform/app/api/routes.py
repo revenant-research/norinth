@@ -63,7 +63,7 @@ from app.services.governance import (
 from app.services.notifications import emit as notify
 from app.services.notifications import public_base_url
 from app.storage.audit import record_audit
-from app.storage.deployments import load_deployment_gate, set_deployment_gate_status
+from app.storage.deployments import gate_deployer, load_deployment_gate, set_deployment_gate_status
 from app.storage.governance_policy import upsert_control_definition, upsert_risk_rule
 from app.storage.incidents import load_incident, set_incident_status
 from app.storage.intake import intake_submitter
@@ -100,6 +100,11 @@ def enforce_segregation_of_duties(actor: ActorContext, target_type: str, target:
     maker: str | None = None
     if target_type == "review_task" and target.get("task_type") == "intake_review":
         maker = intake_submitter(target.get("change_id", ""))
+    elif target_type == "deployment_gate":
+        # The person who deployed the version cannot also approve its release.
+        maker = gate_deployer(target.get("version_id", ""))
+    elif target_type == "incident":
+        maker = target.get("detected_by")
     else:
         maker = target.get("submitted_by") or target.get("created_by")
     if maker and maker == actor.user_ref:
@@ -517,8 +522,26 @@ def exceptions(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams
     return paginate(build_exceptions(scope), "exceptions", page)
 
 
+def _validate_future_date(value: str) -> None:
+    from datetime import UTC, datetime
+
+    text = value.strip()
+    for candidate in (text, f"{text}T00:00:00+00:00"):
+        try:
+            parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=UTC)
+            if parsed <= datetime.now(UTC):
+                raise HTTPException(status_code=400, detail="expires_at must be a future date")
+            return
+        except ValueError:
+            continue
+    raise HTTPException(status_code=400, detail="expires_at must be an ISO date (YYYY-MM-DD) or datetime")
+
+
 @router.post("/api/exceptions")
 def create_exception_route(payload: ExceptionRequest, actor: ActorContext = Depends(current_actor)):
+    _validate_future_date(payload.expires_at)
     target = load_decision_target(payload.target_type, payload.target_id)
     target["target_type"] = payload.target_type
     try:

@@ -22,7 +22,7 @@ from app.storage.incidents import process_incident_events
 from app.storage.lifecycle import refresh_lifecycle_state
 from app.storage.prompts import process_prompt_events
 from app.storage.raw_events import insert_events
-from app.storage.workflow import refresh_workflow_state
+from app.storage.workflow import expire_due_exceptions, refresh_workflow_state
 
 router = APIRouter()
 
@@ -217,6 +217,8 @@ def _ingest(events: list[dict[str, Any]], tenant_id: str) -> dict[str, Any]:
     process_prompt_events(events)
     process_deployment_events(events)
     process_incident_events(events)
+    # Expire lapsed risk exceptions (reopening their findings) before recompute.
+    expire_due_exceptions()
     # Recompute derived state only for the scopes this batch touched.
     scopes = batch_scopes(events)
     refresh_lifecycle_state(scopes)

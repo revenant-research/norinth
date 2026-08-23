@@ -1043,5 +1043,36 @@ def list_decisions(*, tenant_id: str | None = None, project: str | None = None, 
     return scoped_rows("governance_decisions", tenant_id=tenant_id, project=project, environment=environment, order_by="created_at")
 
 
+def expire_due_exceptions() -> int:
+    """Mark active exceptions whose expires_at has passed as 'expired' and
+    reopen the finding they waived, so it re-enters the risk register instead
+    of staying waived forever (finding H6). Idempotent; safe to call often."""
+    now = datetime.now(UTC).isoformat()
+    expired = 0
+    with connect() as connection:
+        due = connection.execute(
+            "SELECT exception_id, target_type, target_id FROM governance_exceptions WHERE status = 'active' AND expires_at <= ?",
+            (now,),
+        ).fetchall()
+        for row in due:
+            connection.execute(
+                "UPDATE governance_exceptions SET status = 'expired', updated_at = datetime('now') WHERE exception_id = ?",
+                (row["exception_id"],),
+            )
+            # Reopen the waived target so the next recompute re-evaluates it.
+            if row["target_type"] == "risk_finding":
+                connection.execute(
+                    "UPDATE risk_findings SET status = 'open', evaluated_at = datetime('now') WHERE finding_id = ? AND status = 'waived'",
+                    (row["target_id"],),
+                )
+            elif row["target_type"] == "control_assessment":
+                connection.execute(
+                    "UPDATE control_assessments SET status = 'missing', evaluated_at = datetime('now') WHERE assessment_id = ? AND status = 'waived'",
+                    (row["target_id"],),
+                )
+            expired += 1
+    return expired
+
+
 def list_exceptions(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
     return scoped_rows("governance_exceptions", tenant_id=tenant_id, project=project, environment=environment, order_by="updated_at")
