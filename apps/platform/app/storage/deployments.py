@@ -405,3 +405,23 @@ def list_deployment_versions(*, tenant_id: str | None = None, project: str | Non
 
 def list_deployment_gates(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
     return scoped_rows("deployment_approval_gates", tenant_id=tenant_id, project=project, environment=environment)
+
+
+def find_gate_for_release(tenant_id: str, deployment_id: str, version: str) -> dict[str, Any] | None:
+    """Gate for a (deployment, version) pair, tenant-bound. Used by CI's
+    ``norinth gate check`` with an ingestion key, so the lookup never crosses
+    the key's organization."""
+    with connect() as connection:
+        row = connection.execute(
+            """
+            SELECT g.gate_id, g.gate_status, g.required_reason, g.application_name, g.workflow_name,
+                   g.actor_ref, g.rationale, g.decided_at, g.updated_at, v.version, v.deployment_id
+            FROM deployment_approval_gates g
+            JOIN deployment_versions v ON v.version_id = g.version_id
+            WHERE v.deployment_id = ? AND v.version = ? AND g.tenant_id = ?
+            ORDER BY v.observed_at DESC
+            LIMIT 1
+            """,
+            (deployment_id, version, tenant_id),
+        ).fetchone()
+    return None if row is None else dict(row)

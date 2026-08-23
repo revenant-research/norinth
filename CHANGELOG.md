@@ -6,6 +6,16 @@ to Semantic Versioning once it reaches a tagged release.
 
 ## [Unreleased]
 
+### Added
+- **`norinth` CLI** (SDK package): `init` (writes `NORINTH_*` to `.env`,
+  detects AI clients), `doctor` (reachability, key validity, test event, plain
+  diagnosis of failures), `gate check --deployment --version [--wait]` (CI
+  enforcement: exit 0 only when the release gate is approved; prints the
+  blockers otherwise), `attest keygen|sign`, and the existing `scan` (legacy
+  positional form still works).
+- `GET /v1/gates/check` — read-only, ingestion-key authenticated, tenant-bound
+  gate status for CI (approved / status / blockers / who decided).
+
 ## [0.1.0] - 2026-08-23
 
 First public release: the open-source, self-hosted AI governance platform, SDK, installer, Helm chart and signed images.
