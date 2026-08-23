@@ -108,8 +108,8 @@ fetch_compose() {
 }
 
 wait_healthy() {
-  local i
-  for i in $(seq 1 60); do
+  local _attempt
+  for _attempt in $(seq 1 60); do
     if curl -fsS "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1; then return 0; fi
     sleep 2
   done
@@ -151,7 +151,7 @@ if [ "$FROM_SOURCE" = 1 ]; then compose build; elif [ "$NO_PULL" = 0 ]; then com
 compose up -d
 wait_healthy
 
-# shellcheck disable=SC1090
+# shellcheck disable=SC1090,SC1091
 set -a; . "$DIR/.env"; set +a
 say "Norinth is running."
 info "URL:            http://localhost:${PORT}"
