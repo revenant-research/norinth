@@ -125,4 +125,4 @@ def dashboard():
             INDEX_FILE.read_text(encoding="utf-8"),
             headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
         )
-    return dashboard_html()
+    return HTMLResponse(dashboard_html(str(STATIC_DIR)), status_code=503)

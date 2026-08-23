@@ -54,15 +54,21 @@ repositories with no code changes:
 
 Use five terminals.
 
-Terminal 1, start the platform:
+Terminal 1, build the dashboard once and start the platform:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r apps/platform/requirements.txt
+make build-frontend   # compiles apps/platform/frontend -> app/dashboard/static (needs Node 20)
 export NORINTH_PLATFORM_DB=apps/platform/data/norinth.sqlite3
 uvicorn app.main:app --app-dir apps/platform --reload --port 8001
 ```
+
+The compiled dashboard is a build artifact and is not committed; `make run`
+builds it automatically if missing, and the Docker image builds it from source
+in a multi-stage build. Without it the API still runs and `/` returns an
+explicit 503 "dashboard not built" page.
 
 Install demo app dependencies once:
 

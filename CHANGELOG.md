@@ -6,6 +6,16 @@ to Semantic Versioning once it reaches a tagged release.
 
 ## [Unreleased]
 
+### Changed
+- **Dashboard bundle is no longer committed.** `apps/platform/app/dashboard/static/`
+  is built from source by `make build-frontend`, by CI (uploaded as an
+  artifact and then verified: a dedicated job checks the platform serves the
+  built `index.html` and its assets, and that without a bundle `/` is an
+  explicit 503 rather than a stale UI), and by a new Node build stage in the
+  Docker image. The 400-line legacy inline "AIBOM viewer" fallback page was
+  removed; a minified blob in review diffs and bundle merge conflicts go with
+  it. `.dockerignore` added.
+
 ### Added
 - **Server-side pagination on every list endpoint (audit L: unbounded lists).**
   `/api/events`, `/api/model-calls`, `/api/sdk-health`, `/api/traces`,

@@ -21,6 +21,8 @@ node_modules/
 *.tsbuildinfo
 .vite/
 apps/platform/frontend/dist/
+# Compiled dashboard bundle: built by `make build-frontend`, CI, and the Docker image.
+apps/platform/app/dashboard/static/
 
 # ---- Databases / local state (may contain credentials & PII) ----
 *.db

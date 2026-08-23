@@ -1,4 +1,4 @@
-.PHONY: help install dev-install lint fmt type test test-cov run docker-build docker-up clean
+.PHONY: help install dev-install lint fmt type test test-cov build-frontend run docker-build docker-up clean
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -37,7 +37,13 @@ test-cov: ## Run tests with coverage
 migrate: ## Apply pending schema migrations and print schema status
 	cd apps/platform && python -m app.storage.migrations
 
-run: ## Run the platform locally on :8001
+build-frontend: ## Build the dashboard bundle into apps/platform/app/dashboard/static (not committed)
+	cd apps/platform/frontend && npm ci --no-audit --no-fund && npm run build
+
+apps/platform/app/dashboard/static/index.html:
+	$(MAKE) build-frontend
+
+run: apps/platform/app/dashboard/static/index.html ## Run the platform locally on :8001 (builds the dashboard if missing)
 	NORINTH_PLATFORM_DB=apps/platform/data/norinth.sqlite3 \
 	uvicorn app.main:app --app-dir apps/platform --reload --port 8001
 
