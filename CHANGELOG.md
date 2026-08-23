@@ -123,6 +123,16 @@ to Semantic Versioning once it reaches a tagged release.
   target.
 
 ### Added
+- **Agents UI + frontend test infrastructure.** A new "Agents" workspace view
+  shows runtime posture (observed / registered / shadow / with-issues metrics,
+  per-agent OWASP-mapped issue badges with the offending tools), a labeled
+  registration form with autonomy-level descriptions and a capability-profile
+  fieldset that warns inline when the profile forms the lethal trifecta, and
+  the registry with permission-gated retire. `vitest` + Testing Library are now
+  set up and run in CI; `useResource` was extracted to its own module and its
+  stale-closure fix is locked in by a test.
+
+### Added
 - **Agentic-AI governance module.** An **agent registry** (`/api/agent-registry`)
   records every sanctioned agent with an accountable owner, an **autonomy level**
   (0 tool-assisted … 4 fully autonomous), a **tool allow-list**, its capability

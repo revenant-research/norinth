@@ -27,7 +27,8 @@ make run              # run the platform on :8001
   `AUDIT_AND_ROADMAP_2026.md` (e.g. "C-1", "H-9") in the PR description.
 - **Every behavior change ships with a test.** Security fixes add a regression
   test that fails on `main` and passes on the branch.
-- **CI must be green**: ruff lint and `pytest` are required checks.
+- **CI must be green**: ruff lint, `pytest` (SQLite and PostgreSQL), and the frontend `vitest` + `tsc` build are required checks.
+- Frontend components get a `*.test.tsx` beside them (`make test-frontend`).
 - **Never commit** secrets, `.env`, databases, `node_modules`, or virtualenvs
   (all git-ignored). `check-added-large-files` and `detect-private-key`
   pre-commit hooks guard this.
