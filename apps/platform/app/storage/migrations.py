@@ -19,12 +19,36 @@ Keep migrations additive and backward-compatible with the running code
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import contextlib
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
 from . import db
 from .raw_events import connect
+
+# Session-scoped advisory lock so only one replica migrates at a time. Migrations
+# run at process start; without this, two replicas booting against an empty
+# PostgreSQL both try to CREATE TABLE and one crashes on a duplicate-object
+# error, CrashLoopBackOff-ing until a later boot finds the migration recorded
+# (audit finding H11). SQLite runs a single process, so the lock is a no-op.
+_MIGRATION_LOCK_KEY = 4242000042420002
+
+
+@contextlib.contextmanager
+def _migration_lock() -> Iterator[None]:
+    if not db.is_postgres():
+        yield
+        return
+    lock_conn = connect()
+    try:
+        lock_conn.execute(f"SELECT pg_advisory_lock({_MIGRATION_LOCK_KEY})")
+        yield
+    finally:
+        try:
+            lock_conn.execute(f"SELECT pg_advisory_unlock({_MIGRATION_LOCK_KEY})")
+        finally:
+            lock_conn.close()
 
 
 @dataclass(frozen=True)
@@ -281,8 +305,20 @@ def pending_migrations() -> list[Migration]:
 
 
 def run_migrations() -> list[int]:
-    """Apply all pending migrations in order. Returns the versions applied."""
+    """Apply all pending migrations in order. Returns the versions applied.
+
+    The whole run is guarded by a cross-replica advisory lock: a replica that
+    loses the race waits, then re-reads schema_migrations and finds nothing
+    pending, so concurrent boots never fight over CREATE TABLE (H11).
+    """
+    with _migration_lock():
+        return _apply_pending()
+
+
+def _apply_pending() -> list[int]:
     applied: list[int] = []
+    # Re-check inside the lock: another replica may have applied everything while
+    # we waited for the lock.
     for migration in pending_migrations():
         if migration.version == 1:
             # The baseline initializers manage their own connections.

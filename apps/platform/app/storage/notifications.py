@@ -17,6 +17,7 @@ from typing import Any
 
 from app.services import secrets as secret_store
 
+from .db import is_postgres
 from .raw_events import connect
 
 WEBHOOK_EVENTS = (
@@ -148,13 +149,18 @@ def claim_pending(limit: int = 50, *, worker_id: str) -> list[dict[str, Any]]:
             "WHERE status = 'delivering' AND claimed_at <= ?",
             (stale_before,),
         )
+        # On PostgreSQL, FOR UPDATE SKIP LOCKED makes the claim a true work queue:
+        # a second replica's selector skips rows another replica has already
+        # locked, so two workers can never select the same batch (finding H11).
+        # SQLite serializes writers and does not support the clause.
+        skip_locked = " FOR UPDATE SKIP LOCKED" if is_postgres() else ""
         connection.execute(
-            """
+            f"""
             UPDATE notification_outbox SET status = 'delivering', claimed_by = ?, claimed_at = ?
             WHERE id IN (
                 SELECT id FROM notification_outbox
                 WHERE status = 'pending' AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
-                ORDER BY id LIMIT ?
+                ORDER BY id LIMIT ?{skip_locked}
             )
             """,
             (worker_id, now, now, limit),
