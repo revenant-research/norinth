@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import ipaddress
 import json
+import socket
 from typing import Any
 from urllib import parse, request
 
@@ -33,18 +35,54 @@ class SsoError(Exception):
     pass
 
 
+def _is_public_ip_address(ip_text: str) -> bool:
+    ip = ipaddress.ip_address(ip_text)
+    return not (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
+
+
+def _validate_outbound_url(url: str) -> None:
+    parsed = parse.urlparse(url)
+    if parsed.scheme.lower() != "https":
+        raise SsoError("SSO endpoint URL must use https")
+    if not parsed.hostname:
+        raise SsoError("SSO endpoint URL must include a hostname")
+    if parsed.username or parsed.password:
+        raise SsoError("SSO endpoint URL must not include userinfo")
+    if parsed.fragment:
+        raise SsoError("SSO endpoint URL must not include a fragment")
+
+    try:
+        addr_info = socket.getaddrinfo(parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)
+    except OSError as error:
+        raise SsoError(f"Unable to resolve SSO endpoint hostname: {parsed.hostname}") from error
+
+    for entry in addr_info:
+        ip_text = entry[4][0]
+        if not _is_public_ip_address(ip_text):
+            raise SsoError("SSO endpoint resolves to a non-public IP address")
+
+
 # --- outbound HTTP (monkeypatched in tests) -------------------------------------
 
 
 def http_get_json(url: str, timeout: float = 10.0) -> dict[str, Any]:
-    with request.urlopen(url, timeout=timeout) as response:  # noqa: S310 - IdP URL from admin config
+    _validate_outbound_url(url)
+    with request.urlopen(url, timeout=timeout) as response:  # noqa: S310 - validated URL
         return json.loads(response.read().decode("utf-8"))
 
 
 def http_post_form(url: str, data: dict[str, str], timeout: float = 10.0) -> dict[str, Any]:
+    _validate_outbound_url(url)
     body = parse.urlencode(data).encode("utf-8")
     req = request.Request(url, data=body, method="POST", headers={"Content-Type": "application/x-www-form-urlencoded"})
-    with request.urlopen(req, timeout=timeout) as response:  # noqa: S310
+    with request.urlopen(req, timeout=timeout) as response:  # noqa: S310 - validated URL
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -53,10 +91,11 @@ def http_post_form(url: str, data: dict[str, str], timeout: float = 10.0) -> dic
 
 def discover(issuer: str) -> dict[str, str]:
     """Fetch the provider's OpenID configuration and return the endpoints we need."""
+    _validate_outbound_url(issuer)
     url = issuer.rstrip("/") + "/.well-known/openid-configuration"
     doc = http_get_json(url)
     try:
-        return {
+        endpoints = {
             "issuer": doc.get("issuer", issuer),
             "authorization_endpoint": doc["authorization_endpoint"],
             "token_endpoint": doc["token_endpoint"],
@@ -64,6 +103,12 @@ def discover(issuer: str) -> dict[str, str]:
         }
     except KeyError as error:
         raise SsoError(f"OpenID configuration is missing {error}") from error
+
+    _validate_outbound_url(endpoints["issuer"])
+    _validate_outbound_url(endpoints["authorization_endpoint"])
+    _validate_outbound_url(endpoints["token_endpoint"])
+    _validate_outbound_url(endpoints["jwks_uri"])
+    return endpoints
 
 
 # --- login ------------------------------------------------------------------------
