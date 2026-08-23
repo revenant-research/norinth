@@ -26,10 +26,26 @@ From a checkout: `make docker-up` (equivalent to `scripts/install.sh --source --
 
 ### Kubernetes
 
-A Helm chart is in progress (`deploy/helm/norinth`). Until then: run the image
-`ghcr.io/revenant-research/norinth` as a Deployment with the environment
-variables below, a Service on port 8001, an Ingress terminating TLS, and an
-external PostgreSQL. The container is stateless; scale replicas freely.
+```bash
+helm install norinth oci://ghcr.io/revenant-research/charts/norinth \
+  --set database.url='postgresql://norinth:PASSWORD@postgres.internal:5432/norinth' \
+  --set secrets.secretKey="$(openssl rand -base64 32)" \
+  --set secrets.superAdminPassword="$(openssl rand -base64 24)" \
+  --set config.publicBaseUrl=https://norinth.example.com \
+  --set ingress.enabled=true --set ingress.hosts[0].host=norinth.example.com
+```
+
+The chart (`deploy/helm/norinth`) renders a stateless Deployment, Service,
+Ingress, PodDisruptionBudget and Secrets; use `database.existingSecret` /
+`secrets.existingSecret` to source secrets from Vault, External Secrets or
+SealedSecrets. Images are signed (cosign keyless) with an SBOM attestation;
+verify before you trust:
+
+```bash
+cosign verify ghcr.io/revenant-research/norinth:<version> \
+  --certificate-identity-regexp 'https://github.com/revenant-research/norinth/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
 
 ### Requirements
 
