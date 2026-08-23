@@ -64,6 +64,7 @@ from app.services.notifications import emit as notify
 from app.services.notifications import public_base_url
 from app.storage.audit import record_audit
 from app.storage.deployments import gate_deployer, load_deployment_gate, set_deployment_gate_status
+from app.storage.errors import RecordNotFound
 from app.storage.governance_policy import upsert_control_definition, upsert_risk_rule
 from app.storage.incidents import load_incident, set_incident_status
 from app.storage.intake import intake_submitter
@@ -504,8 +505,10 @@ def create_decision(payload: DecisionRequest, actor: ActorContext = Depends(curr
         )
     try:
         target = load_decision_target(payload.target_type, payload.target_id)
-    except ValueError as error:
+    except RecordNotFound as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+    # An unsupported target_type is bad input (plain ValueError) and is handled
+    # by the global 400 handler, distinct from a missing record's 404 (M104).
     target["target_type"] = payload.target_type
     try:
         require_decision(actor, target)

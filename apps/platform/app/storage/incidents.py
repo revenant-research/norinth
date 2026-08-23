@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from .entities import as_object, entity_id
+from .errors import RecordNotFound
 from .raw_events import connect
 
 
@@ -198,7 +199,7 @@ def set_incident_status(incident_id: str, status: str, actor_ref: str, rationale
     with connect() as connection:
         row = connection.execute("SELECT * FROM governance_incidents WHERE incident_id = ?", (incident_id,)).fetchone()
         if row is None:
-            raise ValueError("incident not found")
+            raise RecordNotFound("incident not found")
         connection.execute(
             """
             UPDATE governance_incidents
@@ -214,7 +215,7 @@ def load_incident(incident_id: str) -> dict[str, Any]:
     with connect() as connection:
         row = connection.execute("SELECT * FROM governance_incidents WHERE incident_id = ?", (incident_id,)).fetchone()
     if row is None:
-        raise ValueError("incident not found")
+        raise RecordNotFound("incident not found")
     return dict(row)
 
 

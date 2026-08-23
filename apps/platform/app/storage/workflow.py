@@ -5,6 +5,7 @@ from typing import Any
 
 from . import db
 from .entities import entity_id
+from .errors import RecordNotFound
 from .raw_events import connect
 
 
@@ -786,7 +787,7 @@ def assign_owner(owner_assignment_id: str, owner_ref: str, actor_ref: str) -> di
             (owner_assignment_id,),
         ).fetchone()
         if row is None:
-            raise ValueError("owner assignment not found")
+            raise RecordNotFound("owner assignment not found")
         connection.execute(
             """
             UPDATE owner_assignments
@@ -842,7 +843,7 @@ def load_decision_target(target_type: str, target_id: str) -> dict[str, Any]:
     with connect() as connection:
         row = connection.execute(f"SELECT * FROM {table} WHERE {id_column} = ?", (target_id,)).fetchone()
     if row is None:
-        raise ValueError("decision target not found")
+        raise RecordNotFound("decision target not found")
     return dict(row)
 
 
@@ -949,7 +950,7 @@ def load_owner_assignment(owner_assignment_id: str) -> dict[str, Any]:
             (owner_assignment_id,),
         ).fetchone()
     if row is None:
-        raise ValueError("owner assignment not found")
+        raise RecordNotFound("owner assignment not found")
     return dict(row)
 
 

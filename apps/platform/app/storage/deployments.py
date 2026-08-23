@@ -6,6 +6,7 @@ from typing import Any
 from . import db
 from .attestation_keys import tenant_requires_attestation
 from .entities import as_object, entity_id
+from .errors import RecordNotFound
 from .raw_events import connect
 
 
@@ -379,7 +380,7 @@ def set_deployment_gate_status(gate_id: str, status: str, actor_ref: str, ration
     with connect() as connection:
         row = connection.execute("SELECT * FROM deployment_approval_gates WHERE gate_id = ?", (gate_id,)).fetchone()
         if row is None:
-            raise ValueError("deployment gate not found")
+            raise RecordNotFound("deployment gate not found")
         gate = dict(row)
         if status == "approved":
             if gate.get("prompt_evidence_status") != "linked" or int(gate.get("passing_eval_count") or 0) == 0:
@@ -413,7 +414,7 @@ def load_deployment_gate(gate_id: str) -> dict[str, Any]:
     with connect() as connection:
         row = connection.execute("SELECT * FROM deployment_approval_gates WHERE gate_id = ?", (gate_id,)).fetchone()
     if row is None:
-        raise ValueError("deployment gate not found")
+        raise RecordNotFound("deployment gate not found")
     return dict(row)
 
 

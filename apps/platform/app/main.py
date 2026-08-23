@@ -28,6 +28,7 @@ from app.ingestion.routes import router as ingestion_router
 from app.services.auth import resolve_session
 from app.services.bootstrap import seed_dev_ingestion_key_if_dev, seed_super_admin
 from app.services.notifications import start_worker as start_notification_worker
+from app.storage.errors import RecordNotFound
 from app.storage.migrations import run_migrations
 from app.storage.workflow import load_platform_user
 
@@ -57,6 +58,20 @@ app.include_router(public_router)
 app.include_router(onboarding_router)
 app.include_router(setup_router)
 app.include_router(notifications_router)
+
+@app.exception_handler(RecordNotFound)
+async def _record_not_found_handler(request: Request, exc: RecordNotFound):
+    # A record addressed by id does not exist. Previously these raised an
+    # unhandled ValueError -> 500 on the decision endpoints (audit finding M104).
+    return JSONResponse(status_code=404, content={"detail": str(exc) or "Not found"})
+
+
+@app.exception_handler(ValueError)
+async def _value_error_handler(request: Request, exc: ValueError):
+    # Remaining domain ValueErrors are bad input, not server faults: return 400
+    # rather than leaking a 500/stack trace. (RecordNotFound is handled above.)
+    return JSONResponse(status_code=400, content={"detail": str(exc) or "Invalid request"})
+
 
 # Endpoints reachable while a user still owes a password change.
 _PASSWORD_CHANGE_ALLOWLIST = {
