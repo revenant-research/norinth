@@ -13,6 +13,7 @@ from app.api.compliance import router as compliance_router
 from app.api.ingestion_keys import router as ingestion_keys_router
 from app.api.intake import router as intake_router
 from app.api.routes import router as api_router
+from app.api.saml import router as saml_router
 from app.api.scim import router as scim_router
 from app.api.sso import router as sso_router
 from app.dashboard.html import dashboard_html
@@ -40,6 +41,7 @@ app.include_router(api_router)
 app.include_router(compliance_router)
 app.include_router(ingestion_keys_router)
 app.include_router(sso_router)
+app.include_router(saml_router)
 app.include_router(scim_router)
 app.include_router(agents_router)
 
@@ -50,10 +52,16 @@ _PASSWORD_CHANGE_ALLOWLIST = {
     "/api/auth/me",
     "/api/auth/change-password",
     "/api/auth/sso/callback",
+    "/api/auth/saml/acs",
+    "/api/auth/saml/metadata",
 }
 
 
 _MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+# The SAML Assertion Consumer Service receives a cross-site form POST from the
+# identity provider by design; it is protected by the assertion signature and
+# InResponseTo binding rather than by Origin matching.
+_CSRF_EXEMPT = {"/api/auth/saml/acs"}
 
 
 @app.middleware("http")
@@ -67,7 +75,11 @@ async def csrf_origin_check(request: Request, call_next):
     cookies) are unaffected. Ingestion (/v1/*) uses key auth, not cookies, so it
     is out of scope. This complements the cookie's SameSite=lax (audit H-8).
     """
-    if request.method in _MUTATING_METHODS and request.url.path.startswith("/api/"):
+    if (
+        request.method in _MUTATING_METHODS
+        and request.url.path.startswith("/api/")
+        and request.url.path not in _CSRF_EXEMPT
+    ):
         origin = request.headers.get("origin")
         if origin:
             expected = f"{request.url.scheme}://{request.headers.get('host', '')}"
