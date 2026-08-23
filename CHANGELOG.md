@@ -123,6 +123,23 @@ to Semantic Versioning once it reaches a tagged release.
   target.
 
 ### Added
+- **Agentic-AI governance module.** An **agent registry** (`/api/agent-registry`)
+  records every sanctioned agent with an accountable owner, an **autonomy level**
+  (0 tool-assisted … 4 fully autonomous), a **tool allow-list**, its capability
+  profile (untrusted input / sensitive data / external action), and whether a
+  human checkpoint exists. On every ingest, observed `agent.run` / `tool.call`
+  telemetry is reconciled against the registry (`/api/agents/posture`) to derive
+  risk findings mapped to the **OWASP Top 10 for Agentic Applications**:
+  unregistered "shadow" agents (ASI10), tool use outside the allow-list
+  (ASI02/ASI03), the **lethal trifecta** — untrusted input + sensitive data +
+  external action with no human checkpoint (ASI01/ASI09, Critical), and high
+  autonomy without oversight (ASI09 / EU AI Act Art 14). Findings land in the
+  risk register (preserving reviewer decisions), the audit packet, and an
+  "OWASP Agentic" framework-coverage family. Grounded in the 2026 research
+  (OWASP Agentic 2026, Microsoft agent failure taxonomy, Meta Rule of Two,
+  Singapore MGF for Agentic AI).
+
+### Added
 - **SCIM 2.0 user provisioning.** Identity providers (Okta, Microsoft Entra ID,
   ...) can now create, update, and deprovision users automatically via a
   per-tenant SCIM endpoint (`/scim/v2`: ServiceProviderConfig, Users

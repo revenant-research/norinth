@@ -7,6 +7,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.admin import router as admin_router
+from app.api.agents import router as agents_router
 from app.api.auth import router as auth_router
 from app.api.compliance import router as compliance_router
 from app.api.ingestion_keys import router as ingestion_keys_router
@@ -19,6 +20,7 @@ from app.dependencies import SESSION_COOKIE
 from app.ingestion.routes import router as ingestion_router
 from app.services.auth import resolve_session
 from app.services.bootstrap import seed_dev_ingestion_key_if_dev, seed_super_admin
+from app.storage.agents import init_agents
 from app.storage.audit import init_audit
 from app.storage.deployments import init_deployments
 from app.storage.entities import init_entities
@@ -56,6 +58,7 @@ init_ingestion_keys()
 init_login_attempts()
 init_sso()
 init_scim()
+init_agents()
 seed_super_admin()
 seed_dev_ingestion_key_if_dev()
 app.include_router(ingestion_router)
@@ -67,6 +70,7 @@ app.include_router(compliance_router)
 app.include_router(ingestion_keys_router)
 app.include_router(sso_router)
 app.include_router(scim_router)
+app.include_router(agents_router)
 
 # Endpoints reachable while a user still owes a password change.
 _PASSWORD_CHANGE_ALLOWLIST = {
