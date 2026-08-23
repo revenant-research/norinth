@@ -26,6 +26,7 @@ import {
   RbacMatrixEditor,
   TeamConsole,
 } from "./components/admin";
+import { AgentsView } from "./components/agents";
 import { Badge, Chip, EmptyState, MetricCard, RecordList, Section, SkeletonCards, SkeletonMetrics, formatList } from "./components/ui";
 import { ToastHost, toast } from "./components/toast";
 import { ConfirmHost, confirm } from "./components/confirm";
@@ -44,6 +45,7 @@ const baseRoutes: RouteDef[] = [
   { id: "deployments", label: "Deployments", description: "Release records, approval gates, blockers, and reviewer decisions." },
   { id: "monitoring", label: "Monitoring", description: "Request traces, model calls, tool use, guardrails, and evaluation records." },
   { id: "incidents", label: "Incidents", description: "Open incidents, linked records, owners, and closure decisions." },
+  { id: "agents", label: "Agents", description: "Sanctioned agents, their autonomy bounds and tool allow-lists, and runtime posture mapped to OWASP Agentic." },
   { id: "team", label: "People & Access", description: "Create users, set their status, reset passwords, and assign governance roles in your organization.", permission: "user.manage" },
   { id: "audit", label: "Audit Log", description: "Immutable record of administrative, identity, and decision actions." },
 ];
@@ -458,7 +460,7 @@ function Workspace({ user, onSignOut }: { user: User; onSignOut: () => void }) {
           </div>
         </header>
         <div className="page">
-          {isAdminRoute(active) ? <AdminRoutes active={active} scope={scope} /> : null}
+          {isAdminRoute(active) ? <AdminRoutes active={active} scope={scope} user={user} /> : null}
           {!isAdminRoute(active) && isLoading && !data ? <WorkspaceSkeleton /> : null}
           {!isAdminRoute(active) && !isLoading && !data && message ? <EmptyState>{message}</EmptyState> : null}
           {data && !isAdminRoute(active) ? <View route={route} data={data} scope={scope} user={user} mutate={mutate} /> : null}
@@ -491,18 +493,26 @@ function roleLabel(user: User): string {
   return "Member";
 }
 
-const ADMIN_ROUTES = new Set(["overview", "intake", "team", "audit"]);
+const ADMIN_ROUTES = new Set(["overview", "intake", "team", "audit", "agents"]);
 
 function isAdminRoute(active: string): boolean {
   return ADMIN_ROUTES.has(active);
 }
 
-function AdminRoutes({ active, scope }: { active: string; scope: Scope }) {
+function AdminRoutes({ active, scope, user }: { active: string; scope: Scope; user: User }) {
   switch (active) {
     case "overview":
       return <OrgOverview />;
     case "intake":
       return <IntakeView scope={scope} />;
+    case "agents":
+      return (
+        <AgentsView
+          scope={scope}
+          canRegister={user.permissions.includes("config.write")}
+          canRetire={user.permissions.includes("lifecycle.manage")}
+        />
+      );
     case "team":
       return <TeamConsole />;
     case "audit":

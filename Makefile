@@ -28,6 +28,9 @@ test: ## Run the test suite
 test-postgres: ## Run the test suite against PostgreSQL (needs NORINTH_TEST_DATABASE_URL)
 	NORINTH_TEST_DATABASE_URL=$${NORINTH_TEST_DATABASE_URL:?set to a postgresql:// URL} pytest
 
+test-frontend: ## Run frontend unit tests (vitest)
+	cd apps/platform/frontend && npm test
+
 test-cov: ## Run tests with coverage
 	pytest --cov=app --cov=norinth_logger --cov-report=term-missing
 
