@@ -1,0 +1,87 @@
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import * as api from "../api";
+import * as confirmModule from "./confirm";
+import { IngestionKeySettings, SecretReveal, SsoSettings } from "./identity";
+
+describe("SecretReveal", () => {
+  it("shows the secret once and copies it", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    const onDismiss = vi.fn();
+    render(<SecretReveal label="Ingestion key" value="nrk_secret123" onDismiss={onDismiss} />);
+    expect(screen.getByText("nrk_secret123")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Copy" }));
+    expect(writeText).toHaveBeenCalledWith("nrk_secret123");
+    await user.click(screen.getByRole("button", { name: "I've stored it" }));
+    expect(onDismiss).toHaveBeenCalled();
+  });
+});
+
+describe("SsoSettings", () => {
+  beforeEach(() => {
+    vi.spyOn(api, "getJson").mockResolvedValue({ sso: null } as any);
+  });
+
+  it("submits the provider configuration and shows the redirect URI", async () => {
+    const user = userEvent.setup();
+    const put = vi.spyOn(api, "putJson").mockResolvedValue({ sso: {} } as any);
+    render(<SsoSettings tenantId="acme" />);
+    await waitFor(() => expect(screen.getByText("not configured")).toBeInTheDocument());
+
+    await user.type(screen.getByLabelText("Issuer URL"), "https://idp.example.test");
+    await user.type(screen.getByLabelText("Client ID"), "client-1");
+    await user.type(screen.getByLabelText("Client secret"), "s3cret");
+    await user.type(screen.getByLabelText(/Restrict to email domain/), "acme.test");
+    await user.click(screen.getByRole("button", { name: "Enable SSO" }));
+
+    await waitFor(() => expect(put).toHaveBeenCalled());
+    const [path, body] = put.mock.calls[0];
+    expect(path).toBe("/api/org/sso");
+    expect(body).toMatchObject({ issuer: "https://idp.example.test", client_id: "client-1", client_secret: "s3cret", allowed_email_domain: "acme.test" });
+    // The redirect URI an admin must register with the IdP is displayed.
+    expect(screen.getByText(/\/api\/auth\/sso\/callback/)).toBeInTheDocument();
+    expect(screen.getByText(/\/api\/auth\/sso\/acme\/start/)).toBeInTheDocument();
+  });
+});
+
+describe("IngestionKeySettings", () => {
+  it("creates a key, reveals it once, and can revoke", async () => {
+    const user = userEvent.setup();
+    let keys: any[] = [];
+    vi.spyOn(api, "getJson").mockImplementation(async () => ({ ingestion_keys: keys }) as any);
+    const post = vi.spyOn(api, "postJson").mockImplementation(async (path: string) => {
+      if (path === "/api/ingestion-keys") {
+        keys = [{ key_id: "nrk_abcd1234", name: "prod", status: "active", created_at: "2026-08-23" }];
+        return { token: "nrk_abcd1234FULLSECRET", ingestion_key: keys[0] } as any;
+      }
+      if (path.endsWith("/revoke")) {
+        keys = [{ ...keys[0], status: "revoked" }];
+        return {} as any;
+      }
+      throw new Error(path);
+    });
+    vi.spyOn(confirmModule, "confirm").mockResolvedValue(true);
+
+    render(<IngestionKeySettings />);
+    await waitFor(() => expect(screen.getByText("None yet.")).toBeInTheDocument());
+
+    await user.type(screen.getByLabelText("Name"), "prod");
+    await user.click(screen.getByRole("button", { name: "Create" }));
+
+    // The full secret is revealed exactly once, and the list shows only the id prefix.
+    await waitFor(() => expect(screen.getByTestId("secret-reveal")).toBeInTheDocument());
+    expect(screen.getByText("nrk_abcd1234FULLSECRET")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByTestId("token-row")).toHaveLength(1));
+
+    await user.click(screen.getByRole("button", { name: "I've stored it" }));
+    expect(screen.queryByText("nrk_abcd1234FULLSECRET")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Revoke" }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith("/api/ingestion-keys/nrk_abcd1234/revoke", {}));
+    await waitFor(() => expect(screen.getByText("revoked")).toBeInTheDocument());
+  });
+});

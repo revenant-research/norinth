@@ -159,6 +159,23 @@ export async function postJson<T>(path: string, payload: unknown): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export async function putJson<T>(path: string, payload: unknown): Promise<T> {
+  const response = await fetch(path, {
+    method: "PUT",
+    headers: jsonHeaders,
+    credentials: "include",
+    body: JSON.stringify(payload ?? {}),
+  });
+  if (!response.ok) throw await parseError(response);
+  return response.json() as Promise<T>;
+}
+
+export async function deleteJson<T>(path: string): Promise<T> {
+  const response = await fetch(path, { method: "DELETE", headers: jsonHeaders, credentials: "include" });
+  if (!response.ok) throw await parseError(response);
+  return response.json() as Promise<T>;
+}
+
 export async function fetchMe(): Promise<User> {
   const data = await getJson<{ user: User }>("/api/auth/me");
   return data.user;

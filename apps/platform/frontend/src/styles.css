@@ -1323,3 +1323,65 @@ button.danger {
   padding: 0 4px;
   font-weight: 600;
 }
+
+/* --- Identity & Integrations --------------------------------------------------- */
+.secret-reveal {
+  border: 1px solid rgba(31, 107, 58, 0.4);
+  background: rgba(31, 107, 58, 0.06);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 0 0 12px;
+  display: grid;
+  gap: 8px;
+}
+.secret-value {
+  display: block;
+  word-break: break-all;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid var(--line, #e5e5e0);
+  font-size: 13px;
+}
+.secret-actions {
+  display: flex;
+  gap: 8px;
+}
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.form-actions {
+  display: flex;
+  gap: 8px;
+}
+.admin-form.inline {
+  grid-template-columns: 1fr auto;
+  align-items: end;
+}
+.kv {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 14px;
+  margin: 12px 0 0;
+  font-size: 13px;
+}
+.kv dt {
+  font-weight: 600;
+}
+.kv dd {
+  margin: 0;
+  word-break: break-all;
+}
+.hint {
+  font-size: 13px;
+  color: var(--muted, #5a5a55);
+  margin: 0 0 10px;
+}
+button.secondary.danger {
+  color: #7a1c13;
+  border-color: rgba(180, 35, 24, 0.35);
+}

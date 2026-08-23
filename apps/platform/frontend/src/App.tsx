@@ -27,6 +27,7 @@ import {
   TeamConsole,
 } from "./components/admin";
 import { AgentsView } from "./components/agents";
+import { IdentityView } from "./components/identity";
 import { Badge, Chip, EmptyState, MetricCard, RecordList, Section, SkeletonCards, SkeletonMetrics, formatList } from "./components/ui";
 import { ToastHost, toast } from "./components/toast";
 import { ConfirmHost, confirm } from "./components/confirm";
@@ -46,6 +47,7 @@ const baseRoutes: RouteDef[] = [
   { id: "monitoring", label: "Monitoring", description: "Request traces, model calls, tool use, guardrails, and evaluation records." },
   { id: "incidents", label: "Incidents", description: "Open incidents, linked records, owners, and closure decisions." },
   { id: "agents", label: "Agents", description: "Sanctioned agents, their autonomy bounds and tool allow-lists, and runtime posture mapped to OWASP Agentic." },
+  { id: "identity", label: "Identity & Integrations", description: "Single sign-on, SCIM provisioning, and SDK ingestion keys for your organization.", permission: "user.manage" },
   { id: "team", label: "People & Access", description: "Create users, set their status, reset passwords, and assign governance roles in your organization.", permission: "user.manage" },
   { id: "audit", label: "Audit Log", description: "Immutable record of administrative, identity, and decision actions." },
 ];
@@ -493,7 +495,7 @@ function roleLabel(user: User): string {
   return "Member";
 }
 
-const ADMIN_ROUTES = new Set(["overview", "intake", "team", "audit", "agents"]);
+const ADMIN_ROUTES = new Set(["overview", "intake", "team", "audit", "agents", "identity"]);
 
 function isAdminRoute(active: string): boolean {
   return ADMIN_ROUTES.has(active);
@@ -515,6 +517,8 @@ function AdminRoutes({ active, scope, user }: { active: string; scope: Scope; us
       );
     case "team":
       return <TeamConsole />;
+    case "identity":
+      return <IdentityView tenantId={user.tenant_id || ""} />;
     case "audit":
       return <AuditLog />;
     default:

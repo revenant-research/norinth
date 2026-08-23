@@ -75,7 +75,14 @@ def configure_sso(payload: SsoConfigurationRequest, actor: ActorContext = Depend
     except SsoError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:  # network / malformed discovery document
-        raise HTTPException(status_code=400, detail=f"OpenID discovery failed: {error}") from error
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "OpenID discovery failed: could not fetch "
+                f"{payload.issuer.rstrip('/')}/.well-known/openid-configuration. "
+                "Check that the issuer URL is correct and reachable from the platform."
+            ),
+        ) from error
     config = upsert_sso_configuration(
         tenant_id=tenant_id,
         issuer=endpoints["issuer"],

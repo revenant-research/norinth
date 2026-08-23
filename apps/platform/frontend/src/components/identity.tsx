@@ -1,0 +1,333 @@
+import { useEffect, useState } from "react";
+
+import { getJson, postJson, putJson, deleteJson } from "../api";
+import { confirm } from "./confirm";
+import { toast } from "./toast";
+import { Badge, EmptyState, RecordList, Section } from "./ui";
+import { useResource } from "./useResource";
+
+/**
+ * Identity & Integrations — self-serve enterprise setup for an organization
+ * administrator: SSO (OpenID Connect), SCIM provisioning tokens, and SDK
+ * ingestion keys.
+ *
+ * Secrets (keys, tokens) are shown exactly once in a dismissable reveal with
+ * copy-to-clipboard; they are never rendered persistently and never re-fetchable.
+ */
+
+// --- one-time secret reveal -----------------------------------------------------
+
+export function SecretReveal({ label, value, onDismiss }: { label: string; value: string; onDismiss: () => void }) {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    setCopied(false);
+  }, [value]);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      toast.success("Copied to clipboard.");
+    } catch {
+      toast.error("Clipboard unavailable — select and copy the value manually.");
+    }
+  }
+  return (
+    <div className="secret-reveal" role="status" aria-live="polite" data-testid="secret-reveal">
+      <p>
+        <strong>{label}</strong> — shown once. Store it now; it cannot be retrieved again.
+      </p>
+      <code className="secret-value">{value}</code>
+      <div className="secret-actions">
+        <button type="button" onClick={copy}>
+          {copied ? "Copied" : "Copy"}
+        </button>
+        <button type="button" className="secondary" onClick={onDismiss}>
+          I've stored it
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- SSO --------------------------------------------------------------------------
+
+type SsoConfig = {
+  issuer: string;
+  client_id: string;
+  authorization_endpoint: string;
+  token_endpoint: string;
+  jwks_uri: string;
+  default_role: string;
+  allowed_email_domain: string | null;
+  enabled: number | boolean;
+  updated_at?: string;
+} | null;
+
+const JIT_ROLES = ["governance_reviewer", "control_owner", "risk_owner", "governance_admin", "enterprise_subscriber"];
+
+export function SsoSettings({ tenantId }: { tenantId: string }) {
+  const { value, error, reload } = useResource(() => getJson<{ sso: SsoConfig }>("/api/org/sso"));
+  const [form, setForm] = useState({ issuer: "", client_id: "", client_secret: "", default_role: "governance_reviewer", allowed_email_domain: "" });
+  const [saving, setSaving] = useState(false);
+  const config = value?.sso;
+  const enabled = !!(config && config.enabled);
+
+  useEffect(() => {
+    if (config) {
+      setForm((current) => ({
+        ...current,
+        issuer: config.issuer,
+        client_id: config.client_id,
+        default_role: config.default_role,
+        allowed_email_domain: config.allowed_email_domain || "",
+      }));
+    }
+  }, [config]);
+
+  async function save(event: React.FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      await putJson("/api/org/sso", { ...form, allowed_email_domain: form.allowed_email_domain || null });
+      toast.success("SSO configured. OpenID discovery succeeded.");
+      setForm((current) => ({ ...current, client_secret: "" }));
+      reload();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "SSO configuration failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function disable() {
+    const ok = await confirm({
+      title: "Disable SSO?",
+      body: "Users provisioned through SSO have no password and will be unable to sign in until SSO is re-enabled.",
+      confirmLabel: "Disable SSO",
+      tone: "danger",
+    });
+    if (!ok) return;
+    try {
+      await deleteJson("/api/org/sso");
+      toast.success("SSO disabled.");
+      reload();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Could not disable SSO.");
+    }
+  }
+
+  const loginUrl = `${window.location.origin}/api/auth/sso/${encodeURIComponent(tenantId)}/start`;
+  const redirectUri = `${window.location.origin}/api/auth/sso/callback`;
+
+  return (
+    <Section title="Single sign-on (OpenID Connect)" description="Connect Okta, Microsoft Entra ID, Auth0, or any OpenID Connect provider. New users are provisioned just-in-time with the default role below — never an administration role.">
+      {error ? <p className="feedback error" role="alert">{error}</p> : null}
+      <div className="status-row">
+        <Badge value={enabled ? "enabled" : "not configured"} />
+        {enabled && config ? <span>Issuer {config.issuer}</span> : null}
+      </div>
+      <form className="admin-form" onSubmit={save} aria-label="Configure SSO">
+        <label className="wide">
+          Issuer URL
+          <input value={form.issuer} onChange={(e) => setForm({ ...form, issuer: e.target.value })} required placeholder="https://your-tenant.okta.com" />
+        </label>
+        <label>
+          Client ID
+          <input value={form.client_id} onChange={(e) => setForm({ ...form, client_id: e.target.value })} required />
+        </label>
+        <label>
+          Client secret
+          <input type="password" value={form.client_secret} onChange={(e) => setForm({ ...form, client_secret: e.target.value })} required autoComplete="off" placeholder={enabled ? "Enter to rotate" : ""} />
+        </label>
+        <label>
+          Default role for new users
+          <select value={form.default_role} onChange={(e) => setForm({ ...form, default_role: e.target.value })}>
+            {JIT_ROLES.map((role) => (
+              <option key={role} value={role}>
+                {role}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Restrict to email domain (optional)
+          <input value={form.allowed_email_domain} onChange={(e) => setForm({ ...form, allowed_email_domain: e.target.value })} placeholder="company.com" />
+        </label>
+        <div className="wide form-actions">
+          <button type="submit" disabled={saving}>
+            {saving ? "Verifying with provider…" : enabled ? "Update SSO" : "Enable SSO"}
+          </button>
+          {enabled ? (
+            <button type="button" className="secondary danger" onClick={disable}>
+              Disable SSO
+            </button>
+          ) : null}
+        </div>
+      </form>
+      <dl className="kv">
+        <dt>Redirect URI to register with your provider</dt>
+        <dd>
+          <code>{redirectUri}</code>
+        </dd>
+        <dt>Sign-in link for your users</dt>
+        <dd>
+          <code>{loginUrl}</code>
+        </dd>
+      </dl>
+    </Section>
+  );
+}
+
+// --- generic token list (SCIM tokens / ingestion keys) --------------------------
+
+type TokenRecord = { status: string; name: string; created_at: string; last_used_at?: string | null } & Record<string, any>;
+
+function TokenManager({
+  title,
+  description,
+  listPath,
+  listKey,
+  createPath,
+  createKey,
+  idField,
+  secretLabel,
+  hint,
+}: {
+  title: string;
+  description: string;
+  listPath: string;
+  listKey: string;
+  createPath: string;
+  createKey: string;
+  idField: string;
+  secretLabel: string;
+  hint?: React.ReactNode;
+}) {
+  const { value, error, reload } = useResource(() => getJson<Record<string, any>>(listPath));
+  const [name, setName] = useState("");
+  const [secret, setSecret] = useState<string | null>(null);
+  const rows: TokenRecord[] = value?.[listKey] || [];
+
+  async function create(event: React.FormEvent) {
+    event.preventDefault();
+    try {
+      const result = await postJson<{ token: string }>(createPath, { name });
+      setSecret(result.token);
+      setName("");
+      reload();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Could not create.");
+    }
+  }
+
+  async function revoke(row: TokenRecord) {
+    const ok = await confirm({
+      title: `Revoke "${row.name}"?`,
+      body: "Anything using this credential will be rejected immediately. This cannot be undone.",
+      confirmLabel: "Revoke",
+      tone: "danger",
+    });
+    if (!ok) return;
+    try {
+      await postJson(`${createPath}/${encodeURIComponent(row[idField])}/revoke`, {});
+      toast.success("Revoked.");
+      reload();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Revoke failed.");
+    }
+  }
+
+  return (
+    <Section title={title} description={description}>
+      {error ? <p className="feedback error" role="alert">{error}</p> : null}
+      {hint}
+      {secret ? <SecretReveal label={secretLabel} value={secret} onDismiss={() => setSecret(null)} /> : null}
+      <form className="admin-form inline" onSubmit={create} aria-label={`Create ${secretLabel}`}>
+        <label>
+          Name
+          <input value={name} onChange={(e) => setName(e.target.value)} required placeholder="e.g. production, okta" />
+        </label>
+        <button type="submit">Create</button>
+      </form>
+      {rows.length === 0 ? (
+        <EmptyState>None yet.</EmptyState>
+      ) : (
+        <RecordList empty="">
+          {rows.map((row) => (
+            <article className="record-card" key={row[idField]} data-testid="token-row">
+              <div className="record-main">
+                <span className="record-title">{row.name}</span>
+                <Badge value={row.status} />
+                <code>{row[idField]}…</code>
+              </div>
+              <p>
+                Created {row.created_at}
+                {row.last_used_at ? ` · last used ${row.last_used_at}` : " · never used"}
+                {row.created_by ? ` · by ${row.created_by}` : ""}
+              </p>
+              {row.status === "active" ? (
+                <button type="button" className="secondary" onClick={() => revoke(row)}>
+                  Revoke
+                </button>
+              ) : null}
+            </article>
+          ))}
+        </RecordList>
+      )}
+    </Section>
+  );
+}
+
+export function ScimSettings() {
+  const scimUrl = `${window.location.origin}/scim/v2`;
+  return (
+    <TokenManager
+      title="User provisioning (SCIM 2.0)"
+      description="Let your identity provider create, update, and deactivate users automatically. Deactivated users lose access immediately."
+      listPath="/api/org/scim-tokens"
+      listKey="scim_tokens"
+      createPath="/api/org/scim-tokens"
+      createKey="scim_token"
+      idField="token_id"
+      secretLabel="SCIM bearer token"
+      hint={
+        <dl className="kv">
+          <dt>SCIM base URL for your provider</dt>
+          <dd>
+            <code>{scimUrl}</code>
+          </dd>
+        </dl>
+      }
+    />
+  );
+}
+
+export function IngestionKeySettings() {
+  return (
+    <TokenManager
+      title="SDK ingestion keys"
+      description="Keys your applications use to send telemetry. Each key is bound to this organization — telemetry can never be attributed to another tenant."
+      listPath="/api/ingestion-keys"
+      listKey="ingestion_keys"
+      createPath="/api/ingestion-keys"
+      createKey="ingestion_key"
+      idField="key_id"
+      secretLabel="Ingestion key"
+      hint={
+        <p className="hint">
+          Set <code>NORINTH_API_KEY</code> in the application environment. OpenTelemetry pipelines send to <code>/v1/otel/traces</code> with the same key.
+        </p>
+      }
+    />
+  );
+}
+
+export function IdentityView({ tenantId }: { tenantId: string }) {
+  return (
+    <>
+      <SsoSettings tenantId={tenantId} />
+      <ScimSettings />
+      <IngestionKeySettings />
+    </>
+  );
+}
