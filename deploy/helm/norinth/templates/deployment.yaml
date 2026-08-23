@@ -57,6 +57,16 @@ spec:
               value: {{ .Values.config.smtp.port | quote }}
             - name: NORINTH_SMTP_USER
               value: {{ .Values.config.smtp.user | quote }}
+            # The SMTP password lives in the Secret (values.yaml points operators
+            # here); without this env the relay auth failed and invites/escalations
+            # bounced after six attempts (audit finding M109). Optional so a relay
+            # that needs no auth still deploys.
+            - name: NORINTH_SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "norinth.secretName" . }}
+                  key: NORINTH_SMTP_PASSWORD
+                  optional: true
             - name: NORINTH_SMTP_FROM
               value: {{ .Values.config.smtp.from | quote }}
             - name: NORINTH_SMTP_STARTTLS

@@ -23,6 +23,7 @@ import json
 import logging
 import os
 import smtplib
+import ssl
 import threading
 import time
 import urllib.error
@@ -128,7 +129,16 @@ def _send_email(to: str, subject: str, payload: dict[str, Any]) -> None:
     msg.set_content(text)
     with smtplib.SMTP(host, port, timeout=20) as smtp:
         if starttls:
-            smtp.starttls()
+            # starttls() with no context uses ssl._create_stdlib_context(), which
+            # sets CERT_NONE and check_hostname=False — the STARTTLS channel is
+            # unauthenticated and MITM-able (audit finding M109). Verify by
+            # default; NORINTH_SMTP_INSECURE=1 opts out for a self-signed internal
+            # relay.
+            if os.getenv("NORINTH_SMTP_INSECURE", "0").lower() in {"1", "true", "yes"}:
+                context = ssl._create_unverified_context()
+            else:
+                context = ssl.create_default_context()
+            smtp.starttls(context=context)
         if user and password:
             smtp.login(user, password)
         smtp.send_message(msg)
