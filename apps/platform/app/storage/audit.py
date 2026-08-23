@@ -11,8 +11,12 @@ SOC 2 CC7.2, HIPAA 45 CFR 164.312(b), and 21 CFR Part 11 auditors expect
 from __future__ import annotations
 
 import hashlib
+import hmac
+import json
+import os
 from typing import Any
 
+from . import db
 from .entities import encode_json
 from .raw_events import connect
 
@@ -34,18 +38,27 @@ def init_audit() -> None:
                 target_id TEXT,
                 detail TEXT,
                 prev_hash TEXT,
-                row_hash TEXT
+                row_hash TEXT,
+                row_hmac TEXT
             )
             """
         )
         # Idempotent migration for pre-existing databases.
-        for column in ("prev_hash TEXT", "row_hash TEXT"):
+        for column in ("prev_hash TEXT", "row_hash TEXT", "row_hmac TEXT"):
             try:
                 connection.execute(f"ALTER TABLE audit_logs ADD COLUMN {column}")
             except Exception:
                 pass
         connection.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_tenant ON audit_logs(tenant_id)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor_ref)")
+
+
+def _audit_hmac_key() -> bytes | None:
+    """Key the chain to a secret held outside the database (NORINTH_SECRET_KEY),
+    so a party with only database write access cannot recompute a valid chain.
+    Absent in local development, where the chain is hash-only."""
+    key = os.getenv("NORINTH_SECRET_KEY")
+    return key.encode("utf-8") if key else None
 
 
 def _compute_row_hash(
@@ -58,19 +71,21 @@ def _compute_row_hash(
     target_id: str | None,
     detail_json: str | None,
 ) -> str:
-    payload = "|".join(
-        [
-            prev_hash,
-            created_at,
-            actor_ref,
-            tenant_id or "",
-            action,
-            target_type or "",
-            target_id or "",
-            detail_json or "",
-        ]
+    # Canonical form is a JSON array: unambiguous even when a field contains the
+    # delimiter, unlike the previous "|".join.
+    payload = json.dumps(
+        [prev_hash, created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json],
+        separators=(",", ":"),
+        ensure_ascii=True,
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _compute_row_hmac(row_hash: str) -> str | None:
+    key = _audit_hmac_key()
+    if key is None:
+        return None
+    return hmac.new(key, row_hash.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def record_audit(
@@ -93,19 +108,21 @@ def record_audit(
     connection.isolation_level = None  # manage the transaction explicitly
     try:
         connection.execute("BEGIN IMMEDIATE")
+        db.serialize_writer(connection)  # single-writer ordering on PostgreSQL too
         last = connection.execute("SELECT row_hash FROM audit_logs ORDER BY id DESC LIMIT 1").fetchone()
         prev_hash = last["row_hash"] if last and last["row_hash"] else GENESIS_HASH
         created_at = connection.execute("SELECT datetime('now') AS now").fetchone()["now"]
         row_hash = _compute_row_hash(
             prev_hash, created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json
         )
+        row_hmac = _compute_row_hmac(row_hash)
         connection.execute(
             """
             INSERT INTO audit_logs
-                (created_at, actor_ref, tenant_id, action, target_type, target_id, detail, prev_hash, row_hash)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (created_at, actor_ref, tenant_id, action, target_type, target_id, detail, prev_hash, row_hash, row_hmac)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json, prev_hash, row_hash),
+            (created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json, prev_hash, row_hash, row_hmac),
         )
         connection.execute("COMMIT")
     finally:
@@ -124,10 +141,11 @@ def verify_audit_chain(*, tenant_id: str | None = None) -> dict[str, Any]:
     with connect() as connection:
         rows = connection.execute(
             """
-            SELECT id, created_at, actor_ref, tenant_id, action, target_type, target_id, detail, prev_hash, row_hash
+            SELECT id, created_at, actor_ref, tenant_id, action, target_type, target_id, detail, prev_hash, row_hash, row_hmac
             FROM audit_logs ORDER BY id
             """
         ).fetchall()
+    key = _audit_hmac_key()
     expected_prev = GENESIS_HASH
     for row in rows:
         recomputed = _compute_row_hash(
@@ -141,7 +159,12 @@ def verify_audit_chain(*, tenant_id: str | None = None) -> dict[str, Any]:
             row["detail"],
         )
         if row["prev_hash"] != expected_prev or row["row_hash"] != recomputed:
-            return {"ok": False, "entries": len(rows), "broken_at": row["id"]}
+            return {"ok": False, "entries": len(rows), "broken_at": row["id"], "reason": "hash chain"}
+        # If this row was written with an HMAC, it must verify under the current
+        # key; a DBA rewriting the chain without the key cannot reproduce it.
+        if row["row_hmac"] is not None:
+            if key is None or not hmac.compare_digest(row["row_hmac"], _compute_row_hmac(row["row_hash"]) or ""):
+                return {"ok": False, "entries": len(rows), "broken_at": row["id"], "reason": "hmac"}
         expected_prev = row["row_hash"]
     return {"ok": True, "entries": len(rows), "broken_at": None}
 

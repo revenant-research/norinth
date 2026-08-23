@@ -187,6 +187,14 @@ def _0010_cross_tenant_keys(connection) -> None:
     connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_sdk_events_span_tenant ON sdk_events(tenant_id, trace_id, span_id)")
 
 
+def _0011_audit_hmac(connection) -> None:
+    """Add the audit-chain HMAC column (keyed by NORINTH_SECRET_KEY)."""
+    try:
+        connection.execute("ALTER TABLE audit_logs ADD COLUMN row_hmac TEXT")
+    except Exception:  # noqa: BLE001 - column already exists
+        pass
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
