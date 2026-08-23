@@ -67,6 +67,12 @@ def _baseline(connection) -> None:
     Runs outside the passed connection because the init functions open their
     own; they are all CREATE IF NOT EXISTS / guarded ALTERs, so this is safe on
     both fresh and pre-existing databases.
+
+    WARNING (audit finding M107): this baseline is recorded once per database.
+    Adding a new column or table by editing an ``init_*`` function will NOT reach
+    databases that already recorded migration 1 — the change would silently apply
+    only to fresh installs. Every schema change AFTER the baseline must be a new
+    ``Migration(...)`` entry appended to MIGRATIONS, never an edit to an init_*.
     """
     from app.storage.agents import init_agents
     from app.storage.audit import init_audit

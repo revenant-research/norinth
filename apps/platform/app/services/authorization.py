@@ -14,7 +14,6 @@ from app.storage.workflow import (
 # not against role strings, so new roles can be granted permissions without code
 # changes.
 GOVERNANCE_ADMIN = "governance_admin"
-OWNER_ADMIN = "owner_admin"
 ORG_ADMIN = "org_admin"
 RISK_OWNER = "risk_owner"
 CONTROL_OWNER = "control_owner"

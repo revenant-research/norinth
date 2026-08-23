@@ -95,21 +95,6 @@ class OwnerPolicyRequest(BaseModel):
     source: str = Field(default="configured")
 
 
-class PlatformUserRequest(BaseModel):
-    user_ref: str = Field(min_length=1)
-    display_name: str = Field(min_length=1)
-    status: str = Field(default="active", min_length=1)
-
-
-class RoleAssignmentRequest(BaseModel):
-    user_ref: str = Field(min_length=1)
-    role: str = Field(min_length=1)
-    status: str = Field(default="active", min_length=1)
-    tenant_id: str | None = None
-    project: str | None = None
-    environment: str | None = None
-
-
 class ReviewQueuePolicyRequest(BaseModel):
     policy_id: str = Field(min_length=1)
     task_type: str = Field(min_length=1)
