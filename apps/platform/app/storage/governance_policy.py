@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from . import db
 from .entities import as_object, decode_json, encode_json, entity_id
 from .raw_events import connect
+
+# Whole-word agentic terms. Substring matching produced false positives — an app
+# named "stool-sample-tracker" matched "tool" (audit finding M103) — so the
+# heuristic now requires word boundaries and is secondary to real tool.call
+# telemetry.
+_AGENTIC_TERMS = re.compile(r"\b(agent|agents|agentic|tool|tools|orchestrat\w+)\b")
 
 SUPPORTED_RISK_SIGNALS = {
     "provider_dependency",
@@ -478,8 +485,18 @@ def assess_risk_rules(connection, app_context: dict[str, Any], rules: list[dict[
             upsert_rule_finding(connection, app_context, rule, by_type["model.call"], "Model calls observed without guardrail decision evidence")
         if signal == "missing_eval" and by_type.get("model.call") and not by_type.get("eval.result"):
             upsert_rule_finding(connection, app_context, rule, by_type["model.call"], "Model calls observed without evaluation result evidence")
-        if signal == "missing_agent_run" and any(term in app_text for term in ("agent", "agentic", "tool")) and not by_type.get("agent.run"):
-            upsert_rule_finding(connection, app_context, rule, events, "Agentic usage signal observed without agent run evidence")
+        if signal == "missing_agent_run" and not by_type.get("agent.run"):
+            # Primary signal: actual tool-call telemetry. Secondary: a whole-word
+            # agentic term in the app name/use-case (never a substring match).
+            has_tool_calls = bool(by_type.get("tool.call"))
+            text_is_agentic = bool(_AGENTIC_TERMS.search(app_text))
+            if has_tool_calls or text_is_agentic:
+                reason = (
+                    "Tool-call telemetry observed without agent run evidence"
+                    if has_tool_calls
+                    else "Agentic term in the application name or use-case without agent run evidence"
+                )
+                upsert_rule_finding(connection, app_context, rule, events, reason)
         if signal == "operational_errors" and error_events:
             upsert_rule_finding(connection, app_context, rule, error_events, f"{len(error_events)} error events observed")
 
