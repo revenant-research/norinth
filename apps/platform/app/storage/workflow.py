@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import sqlite3
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from . import db
 from .entities import entity_id
 from .raw_events import connect
 
@@ -31,7 +32,7 @@ def init_workflow() -> None:
         ):
             try:
                 connection.execute(statement)
-            except sqlite3.OperationalError:
+            except db.OperationalError:
                 pass
         connection.execute(
             """
@@ -167,7 +168,7 @@ def init_workflow() -> None:
         ):
             try:
                 connection.execute(statement)
-            except sqlite3.OperationalError:
+            except db.OperationalError:
                 pass
         connection.execute("CREATE INDEX IF NOT EXISTS idx_platform_users_status ON platform_users(status)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_role_assignments_scope ON role_assignments(tenant_id, project, environment)")
@@ -267,8 +268,7 @@ def refresh_review_queue(connection, queue_policies: list[dict[str, Any]]) -> No
             mark_review_task_queue_state(connection, task_record, None, None, None, "unassigned")
             continue
         assignee = find_assignee(connection, task_record, policy["assigned_role"])
-        due_modifier = f"+{int(policy['due_days'])} days"
-        due_at = connection.execute("SELECT datetime(?, ?) AS due_at", (task_record["created_at"], due_modifier)).fetchone()["due_at"]
+        due_at = _shift_days(task_record["created_at"], int(policy["due_days"]))
         escalation_status = queue_status(connection, due_at, int(policy["escalation_days"]), assignee)
         mark_review_task_queue_state(connection, task_record, policy["assigned_role"], assignee, due_at, escalation_status)
 
@@ -297,15 +297,34 @@ def find_assignee(connection, task: dict[str, Any], assigned_role: str) -> str |
     return None if row is None else row["user_ref"]
 
 
+def _parse_ts(value: str) -> datetime:
+    """Parse the timestamp formats the platform writes: SQLite's
+    'YYYY-MM-DD HH:MM:SS' and ISO-8601 ('...T...', optional offset). Naive
+    values are treated as UTC."""
+    text = str(value).strip().replace(" ", "T", 1) if " " in str(value) and "T" not in str(value) else str(value)
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed
+
+
+def _shift_days(value: str, days: int) -> str:
+    return (_parse_ts(value) + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+
+
 def queue_status(connection, due_at: str, escalation_days: int, assignee: str | None) -> str:
+    # Date arithmetic is done in Python rather than SQL so it is identical on
+    # every database backend (the previous SQLite datetime() calls were not
+    # portable).
     if assignee is None:
         return "unassigned"
-    overdue = connection.execute("SELECT datetime('now') > datetime(?) AS overdue", (due_at,)).fetchone()["overdue"]
-    if not overdue:
+    now = datetime.now(UTC)
+    if now <= _parse_ts(due_at):
         return "on_track"
-    escalated_at = connection.execute("SELECT datetime(?, ?) AS escalated_at", (due_at, f"+{escalation_days} days")).fetchone()["escalated_at"]
-    escalated = connection.execute("SELECT datetime('now') > datetime(?) AS escalated", (escalated_at,)).fetchone()["escalated"]
-    return "escalated" if escalated else "overdue"
+    escalated_at = _parse_ts(due_at) + timedelta(days=escalation_days)
+    return "escalated" if now > escalated_at else "overdue"
 
 
 def mark_review_task_queue_state(
@@ -520,8 +539,8 @@ def insert_session(token: str, user_ref: str, expires_at: str) -> None:
 def load_session(token: str) -> dict[str, Any] | None:
     with connect() as connection:
         row = connection.execute(
-            "SELECT * FROM sessions WHERE token = ? AND datetime(expires_at) > datetime('now')",
-            (token,),
+            "SELECT * FROM sessions WHERE token = ? AND expires_at > ?",
+            (token, datetime.now(UTC).isoformat()),
         ).fetchone()
     return None if row is None else dict(row)
 
@@ -538,7 +557,7 @@ def delete_sessions_for_user(user_ref: str) -> None:
 
 def purge_expired_sessions() -> None:
     with connect() as connection:
-        connection.execute("DELETE FROM sessions WHERE datetime(expires_at) <= datetime('now')")
+        connection.execute("DELETE FROM sessions WHERE expires_at <= ?", (datetime.now(UTC).isoformat(),))
 
 
 def list_role_permissions(role: str) -> list[str]:

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from typing import Any
 
+from . import db
 from .entities import entity_id
 from .raw_events import connect
 
@@ -85,7 +85,7 @@ def init_deployments() -> None:
         ):
             try:
                 connection.execute(statement)
-            except sqlite3.OperationalError:
+            except db.OperationalError:
                 pass
         connection.execute("CREATE INDEX IF NOT EXISTS idx_governance_deployments_scope ON governance_deployments(tenant_id, project, environment)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_deployment_versions_scope ON deployment_versions(tenant_id, project, environment)")

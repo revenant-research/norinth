@@ -93,8 +93,12 @@ def test_retried_batch_is_idempotent(client):
 
 
 def test_database_uses_wal(client):
+    import pytest
+    from app.storage import db
     from app.storage.raw_events import connect
 
+    if db.is_postgres():
+        pytest.skip("WAL journaling is a SQLite setting; PostgreSQL has its own WAL")
     with connect() as connection:
         mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
     assert mode.lower() == "wal"

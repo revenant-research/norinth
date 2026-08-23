@@ -20,10 +20,18 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 PLATFORM_DIR = REPO_ROOT / "apps" / "platform"
 sys.path.insert(0, str(PLATFORM_DIR))
 
-# Point at a throwaway DB before importing the app, so its import-time
-# initialization never touches a real database.
-_bootstrap_db = pathlib.Path(tempfile.mkdtemp(prefix="norinth-boot-")) / "boot.sqlite3"
-os.environ["NORINTH_PLATFORM_DB"] = str(_bootstrap_db)
+# Backend selection. By default tests run on a throwaway SQLite file. Setting
+# NORINTH_TEST_DATABASE_URL=postgresql://... runs the same suite against
+# PostgreSQL (the schema is dropped and recreated for every test).
+POSTGRES_TEST_URL = os.getenv("NORINTH_TEST_DATABASE_URL")
+if POSTGRES_TEST_URL:
+    os.environ["NORINTH_DATABASE_URL"] = POSTGRES_TEST_URL
+else:
+    os.environ.pop("NORINTH_DATABASE_URL", None)
+    # Point at a throwaway DB before importing the app, so its import-time
+    # initialization never touches a real database.
+    _bootstrap_db = pathlib.Path(tempfile.mkdtemp(prefix="norinth-boot-")) / "boot.sqlite3"
+    os.environ["NORINTH_PLATFORM_DB"] = str(_bootstrap_db)
 
 DEFAULT_ADMIN_EMAIL = "admin@norinth.local"
 DEFAULT_ADMIN_PASSWORD = "norinth-admin"
@@ -62,9 +70,21 @@ def _reinitialize_database() -> None:
     seed_dev_ingestion_key_if_dev()
 
 
+def _reset_postgres_schema() -> None:
+    import psycopg
+
+    with psycopg.connect(POSTGRES_TEST_URL, autocommit=True) as connection:
+        connection.execute("DROP SCHEMA public CASCADE")
+        connection.execute("CREATE SCHEMA public")
+
+
 @pytest.fixture
 def fresh_db(tmp_path, monkeypatch):
     """Point the platform at a fresh, fully-initialized database."""
+    if POSTGRES_TEST_URL:
+        _reset_postgres_schema()
+        _reinitialize_database()
+        return POSTGRES_TEST_URL
     db_path = tmp_path / "test.sqlite3"
     monkeypatch.setenv("NORINTH_PLATFORM_DB", str(db_path))
     _reinitialize_database()

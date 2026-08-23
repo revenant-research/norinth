@@ -9,9 +9,29 @@ services:
     volumes:
       - norinth-data:/app/data
     environment:
-      # Must match the variable the application actually reads (storage/raw_events.py).
+      # Default: zero-config SQLite on the mounted volume (local development).
       - NORINTH_PLATFORM_DB=/app/data/norinth.sqlite3
+      # Production: point at PostgreSQL instead (uncomment, and start the
+      # postgres service below with `docker compose --profile postgres up`).
+      # - NORINTH_DATABASE_URL=postgresql://norinth:norinth@postgres:5432/norinth
     restart: unless-stopped
+
+  postgres:
+    image: postgres:16
+    profiles: ["postgres"]
+    container_name: norinth-postgres
+    environment:
+      POSTGRES_USER: norinth
+      POSTGRES_PASSWORD: norinth
+      POSTGRES_DB: norinth
+    volumes:
+      - norinth-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U norinth"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 volumes:
   norinth-data:
+  norinth-pgdata:

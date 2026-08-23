@@ -123,6 +123,20 @@ to Semantic Versioning once it reaches a tagged release.
   target.
 
 ### Added
+- **PostgreSQL backend (C-5 / enterprise architecture).** The platform now runs
+  on PostgreSQL by setting `NORINTH_DATABASE_URL` (SQLite remains the
+  zero-config default for local development). A new backend abstraction
+  (`app/storage/db.py`) provides the connection/cursor interface the storage
+  layer already uses and translates the SQLite idioms at execution time
+  (placeholders, `datetime('now')`, `INSERT OR IGNORE/REPLACE`, `AUTOINCREMENT`,
+  `PRAGMA`), with per-statement savepoints to preserve SQLite's statement-level
+  atomicity for the idempotent migrations. Review-queue and session date
+  arithmetic moved from SQL to Python so it is identical on both backends. The
+  full test suite runs against real PostgreSQL in CI (service container) as
+  well as SQLite. This retires the audit's "SQLite is disqualifying at scale"
+  finding and unblocks HA/replication/managed-encryption deployments.
+
+### Added
 - **OpenTelemetry GenAI ingestion.** New `POST /v1/otel/traces` accepts OTLP/HTTP
   JSON spans and maps the OpenTelemetry GenAI semantic conventions (`gen_ai.*`)
   to Norinth events — chat/completions/embeddings -> model.call, execute_tool ->
