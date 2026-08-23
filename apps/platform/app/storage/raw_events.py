@@ -1,10 +1,39 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
+from app.services import secrets as secret_store
+
 from . import db
+
+# The raw event body can carry prompt/response content — PHI when the SDK is run
+# with content capture enabled. With NORINTH_ENCRYPT_RAW_EVENTS=1 the raw_event
+# column is encrypted at rest (AES-GCM via the configured NORINTH_SECRET_KEY),
+# while the extracted governance columns (application_name, model, ...) stay
+# queryable in plaintext (audit finding M102). Reads decrypt transparently and
+# legacy plaintext rows pass through, so the flag can be turned on without a
+# migration.
+_RAW_EVENT_AAD = "sdk_event"
+
+
+def _encrypt_raw_events() -> bool:
+    return os.getenv("NORINTH_ENCRYPT_RAW_EVENTS", "0").lower() in {"1", "true", "yes"}
+
+
+def serialize_raw_event(event: dict[str, Any]) -> str:
+    payload = json.dumps(event)
+    if _encrypt_raw_events():
+        return secret_store.encrypt(payload, associated_data=_RAW_EVENT_AAD)
+    return payload
+
+
+def deserialize_raw_event(stored: str) -> dict[str, Any]:
+    # secret_store.decrypt returns plaintext unchanged, so this handles both
+    # encrypted and legacy-plaintext rows.
+    return json.loads(secret_store.decrypt(stored, associated_data=_RAW_EVENT_AAD))
 
 
 def _as_object(value):
@@ -140,7 +169,7 @@ def event_to_row(event: dict[str, Any]) -> dict[str, Any]:
         "operation": attributes.get("operation"),
         "input_tokens": int(usage.get("input_tokens") or 0),
         "output_tokens": int(usage.get("output_tokens") or 0),
-        "raw_event": json.dumps(event),
+        "raw_event": serialize_raw_event(event),
     }
 
 
@@ -288,4 +317,4 @@ def list_events(
     query = f"SELECT raw_event FROM sdk_events {where} ORDER BY id DESC LIMIT :limit OFFSET :offset"
     with connect() as connection:
         rows = connection.execute(query, params).fetchall()
-    return [json.loads(row["raw_event"]) for row in reversed(rows)]
+    return [deserialize_raw_event(row["raw_event"]) for row in reversed(rows)]

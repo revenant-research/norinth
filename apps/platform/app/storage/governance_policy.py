@@ -5,7 +5,7 @@ from typing import Any
 
 from . import db
 from .entities import as_object, decode_json, encode_json, entity_id
-from .raw_events import connect
+from .raw_events import connect, deserialize_raw_event
 
 # Whole-word agentic terms. Substring matching produced false positives — an app
 # named "stool-sample-tracker" matched "tool" (audit finding M103) — so the
@@ -377,7 +377,12 @@ def list_application_events(connection, app_context: dict[str, Any]) -> list[dic
 
 
 def dict_event(raw_event: str) -> dict[str, Any]:
-    return decode_json(raw_event, {})
+    # Decrypt transparently when raw-event encryption is enabled (M102); falls
+    # back to {} for anything unparseable, as before.
+    try:
+        return deserialize_raw_event(raw_event)
+    except Exception:
+        return decode_json(raw_event, {})
 
 
 def assess_controls(connection, app_context: dict[str, Any], controls: list[dict[str, Any]], events: list[dict[str, Any]]) -> None:
