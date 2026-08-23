@@ -243,13 +243,16 @@ def cmd_init(args: argparse.Namespace) -> int:
         pass
     _ok(f"wrote {env_path} ({', '.join(values)}) — keep it out of version control")
     if providers:
-        _ok(f"detected {', '.join(providers)} in {manifest['total_files_scanned']} files; these clients are auto-instrumented")
+        _ok(f"detected {', '.join(providers)} in {manifest['total_files_scanned']} files; wrap each client to record its calls")
     else:
         print("  - no OpenAI/Anthropic clients detected statically; explicit events still work")
     print(
         "\nAdd at startup:\n\n"
         "    import norinth_logger as norinth\n"
-        "    norinth.init()   # reads NORINTH_* from the environment\n\n"
+        "    norinth.init()          # reads NORINTH_* from the environment\n\n"
+        "Wrap each provider client so its model calls are recorded:\n\n"
+        "    from openai import OpenAI\n"
+        "    client = norinth.wrap(OpenAI())   # use the returned client\n\n"
         "Then run `norinth doctor` to confirm events arrive."
     )
     return 0
