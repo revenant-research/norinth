@@ -46,6 +46,21 @@ _TENANT_SCOPED_TABLES = (
     "owner_assignments",
     "role_assignments",
     "ingestion_keys",
+    "agent_registry",
+    "attestation_keys",
+    "invites",
+    "notification_outbox",
+    "webhooks",
+    "saml_configurations",
+    "saml_requests",
+    "scim_tokens",
+    "sso_configurations",
+    "sso_login_states",
+    # Config overrides carry the tenant's id (platform defaults are tenant_id '').
+    "control_library",
+    "risk_rules",
+    "review_queue_policies",
+    "owner_assignment_policies",
     "platform_users",
 )
 

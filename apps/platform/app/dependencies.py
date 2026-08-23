@@ -53,11 +53,14 @@ def ingestion_tenant(authorization: str | None = Header(default=None)) -> str:
     """
     # Imported here to avoid a circular import at module load.
     from app.storage.ingestion_keys import resolve_ingestion_key
+    from app.storage.organizations import organization_is_active
 
     token = _extract_bearer(authorization)
     key = resolve_ingestion_key(token)
     if key is None:
         raise HTTPException(status_code=401, detail="Invalid or missing ingestion key")
+    if not organization_is_active(key["tenant_id"]):
+        raise HTTPException(status_code=403, detail="Organization is suspended")
     return key["tenant_id"]
 
 
@@ -77,9 +80,17 @@ def current_actor(norinth_session: str | None = Cookie(default=None)) -> ActorCo
     user = load_platform_user(user_ref)
     if user is None or user.get("status") != "active":
         raise HTTPException(status_code=403, detail="User is not active")
+    # A suspended organization freezes its users (super admins are on the
+    # platform plane and have no tenant to suspend).
+    tenant_id = user.get("tenant_id")
+    if user.get("platform_role") != "super_admin" and tenant_id:
+        from app.storage.organizations import organization_is_active
+
+        if not organization_is_active(tenant_id):
+            raise HTTPException(status_code=403, detail="Organization is suspended")
     return ActorContext(
         user_ref=user_ref,
-        tenant_id=user.get("tenant_id"),
+        tenant_id=tenant_id,
         platform_role=user.get("platform_role"),
     )
 
