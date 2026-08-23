@@ -66,13 +66,10 @@ except Exception:  # pragma: no cover
 # same upsert as ON CONFLICT ... DO UPDATE in PostgreSQL).
 _REPLACE_PRIMARY_KEYS = {
     "control_assessments": "assessment_id",
-    "control_library": "control_id",
     "governance_decisions": "decision_id",
     "governance_exceptions": "exception_id",
     "governance_observed_events": "entity_id",
-    "owner_assignment_policies": "policy_id",
     "risk_findings": "finding_id",
-    "risk_rules": "rule_id",
 }
 
 _NOW_TEXT = "to_char((now() at time zone 'utc'), 'YYYY-MM-DD HH24:MI:SS')"
