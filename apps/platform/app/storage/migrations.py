@@ -135,6 +135,48 @@ def _0008_outbox_claims(connection) -> None:
     ensure_claim_columns(connection)
 
 
+def _0009_config_table_tenancy(connection) -> None:
+    """Add tenant_id to the config tables (control_library, risk_rules,
+    review_queue_policies, owner_assignment_policies) and rebuild them with a
+    composite primary key. Existing rows become platform defaults (tenant_id
+    ''). A tenant's customizations are stored under its own tenant_id and never
+    touch another tenant's."""
+    rebuilds = {
+        "control_library": (
+            "tenant_id TEXT NOT NULL DEFAULT '', control_id TEXT NOT NULL, name TEXT NOT NULL, "
+            "framework_refs TEXT NOT NULL, evidence_event_types TEXT NOT NULL, required_fields TEXT NOT NULL, "
+            "rationale TEXT NOT NULL, PRIMARY KEY (tenant_id, control_id)",
+            "control_id, name, framework_refs, evidence_event_types, required_fields, rationale",
+        ),
+        "risk_rules": (
+            "tenant_id TEXT NOT NULL DEFAULT '', rule_id TEXT NOT NULL, name TEXT NOT NULL, signal TEXT NOT NULL, "
+            "severity TEXT NOT NULL, confidence REAL NOT NULL, framework_refs TEXT NOT NULL, rationale TEXT NOT NULL, "
+            "PRIMARY KEY (tenant_id, rule_id)",
+            "rule_id, name, signal, severity, confidence, framework_refs, rationale",
+        ),
+        "review_queue_policies": (
+            "tenant_id TEXT NOT NULL DEFAULT '', policy_id TEXT NOT NULL, task_type TEXT NOT NULL, "
+            "assigned_role TEXT NOT NULL, due_days INTEGER NOT NULL, escalation_days INTEGER NOT NULL, "
+            "source TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (tenant_id, policy_id)",
+            "policy_id, task_type, assigned_role, due_days, escalation_days, source, created_at, updated_at",
+        ),
+        "owner_assignment_policies": (
+            "tenant_id TEXT NOT NULL DEFAULT '', policy_id TEXT NOT NULL, subject_type TEXT NOT NULL, "
+            "owner_role TEXT NOT NULL, applies_to_status TEXT, source TEXT NOT NULL, created_at TEXT NOT NULL, "
+            "updated_at TEXT NOT NULL, PRIMARY KEY (tenant_id, policy_id)",
+            "policy_id, subject_type, owner_role, applies_to_status, source, created_at, updated_at",
+        ),
+    }
+    for table, (schema, columns) in rebuilds.items():
+        existing = connection.execute(f"SELECT * FROM {table} LIMIT 1").fetchone()
+        if existing is not None and "tenant_id" in dict(existing):
+            continue  # already migrated
+        connection.execute(f"ALTER TABLE {table} RENAME TO {table}_old")
+        connection.execute(f"CREATE TABLE {table} ({schema})")
+        connection.execute(f"INSERT INTO {table} (tenant_id, {columns}) SELECT '', {columns} FROM {table}_old")
+        connection.execute(f"DROP TABLE {table}_old")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
@@ -144,6 +186,7 @@ MIGRATIONS: list[Migration] = [
     Migration(6, "inbound leads from the landing page", _0006_leads),
     Migration(7, "notification outbox, webhooks, invites", _0007_notifications),
     Migration(8, "outbox delivery claims for multi-replica workers", _0008_outbox_claims),
+    Migration(9, "tenant-scoped config tables (control library, risk rules, routing, owner policies)", _0009_config_table_tenancy),
 ]
 
 

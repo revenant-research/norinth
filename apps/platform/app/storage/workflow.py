@@ -79,27 +79,31 @@ def init_workflow() -> None:
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS review_queue_policies (
-                policy_id TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL DEFAULT '',
+                policy_id TEXT NOT NULL,
                 task_type TEXT NOT NULL,
                 assigned_role TEXT NOT NULL,
                 due_days INTEGER NOT NULL,
                 escalation_days INTEGER NOT NULL,
                 source TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (tenant_id, policy_id)
             )
             """
         )
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS owner_assignment_policies (
-                policy_id TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL DEFAULT '',
+                policy_id TEXT NOT NULL,
                 subject_type TEXT NOT NULL,
                 owner_role TEXT NOT NULL,
                 applies_to_status TEXT,
                 source TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (tenant_id, policy_id)
             )
             """
         )
@@ -196,9 +200,9 @@ def seed_review_queue_policies(connection) -> None:
     for policy in DEFAULT_REVIEW_QUEUE_POLICIES:
         connection.execute(
             """
-            INSERT INTO review_queue_policies (policy_id, task_type, assigned_role, due_days, escalation_days, source, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'default', datetime('now'), datetime('now'))
-            ON CONFLICT(policy_id) DO NOTHING
+            INSERT INTO review_queue_policies (tenant_id, policy_id, task_type, assigned_role, due_days, escalation_days, source, created_at, updated_at)
+            VALUES ('', ?, ?, ?, ?, ?, 'default', datetime('now'), datetime('now'))
+            ON CONFLICT(tenant_id, policy_id) DO NOTHING
             """,
             (policy["policy_id"], policy["task_type"], policy["assigned_role"], policy["due_days"], policy["escalation_days"]),
         )
@@ -264,45 +268,61 @@ def refresh_workflow_state(scopes: list[dict[str, Any]] | None = None) -> None:
     wanted = None if scopes is None else {(s.get("tenant_id"), s["project"], s["environment"], s["application_name"]) for s in scopes}
     tenant_filter = None if scopes is None else {s.get("tenant_id") for s in scopes}
     with connect() as connection:
-        policies = list_owner_policies(connection)
-        queue_policies = list_queue_policies(connection)
         applications = connection.execute(
             "SELECT DISTINCT tenant_id, project, environment, application_name FROM governance_applications"
         ).fetchall()
+        policy_cache: dict[str, list[dict[str, Any]]] = {}
+        queue_cache: dict[str, list[dict[str, Any]]] = {}
+
+        def owner_policies_for(tid: str | None) -> list[dict[str, Any]]:
+            key = tid or ""
+            if key not in policy_cache:
+                policy_cache[key] = list_owner_policies(connection, key)
+            return policy_cache[key]
+
         for application in applications:
             app_context = dict(application)
             if not _in_scopes(app_context, wanted):
                 continue
-            apply_owner_policies(connection, app_context, policies, "application", app_context["application_name"], "active")
+            apply_owner_policies(connection, app_context, owner_policies_for(app_context.get("tenant_id")), "application", app_context["application_name"], "active")
         for row in connection.execute("SELECT DISTINCT tenant_id, project, environment, application_name, risk, finding_id FROM risk_findings").fetchall():
             app_context = dict(row)
             if not _in_scopes(app_context, wanted):
                 continue
-            apply_owner_policies(connection, app_context, policies, "risk_finding", row["finding_id"], "open")
+            apply_owner_policies(connection, app_context, owner_policies_for(app_context.get("tenant_id")), "risk_finding", row["finding_id"], "open")
         for row in connection.execute("SELECT DISTINCT tenant_id, project, environment, application_name, control_id, assessment_id FROM control_assessments WHERE status = 'missing'").fetchall():
             app_context = dict(row)
             if not _in_scopes(app_context, wanted):
                 continue
-            apply_owner_policies(connection, app_context, policies, "control_assessment", row["assessment_id"], "missing")
+            apply_owner_policies(connection, app_context, owner_policies_for(app_context.get("tenant_id")), "control_assessment", row["assessment_id"], "missing")
         for row in connection.execute("SELECT DISTINCT tenant_id, project, environment, application_name, incident_id, status FROM governance_incidents WHERE status != 'closed'").fetchall():
             app_context = dict(row)
             if not _in_scopes(app_context, wanted):
                 continue
-            apply_owner_policies(connection, app_context, policies, "incident", row["incident_id"], row["status"])
-        refresh_review_queue(connection, queue_policies, tenant_filter)
+            apply_owner_policies(connection, app_context, owner_policies_for(app_context.get("tenant_id")), "incident", row["incident_id"], row["status"])
+        refresh_review_queue(connection, queue_cache, tenant_filter)
 
 
-def list_queue_policies(connection) -> list[dict[str, Any]]:
-    rows = connection.execute("SELECT * FROM review_queue_policies ORDER BY policy_id").fetchall()
-    return [dict(row) for row in rows]
+def list_queue_policies(connection, tenant_id: str | None = None) -> list[dict[str, Any]]:
+    tid = tenant_id or ""
+    rows = connection.execute("SELECT * FROM review_queue_policies WHERE tenant_id IN ('', ?) ORDER BY policy_id", (tid,)).fetchall()
+    merged: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        record = dict(row)
+        if record["policy_id"] not in merged or record["tenant_id"] != "":
+            merged[record["policy_id"]] = record
+    return list(merged.values())
 
 
-def refresh_review_queue(connection, queue_policies: list[dict[str, Any]], tenant_filter: set | None = None) -> None:
+def refresh_review_queue(connection, queue_cache: dict[str, list[dict[str, Any]]], tenant_filter: set | None = None) -> None:
     for task in connection.execute("SELECT * FROM review_tasks WHERE status = 'open'").fetchall():
         task_record = dict(task)
         if tenant_filter is not None and task_record.get("tenant_id") not in tenant_filter:
             continue
-        policy = next((item for item in queue_policies if item["task_type"] == task_record["task_type"]), None)
+        tid = task_record.get("tenant_id") or ""
+        if tid not in queue_cache:
+            queue_cache[tid] = list_queue_policies(connection, tid)
+        policy = next((item for item in queue_cache[tid] if item["task_type"] == task_record["task_type"]), None)
         if policy is None:
             mark_review_task_queue_state(connection, task_record, None, None, None, "unassigned")
             continue
@@ -434,9 +454,15 @@ def mark_review_task_queue_state(
     )
 
 
-def list_owner_policies(connection) -> list[dict[str, Any]]:
-    rows = connection.execute("SELECT * FROM owner_assignment_policies ORDER BY policy_id").fetchall()
-    return [dict(row) for row in rows]
+def list_owner_policies(connection, tenant_id: str | None = None) -> list[dict[str, Any]]:
+    tid = tenant_id or ""
+    rows = connection.execute("SELECT * FROM owner_assignment_policies WHERE tenant_id IN ('', ?) ORDER BY policy_id", (tid,)).fetchall()
+    merged: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        record = dict(row)
+        if record["policy_id"] not in merged or record["tenant_id"] != "":
+            merged[record["policy_id"]] = record
+    return list(merged.values())
 
 
 def apply_owner_policies(
@@ -489,16 +515,22 @@ def ensure_owner_assignment(connection, app_context: dict[str, Any], subject_typ
     )
 
 
-def upsert_owner_policy(policy: dict[str, Any]) -> dict[str, Any]:
+def upsert_owner_policy(policy: dict[str, Any], tenant_id: str) -> dict[str, Any]:
+    if not tenant_id:
+        raise ValueError("a tenant_id is required to customize owner policies")
     with connect() as connection:
         connection.execute(
             """
-            INSERT OR REPLACE INTO owner_assignment_policies (
-                policy_id, subject_type, owner_role, applies_to_status, source, created_at, updated_at
+            INSERT INTO owner_assignment_policies (
+                tenant_id, policy_id, subject_type, owner_role, applies_to_status, source, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            ON CONFLICT (tenant_id, policy_id) DO UPDATE SET
+                subject_type=excluded.subject_type, owner_role=excluded.owner_role,
+                applies_to_status=excluded.applies_to_status, source=excluded.source, updated_at=datetime('now')
             """,
             (
+                tenant_id,
                 policy["policy_id"],
                 policy["subject_type"],
                 policy["owner_role"],
@@ -714,15 +746,17 @@ def upsert_role_assignment(assignment: dict[str, Any]) -> dict[str, Any]:
     return {**assignment, "role_assignment_id": assignment_id}
 
 
-def upsert_review_queue_policy(policy: dict[str, Any]) -> dict[str, Any]:
+def upsert_review_queue_policy(policy: dict[str, Any], tenant_id: str) -> dict[str, Any]:
+    if not tenant_id:
+        raise ValueError("a tenant_id is required to customize review routing")
     with connect() as connection:
         connection.execute(
             """
             INSERT INTO review_queue_policies (
-                policy_id, task_type, assigned_role, due_days, escalation_days, source, created_at, updated_at
+                tenant_id, policy_id, task_type, assigned_role, due_days, escalation_days, source, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-            ON CONFLICT(policy_id) DO UPDATE SET
+            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+            ON CONFLICT(tenant_id, policy_id) DO UPDATE SET
                 task_type=excluded.task_type,
                 assigned_role=excluded.assigned_role,
                 due_days=excluded.due_days,
@@ -731,6 +765,7 @@ def upsert_review_queue_policy(policy: dict[str, Any]) -> dict[str, Any]:
                 updated_at=datetime('now')
             """,
             (
+                tenant_id,
                 policy["policy_id"],
                 policy["task_type"],
                 policy["assigned_role"],

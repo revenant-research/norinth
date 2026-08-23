@@ -85,6 +85,14 @@ def raise_forbidden(error: AuthorizationError) -> None:
     raise HTTPException(status_code=403, detail=str(error))
 
 
+def _require_tenant_for_config(actor: ActorContext) -> str:
+    """Configuration writes are per-organization. Super admins operate on the
+    platform plane and have no tenant to scope a policy to."""
+    if actor.is_super_admin or not actor.tenant_id:
+        raise HTTPException(status_code=403, detail="Configuration changes are made within an organization")
+    return actor.tenant_id
+
+
 def enforce_segregation_of_duties(actor: ActorContext, target_type: str, target: dict) -> None:
     """Maker-checker control: a user may not approve work they themselves
     originated. The check is applied where the originating user is recorded;
@@ -224,7 +232,7 @@ def control_evidence(scope: ScopeFilter = Depends(scoped_dependency), page: Page
 
 @router.get("/api/control-catalog")
 def control_catalog(actor: ActorContext = Depends(current_actor)):
-    return build_control_catalog()
+    return build_control_catalog(actor.tenant_id)
 
 
 @router.post("/api/control-catalog")
@@ -233,12 +241,13 @@ def configure_control(payload: ControlDefinitionRequest, actor: ActorContext = D
         require_config_write(actor)
     except AuthorizationError as error:
         raise_forbidden(error)
-    return {"control": upsert_control_definition(payload.model_dump())}
+    tenant_id = _require_tenant_for_config(actor)
+    return {"control": upsert_control_definition(payload.model_dump(), tenant_id)}
 
 
 @router.get("/api/risk-rules")
 def risk_rules(actor: ActorContext = Depends(current_actor)):
-    return build_risk_rules()
+    return build_risk_rules(actor.tenant_id)
 
 
 @router.post("/api/risk-rules")
@@ -247,7 +256,8 @@ def configure_risk_rule(payload: RiskRuleRequest, actor: ActorContext = Depends(
         require_config_write(actor)
     except AuthorizationError as error:
         raise_forbidden(error)
-    return {"risk_rule": upsert_risk_rule(payload.model_dump())}
+    tenant_id = _require_tenant_for_config(actor)
+    return {"risk_rule": upsert_risk_rule(payload.model_dump(), tenant_id)}
 
 
 @router.get("/api/owner-policies")
@@ -261,7 +271,8 @@ def configure_owner_policy(payload: OwnerPolicyRequest, actor: ActorContext = De
         require_config_write(actor)
     except AuthorizationError as error:
         raise_forbidden(error)
-    return {"owner_policy": upsert_owner_policy(payload.model_dump())}
+    tenant_id = _require_tenant_for_config(actor)
+    return {"owner_policy": upsert_owner_policy(payload.model_dump(), tenant_id)}
 
 
 # NOTE: user and role-assignment management is intentionally NOT exposed on this
@@ -285,7 +296,8 @@ def configure_review_queue_policy(payload: ReviewQueuePolicyRequest, actor: Acto
         require_config_write(actor)
     except AuthorizationError as error:
         raise_forbidden(error)
-    return {"review_queue_policy": upsert_review_queue_policy(payload.model_dump())}
+    tenant_id = _require_tenant_for_config(actor)
+    return {"review_queue_policy": upsert_review_queue_policy(payload.model_dump(), tenant_id)}
 
 
 @router.get("/api/change-events")

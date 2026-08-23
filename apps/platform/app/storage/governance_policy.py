@@ -173,25 +173,29 @@ def init_governance_policy() -> None:
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS control_library (
-                control_id TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL DEFAULT '',
+                control_id TEXT NOT NULL,
                 name TEXT NOT NULL,
                 framework_refs TEXT NOT NULL,
                 evidence_event_types TEXT NOT NULL,
                 required_fields TEXT NOT NULL,
-                rationale TEXT NOT NULL
+                rationale TEXT NOT NULL,
+                PRIMARY KEY (tenant_id, control_id)
             )
             """
         )
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS risk_rules (
-                rule_id TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL DEFAULT '',
+                rule_id TEXT NOT NULL,
                 name TEXT NOT NULL,
                 signal TEXT NOT NULL,
                 severity TEXT NOT NULL,
                 confidence REAL NOT NULL,
                 framework_refs TEXT NOT NULL,
-                rationale TEXT NOT NULL
+                rationale TEXT NOT NULL,
+                PRIMARY KEY (tenant_id, rule_id)
             )
             """
         )
@@ -249,8 +253,8 @@ def init_governance_policy() -> None:
             connection.execute(
                 """
                 INSERT OR IGNORE INTO control_library (
-                    control_id, name, framework_refs, evidence_event_types, required_fields, rationale
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    tenant_id, control_id, name, framework_refs, evidence_event_types, required_fields, rationale
+                ) VALUES ('', ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     ctrl["control_id"],
@@ -287,37 +291,60 @@ def refresh_governance_assessments(scopes: list[dict[str, Any]] | None = None) -
     from .lifecycle import _applications_in_scope
 
     with connect() as connection:
-        controls = list_control_library(connection)
-        rules = list_risk_rules(connection)
         applications = _applications_in_scope(connection, scopes)
+        controls_by_tenant: dict[str, list[dict[str, Any]]] = {}
+        rules_by_tenant: dict[str, list[dict[str, Any]]] = {}
         for application in applications:
             app_context = dict(application)
+            tid = app_context.get("tenant_id") or ""
+            if tid not in controls_by_tenant:
+                controls_by_tenant[tid] = list_control_library(connection, tid)
+                rules_by_tenant[tid] = list_risk_rules(connection, tid)
             events = list_application_events(connection, app_context)
-            assess_controls(connection, app_context, controls, events)
-            assess_risk_rules(connection, app_context, rules, events)
+            assess_controls(connection, app_context, controls_by_tenant[tid], events)
+            assess_risk_rules(connection, app_context, rules_by_tenant[tid], events)
 
 
-def list_control_library(connection) -> list[dict[str, Any]]:
-    rows = connection.execute("SELECT * FROM control_library ORDER BY control_id").fetchall()
+def list_control_library(connection, tenant_id: str | None = None) -> list[dict[str, Any]]:
+    """Platform default controls (tenant_id '') overlaid with this tenant's
+    overrides. A tenant only ever sees defaults plus its own customizations;
+    it can never read or affect another tenant's."""
+    tid = tenant_id or ""
+    rows = connection.execute(
+        "SELECT * FROM control_library WHERE tenant_id IN ('', ?) ORDER BY control_id", (tid,)
+    ).fetchall()
+    merged: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        record = dict(row)
+        if record["control_id"] not in merged or record["tenant_id"] != "":
+            merged[record["control_id"]] = record
     return [
         {
-            **dict(row),
-            "framework_refs": decode_json(row["framework_refs"], []),
-            "evidence_event_types": decode_json(row["evidence_event_types"], []),
-            "required_fields": decode_json(row["required_fields"], []),
+            **record,
+            "framework_refs": decode_json(record["framework_refs"], []),
+            "evidence_event_types": decode_json(record["evidence_event_types"], []),
+            "required_fields": decode_json(record["required_fields"], []),
         }
-        for row in rows
+        for record in merged.values()
     ]
 
 
-def list_risk_rules(connection) -> list[dict[str, Any]]:
-    rows = connection.execute("SELECT * FROM risk_rules ORDER BY rule_id").fetchall()
+def list_risk_rules(connection, tenant_id: str | None = None) -> list[dict[str, Any]]:
+    tid = tenant_id or ""
+    rows = connection.execute(
+        "SELECT * FROM risk_rules WHERE tenant_id IN ('', ?) ORDER BY rule_id", (tid,)
+    ).fetchall()
+    merged: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        record = dict(row)
+        if record["rule_id"] not in merged or record["tenant_id"] != "":
+            merged[record["rule_id"]] = record
     return [
         {
-            **dict(row),
-            "framework_refs": decode_json(row["framework_refs"], []),
+            **record,
+            "framework_refs": decode_json(record["framework_refs"], []),
         }
-        for row in rows
+        for record in merged.values()
     ]
 
 
@@ -505,16 +532,26 @@ def upsert_rule_finding(
     )
 
 
-def upsert_control_definition(control: dict[str, Any]) -> dict[str, Any]:
+def upsert_control_definition(control: dict[str, Any], tenant_id: str) -> dict[str, Any]:
+    """Create or update a control override for one tenant. Platform defaults
+    (tenant_id '') are immutable through this path; a tenant's write only ever
+    lands under its own tenant_id."""
+    if not tenant_id:
+        raise ValueError("a tenant_id is required to customize the control library")
     with connect() as connection:
         connection.execute(
             """
-            INSERT OR REPLACE INTO control_library (
-                control_id, name, framework_refs, evidence_event_types, required_fields, rationale
+            INSERT INTO control_library (
+                tenant_id, control_id, name, framework_refs, evidence_event_types, required_fields, rationale
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (tenant_id, control_id) DO UPDATE SET
+                name=excluded.name, framework_refs=excluded.framework_refs,
+                evidence_event_types=excluded.evidence_event_types,
+                required_fields=excluded.required_fields, rationale=excluded.rationale
             """,
             (
+                tenant_id,
                 control["control_id"],
                 control["name"],
                 encode_json(control["framework_refs"]),
@@ -523,21 +560,27 @@ def upsert_control_definition(control: dict[str, Any]) -> dict[str, Any]:
                 control["rationale"],
             ),
         )
-    return control
+    return {**control, "tenant_id": tenant_id}
 
 
-def upsert_risk_rule(rule: dict[str, Any]) -> dict[str, Any]:
+def upsert_risk_rule(rule: dict[str, Any], tenant_id: str) -> dict[str, Any]:
     if rule["signal"] not in SUPPORTED_RISK_SIGNALS:
         raise ValueError(f"unsupported risk signal: {rule['signal']}")
+    if not tenant_id:
+        raise ValueError("a tenant_id is required to customize risk rules")
     with connect() as connection:
         connection.execute(
             """
-            INSERT OR REPLACE INTO risk_rules (
-                rule_id, name, signal, severity, confidence, framework_refs, rationale
+            INSERT INTO risk_rules (
+                tenant_id, rule_id, name, signal, severity, confidence, framework_refs, rationale
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (tenant_id, rule_id) DO UPDATE SET
+                name=excluded.name, signal=excluded.signal, severity=excluded.severity,
+                confidence=excluded.confidence, framework_refs=excluded.framework_refs, rationale=excluded.rationale
             """,
             (
+                tenant_id,
                 rule["rule_id"],
                 rule["name"],
                 rule["signal"],
@@ -547,7 +590,7 @@ def upsert_risk_rule(rule: dict[str, Any]) -> dict[str, Any]:
                 rule["rationale"],
             ),
         )
-    return rule
+    return {**rule, "tenant_id": tenant_id}
 
 
 def scoped_policy_rows(table: str, *, tenant_id: str | None, project: str | None, environment: str | None) -> list[dict[str, Any]]:
@@ -592,11 +635,11 @@ def list_risk_findings(*, tenant_id: str | None = None, project: str | None = No
     ]
 
 
-def list_controls_catalog() -> list[dict[str, Any]]:
+def list_controls_catalog(tenant_id: str | None = None) -> list[dict[str, Any]]:
     with connect() as connection:
-        return list_control_library(connection)
+        return list_control_library(connection, tenant_id)
 
 
-def list_configured_risk_rules() -> list[dict[str, Any]]:
+def list_configured_risk_rules(tenant_id: str | None = None) -> list[dict[str, Any]]:
     with connect() as connection:
-        return list_risk_rules(connection)
+        return list_risk_rules(connection, tenant_id)

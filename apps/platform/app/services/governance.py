@@ -585,12 +585,12 @@ def build_risk_register(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
     return {"risks": list_risk_findings(**scope.model_dump())}
 
 
-def build_control_catalog() -> dict[str, list[dict[str, Any]]]:
-    return {"controls": list_controls_catalog()}
+def build_control_catalog(tenant_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
+    return {"controls": list_controls_catalog(tenant_id)}
 
 
-def build_risk_rules() -> dict[str, list[dict[str, Any]]]:
-    return {"risk_rules": list_configured_risk_rules()}
+def build_risk_rules(tenant_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
+    return {"risk_rules": list_configured_risk_rules(tenant_id)}
 
 
 def build_owner_policies() -> dict[str, list[dict[str, Any]]]:
