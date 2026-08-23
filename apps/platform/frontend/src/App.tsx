@@ -229,32 +229,24 @@ function PlatformConsole({ user, onSignOut }: { user: User; onSignOut: () => voi
   );
 }
 
-type EntryMode = "landing" | "client" | "admin";
+type EntryMode = "landing" | "signin";
 
 function PublicEntry({ onAuthenticated }: { onAuthenticated: (user: User) => void }) {
   const [mode, setMode] = useState<EntryMode>("landing");
 
-  if (mode === "client") {
+  if (mode === "signin") {
+    // One sign-in for everyone on this instance; the account decides what it
+    // can see (organization workspace or platform console).
     return (
       <LoginScreen
-        title="Client sign in"
-        subtitle="Sign in with the email your organization administrator gave you. Your role and access are set automatically once you are in."
+        title="Sign in"
+        subtitle="Use the email and password from your invitation, or your organization's single sign-on."
         onAuthenticated={onAuthenticated}
         onBack={() => setMode("landing")}
       />
     );
   }
-  if (mode === "admin") {
-    return (
-      <LoginScreen
-        title="Platform administrator"
-        subtitle="Sign in to provision organizations, create administrators, and oversee every tenant on the platform."
-        onAuthenticated={onAuthenticated}
-        onBack={() => setMode("landing")}
-      />
-    );
-  }
-  return <LandingPage onClientSignIn={() => setMode("client")} onAdminSignIn={() => setMode("admin")} />;
+  return <LandingPage onClientSignIn={() => setMode("signin")} />;
 }
 
 function LoginScreen({

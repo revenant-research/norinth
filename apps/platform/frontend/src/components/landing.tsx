@@ -148,7 +148,7 @@ function Section({ id, eyebrow, title, lede, children }: { id: string; eyebrow: 
   );
 }
 
-export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn: () => void; onAdminSignIn: () => void }) {
+export function LandingPage({ onClientSignIn }: { onClientSignIn: () => void }) {
   return (
     <div className={styles.page}>
       <header className={styles.header}>
@@ -409,9 +409,8 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
         <div className={styles.footerLinks}>
           <ButtonLink variant="link" href="https://github.com/revenant-research/norinth">GitHub</ButtonLink>
           <ButtonLink variant="link" href="https://github.com/revenant-research/norinth/blob/main/LICENSE">Apache-2.0</ButtonLink>
+          <ButtonLink variant="link" href="https://github.com/revenant-research/norinth/blob/main/SECURITY.md">Security</ButtonLink>
           <ButtonLink variant="link" href="https://www.revenantresearch.com/">revenantresearch.com</ButtonLink>
-          <Button variant="secondary" size="sm" onClick={onClientSignIn}>Sign in</Button>
-          <Button variant="link" size="sm" onClick={onAdminSignIn}>Platform administrator access</Button>
         </div>
       </footer>
     </div>
