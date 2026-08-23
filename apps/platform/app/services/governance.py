@@ -665,20 +665,31 @@ def _framework_family(ref: str) -> str:
 def build_framework_coverage(scope: ScopeFilter) -> dict[str, Any]:
     """Roll control assessments up into per-framework coverage.
 
-    A framework requirement counts as satisfied if any control that cites it has
-    a passing or waived assessment. The result is a compliance-posture-by-
-    framework view: total mapped requirements, how many are satisfied, the
-    coverage percentage, and the specific gaps still outstanding.
+    The denominator is every requirement the Norinth control library *maps* for a
+    framework, taken from the control definitions — not only the requirements
+    that happen to have produced an assessment. Otherwise a single passing
+    control reported 100% coverage of its whole framework (audit finding H8). A
+    requirement counts as satisfied when a control that cites it has a passing or
+    waived assessment; a mapped requirement with no satisfying assessment is a
+    gap. ``basis`` states plainly that this is coverage of the controls Norinth
+    maps, not of the full regulation.
     """
-    assessments = list_control_assessments(**scope.model_dump())
-    # family -> {requirement_ref: satisfied?}
+    # Denominator: every framework requirement the control library defines.
     by_family: dict[str, dict[str, bool]] = {}
-    for assessment in assessments:
+    for control in list_controls_catalog(scope.tenant_id):
+        for ref in control.get("framework_refs", []):
+            family = _framework_family(ref)
+            by_family.setdefault(family, {}).setdefault(ref, False)
+
+    # Numerator: requirements whose citing control has a satisfying assessment.
+    for assessment in list_control_assessments(**scope.model_dump()):
         satisfied = assessment.get("status") in _SATISFIED_STATUSES
+        if not satisfied:
+            continue
         for ref in assessment.get("framework_refs", []):
             family = _framework_family(ref)
             requirements = by_family.setdefault(family, {})
-            requirements[ref] = requirements.get(ref, False) or satisfied
+            requirements[ref] = True
 
     coverage: list[dict[str, Any]] = []
     for family, requirements in by_family.items():
@@ -694,7 +705,10 @@ def build_framework_coverage(scope: ScopeFilter) -> dict[str, Any]:
                 "satisfied_requirements": sorted(ref for ref, ok in requirements.items() if ok),
             }
         )
-    return {"framework_coverage": sorted(coverage, key=lambda item: item["framework"])}
+    return {
+        "framework_coverage": sorted(coverage, key=lambda item: item["framework"]),
+        "basis": "Coverage of the control requirements the Norinth control library maps for each framework, not of the full regulation.",
+    }
 
 
 def build_change_events(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:

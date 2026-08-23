@@ -1,16 +1,24 @@
-"""Test the per-framework coverage crosswalk (audit §6.2)."""
+"""Framework coverage is measured against mapped controls, not assessed-only (H8).
+
+Previously the denominator was only the requirements that had produced an
+assessment, so a single passing control showed 100% coverage of its framework.
+The denominator is now every requirement the control library maps.
+"""
 
 from __future__ import annotations
 
 import pathlib
 import sys
 
+import pytest
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "apps" / "platform"))
 
 from tests.helpers import login_and_activate  # noqa: E402
 
 
-def test_framework_coverage_rolls_up_control_assessments(super_admin_client):
+@pytest.fixture
+def org_client(super_admin_client):
     from app.main import app
     from fastapi.testclient import TestClient
 
@@ -18,57 +26,40 @@ def test_framework_coverage_rolls_up_control_assessments(super_admin_client):
         "/api/admin/organizations",
         json={
             "tenant_id": "acme",
-            "name": "acme",
-            "admin_email": "oa@acme.test",
-            "admin_display_name": "OA",
-            "admin_password": "oa-password-1",
+            "name": "Acme",
+            "admin_email": "a@acme.test",
+            "admin_display_name": "Acme admin",
+            "admin_password": "acme-admin-pw-1",
         },
     )
     org = TestClient(app)
-    login_and_activate(org, "oa@acme.test", "oa-password-1")
-    token = org.post("/api/ingestion-keys", json={"name": "k"}).json()["token"]
-    # A model.call satisfies the AI-INV-001 control (mapped to NIST AI RMF +
-    # ISO/IEC 42001), so those frameworks should show partial coverage.
-    org.post(
-        "/v1/events/batch",
-        json={
-            "events": [
-                {
-                    "type": "model.call",
-                    "schema_version": "2026-01",
-                    "trace_id": "t1",
-                    "span_id": "s1",
-                    "timestamp": "2026-08-22T00:00:00Z",
-                    "service": "svc",
-                    "environment": "prod",
-                    "project": "p1",
-                    "attributes": {
-                        "provider": "openai",
-                        "model": "gpt-4o",
-                        "operation": "chat",
-                        "usage": {"input_tokens": 1, "output_tokens": 1},
-                        "metadata": {"tenant_id": "acme", "application_name": "acme-app", "workflow_name": "wf"},
-                    },
-                }
-            ]
-        },
-        headers={"Authorization": f"Bearer {token}"},
-    )
+    login_and_activate(org, "a@acme.test", "acme-admin-pw-1")
+    try:
+        yield org
+    finally:
+        org.close()
 
-    resp = org.get("/api/compliance/framework-coverage")
-    assert resp.status_code == 200, resp.text
-    coverage = {c["framework"]: c for c in resp.json()["framework_coverage"]}
 
-    # NIST AI RMF and ISO/IEC 42001 are present (they're cited by the seeded controls).
-    assert "NIST AI RMF" in coverage
-    assert "ISO/IEC 42001" in coverage
+def test_coverage_denominator_comes_from_the_library(org_client):
+    result = org_client.get("/api/compliance/framework-coverage").json()
+    assert "basis" in result
+    coverage = {row["framework"]: row for row in result["framework_coverage"]}
+    # The library maps these families; each must have a non-zero denominator even
+    # though no events have been ingested (i.e. nothing is satisfied yet).
+    assert coverage, "expected framework rows from the mapped control library"
+    for family in ("NIST AI RMF", "SOC 2", "ISO/IEC 42001", "EU AI Act"):
+        assert family in coverage, f"{family} missing from coverage"
+        row = coverage[family]
+        assert row["total_requirements"] >= 1
+        # With no satisfying assessments, coverage cannot be a perfect score.
+        assert row["coverage_pct"] < 100
+        # Every mapped requirement with no satisfying assessment is a named gap.
+        assert len(row["gaps"]) == row["total_requirements"] - row["satisfied"]
 
-    nist = coverage["NIST AI RMF"]
-    assert nist["total_requirements"] > 0
-    # At least one requirement is satisfied (AI-INV-001 passed) and there are gaps
-    # (controls with no runtime evidence yet).
-    assert nist["satisfied"] >= 1
-    assert 0 <= nist["coverage_pct"] <= 100
-    assert isinstance(nist["gaps"], list)
 
-    org.close()
+def test_unsatisfied_requirements_are_named_as_gaps(org_client):
+    result = org_client.get("/api/compliance/framework-coverage").json()
+    soc2 = next(row for row in result["framework_coverage"] if row["framework"] == "SOC 2")
+    # SOC 2 maps more than one distinct requirement in the shipped library.
+    assert soc2["total_requirements"] >= 2
+    assert all(ref.startswith("SOC 2") for ref in soc2["gaps"])
