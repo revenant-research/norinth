@@ -7,6 +7,25 @@ to Semantic Versioning once it reaches a tagged release.
 ## [Unreleased]
 
 ### Added
+- **First-run setup wizard.** A fresh install (no organizations yet) opens a
+  six-step wizard instead of the landing page: sign in as the platform
+  administrator (credentials from the installer), choose your own password,
+  create your organization and its first administrator (you — no forced
+  rotation round-trip, via `POST /api/setup/organization`, super admin only,
+  refused once setup is complete), create the first ingestion key (shown
+  once), instrument one application with a snippet pre-filled with this
+  instance's URL, and a live "waiting for the first event" that advances the
+  moment telemetry arrives, then hands off to Getting started.
+  `GET /api/setup/state` (public boolean) drives it.
+- **Landing page visuals.** Real product screenshots (captured by
+  `frontend/scripts/screenshots.mjs` with Playwright against a demo tenant):
+  a blocked release gate under the hero and a "See it" band with inventory,
+  compliance, agents and getting-started. Brand streak imagery as chrome on
+  audience/wedge cards and the two dark bands, with CSS gradient fallbacks in
+  the same palettes when `/assets/brand/streak-*.jpg` are absent; text over
+  chrome is always white on a dark scrim. Copy trimmed.
+
+### Added
 - **One-command installer** (`scripts/install.sh`): checks for Docker (offers
   to install it on Ubuntu/Debian), fetches the compose file, generates every
   secret into a mode-600 `.env` (PostgreSQL password, `NORINTH_SECRET_KEY`,

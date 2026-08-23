@@ -18,6 +18,7 @@ from app.api.public import router as public_router
 from app.api.routes import router as api_router
 from app.api.saml import router as saml_router
 from app.api.scim import router as scim_router
+from app.api.setup import router as setup_router
 from app.api.sso import router as sso_router
 from app.dashboard.html import dashboard_html
 from app.dependencies import SESSION_COOKIE
@@ -50,6 +51,7 @@ app.include_router(agents_router)
 app.include_router(attestation_keys_router)
 app.include_router(public_router)
 app.include_router(onboarding_router)
+app.include_router(setup_router)
 
 # Endpoints reachable while a user still owes a password change.
 _PASSWORD_CHANGE_ALLOWLIST = {
@@ -60,6 +62,7 @@ _PASSWORD_CHANGE_ALLOWLIST = {
     "/api/auth/sso/callback",
     "/api/auth/saml/acs",
     "/api/auth/saml/metadata",
+    "/api/setup/state",
 }
 
 
