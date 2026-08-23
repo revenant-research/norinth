@@ -442,11 +442,11 @@ export function ContactSection() {
     <Section
       id="contact"
       eyebrow="Get help"
-      title="Talk to the maintainers."
-      lede="Stuck on an install, reviewing it for your security team, or want to help shape the healthcare or EU AI Act pack? Tell us what you run. Bugs and feature requests belong on GitHub issues; everything else here."
+      title="Leave a note for this instance's administrators."
+      lede="This form is served by the Norinth instance you are viewing, so your note is stored in its own admin console — not sent to the Norinth project. To reach the maintainers, open a GitHub issue or discussion; use this to contact whoever operates this deployment."
     >
       {state === "sent" ? (
-        <Callout tone="success" title="Thanks.">Your message was received.</Callout>
+        <Callout tone="success" title="Thanks.">Your note was recorded in this instance's admin console.</Callout>
       ) : (
         <form className={styles.contactForm} onSubmit={submit} aria-label="Contact">
           <Stack gap={4}>

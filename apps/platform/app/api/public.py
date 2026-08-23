@@ -10,7 +10,6 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
 from app.api.auth import client_ip
-from app.storage.audit import record_audit
 from app.storage.leads import INTERESTS, count_leads_from_ip, create_lead
 
 router = APIRouter()
@@ -51,5 +50,8 @@ def submit_lead(payload: LeadRequest, request: Request) -> dict[str, Any]:
         message=(payload.message or "").strip() or None,
         source_ip=ip,
     )
-    record_audit(actor_ref="public", action="lead.create", tenant_id=None, target_type="lead", target_id=lead["lead_id"])
+    # Deliberately NOT written to the compliance audit chain: that chain records
+    # governance actions, and appending an unauthenticated internet submission to
+    # a tamper-evident log both dilutes it and lets anonymous callers grow it
+    # (audit finding L110). The lead is stored in its own table.
     return {"ok": True, "lead_id": lead["lead_id"]}
