@@ -67,7 +67,7 @@ from app.storage.deployments import load_deployment_gate, set_deployment_gate_st
 from app.storage.governance_policy import upsert_control_definition, upsert_risk_rule
 from app.storage.incidents import load_incident, set_incident_status
 from app.storage.intake import intake_submitter
-from app.storage.raw_events import connect, count_events, count_scoped_events, list_events, list_scopes
+from app.storage.raw_events import connect, count_scoped_events, list_events, list_scopes
 from app.storage.workflow import (
     assign_owner,
     create_exception,
@@ -111,7 +111,10 @@ def enforce_segregation_of_duties(actor: ActorContext, target_type: str, target:
 
 @router.get("/health")
 def health():
-    return {"ok": True, "time": now(), "event_count": count_events()}
+    # Liveness/readiness probe: constant-time, and it must not leak the
+    # platform-wide event count to anonymous callers. A full COUNT(*) here made
+    # the probe a table scan that failed under load (finding H17).
+    return {"ok": True, "time": now()}
 
 
 @router.get("/api/scopes")

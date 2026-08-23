@@ -6,6 +6,7 @@ import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 
 from app.dependencies import ingestion_tenant
 from app.ingestion.otel import otel_spans_to_events
@@ -20,7 +21,7 @@ from app.storage.governance_policy import refresh_governance_assessments
 from app.storage.incidents import process_incident_events
 from app.storage.lifecycle import refresh_lifecycle_state
 from app.storage.prompts import process_prompt_events
-from app.storage.raw_events import count_events, insert_events
+from app.storage.raw_events import insert_events
 from app.storage.workflow import refresh_workflow_state
 
 router = APIRouter()
@@ -110,7 +111,9 @@ async def ingest_events(
             raise HTTPException(status_code=401, detail="Signature mismatch")
 
     events = [event.model_dump() for event in batch.events]
-    return _ingest(events, tenant_id)
+    # The ingest pipeline is synchronous DB work; run it off the event loop so a
+    # large recompute cannot freeze the whole server (finding C3).
+    return await run_in_threadpool(_ingest, events, tenant_id)
 
 
 @router.post("/v1/otel/traces")
@@ -132,8 +135,8 @@ async def ingest_otel_traces(
         raise HTTPException(status_code=400, detail="OTLP payload must be a JSON object")
     events = otel_spans_to_events(payload)
     if not events:
-        return {"accepted": 0, "total": count_events(), "skipped": "no GenAI spans found"}
-    return _ingest(events, tenant_id)
+        return {"accepted": 0, "skipped": "no GenAI spans found"}
+    return await run_in_threadpool(_ingest, events, tenant_id)
 
 
 def _verify_eval_attestations(events: list[dict[str, Any]], tenant_id: str) -> None:
@@ -221,7 +224,7 @@ def _ingest(events: list[dict[str, Any]], tenant_id: str) -> dict[str, Any]:
     refresh_agent_posture([tenant_id])
     refresh_workflow_state(scopes)
     refresh_deployment_gates(scopes)
-    return {"accepted": accepted, "total": count_events()}
+    return {"accepted": accepted}
 
 
 @router.get("/v1/gates/check")

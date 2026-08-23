@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -96,9 +97,22 @@ async def csrf_origin_check(request: Request, call_next):
     ):
         origin = request.headers.get("origin")
         if origin:
-            expected = f"{request.url.scheme}://{request.headers.get('host', '')}"
-            # Compare only scheme+host+port; browsers send Origin without a path.
-            if origin.rstrip("/") != expected.rstrip("/"):
+            # Behind a TLS-terminating proxy the request scheme is http while the
+            # browser's Origin is https; honour X-Forwarded-Proto/Host when the
+            # deployment declares a trusted proxy, so logins are not all 403'd
+            # (finding H2). Compare only scheme+host+port.
+            trust_proxy = os.getenv("NORINTH_TRUST_PROXY", "0").lower() in {"1", "true", "yes"}
+            scheme = request.url.scheme
+            host = request.headers.get("host", "")
+            if trust_proxy:
+                scheme = (request.headers.get("x-forwarded-proto", scheme).split(",")[0].strip()) or scheme
+                host = (request.headers.get("x-forwarded-host", host).split(",")[0].strip()) or host
+            expected = {f"{scheme}://{host}"}
+            # Also accept the explicitly configured public URL, if set.
+            public = os.getenv("NORINTH_PUBLIC_BASE_URL")
+            if public:
+                expected.add(public.rstrip("/"))
+            if origin.rstrip("/") not in {e.rstrip("/") for e in expected}:
                 return JSONResponse(
                     status_code=403,
                     content={"detail": "Cross-origin request rejected"},

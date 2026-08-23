@@ -40,7 +40,17 @@ def database_url() -> str | None:
 
 def is_postgres() -> bool:
     url = database_url()
-    return bool(url and url.startswith(("postgres://", "postgresql://")))
+    if not url:
+        return False
+    if url.lower().startswith(("postgres://", "postgresql://")):
+        return True
+    # The variable is set but is not a recognizable PostgreSQL URL. Silently
+    # falling back to SQLite here means each replica quietly runs its own
+    # ephemeral database (finding H19); fail loudly instead.
+    raise RuntimeError(
+        f"NORINTH_DATABASE_URL is set but is not a postgresql:// URL: {url!r}. "
+        "Fix it or unset it to use local SQLite."
+    )
 
 
 def database_path() -> Path:

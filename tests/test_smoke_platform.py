@@ -10,7 +10,10 @@ from __future__ import annotations
 def test_health_ok(client):
     resp = client.get("/health")
     assert resp.status_code == 200
-    assert "event_count" in resp.json()
+    body = resp.json()
+    assert body["ok"] is True
+    # /health must not leak the platform-wide event count to anonymous callers.
+    assert "event_count" not in body
 
 
 def test_unauthenticated_reads_are_rejected(client):

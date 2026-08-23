@@ -91,3 +91,20 @@ def test_forwarded_for_is_used_when_proxy_trusted(client, monkeypatch):
     assert blocked.status_code == 429
     other = client.post("/api/auth/login", json={"email": "u9@x.test", "password": "bad"}, headers={"X-Forwarded-For": "203.0.113.8"})
     assert other.status_code == 401  # different client, not throttled
+
+
+def test_csrf_accepts_https_origin_behind_trusted_proxy(client, monkeypatch):
+    """Behind a TLS-terminating proxy (NORINTH_TRUST_PROXY=1) a browser's https
+    Origin must be accepted even though the request scheme is http (finding H2)."""
+    monkeypatch.setenv("NORINTH_TRUST_PROXY", "1")
+    headers = {"Origin": "https://norinth.example.com", "Host": "internal:8001",
+               "X-Forwarded-Proto": "https", "X-Forwarded-Host": "norinth.example.com"}
+    # A mutating cookie-route call: without the fix this 403s before auth.
+    resp = client.post("/api/auth/login", json={"email": "x@y.z", "password": "nope"}, headers=headers)
+    assert resp.status_code != 403  # reaches auth (401 invalid creds), not CSRF-rejected
+
+    # A genuinely cross-site Origin is still rejected.
+    bad = client.post("/api/auth/login", json={"email": "x@y.z", "password": "nope"},
+                      headers={"Origin": "https://evil.example", "Host": "internal:8001",
+                               "X-Forwarded-Proto": "https", "X-Forwarded-Host": "norinth.example.com"})
+    assert bad.status_code == 403
