@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -8,6 +9,39 @@ from app.dependencies import ActorContext, current_actor, now, scoped_dependency
 from app.schemas.events import ScopeFilter
 from app.storage.audit import list_audit_logs, record_audit, verify_audit_chain
 from app.storage.raw_events import list_events
+
+# The AI-BOM pages through telemetry rather than reading a single fixed window,
+# so an inventory larger than one page is not silently dropped (audit finding
+# H7). If the safety ceiling is reached, the BOM says so via a property instead
+# of quietly under-reporting.
+_AIBOM_PAGE = 1000
+_AIBOM_MAX_EVENTS = 200_000
+# Deterministic namespace so the same portfolio yields a stable serialNumber.
+_AIBOM_NAMESPACE = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
+
+
+def _collect_events(event_type: str, tenant_id, project, environment) -> tuple[list[dict[str, Any]], bool]:
+    """Page through all events of a type up to a safety ceiling.
+
+    Returns (events, truncated) so the caller can disclose truncation rather
+    than silently capping at a single page.
+    """
+    collected: list[dict[str, Any]] = []
+    offset = 0
+    while offset < _AIBOM_MAX_EVENTS:
+        page = list_events(
+            tenant_id=tenant_id,
+            project=project,
+            environment=environment,
+            event_type=event_type,
+            limit=_AIBOM_PAGE,
+            offset=offset,
+        )
+        collected.extend(page)
+        if len(page) < _AIBOM_PAGE:
+            return collected, False
+        offset += _AIBOM_PAGE
+    return collected, True
 
 router = APIRouter()
 
@@ -103,11 +137,12 @@ def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilte
 
 
 def generate_aibom(tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> dict[str, Any]:
-    # Fetch events that indicate AI usage
-    model_calls = list_events(tenant_id=tenant_id, project=project, environment=environment, event_type="model.call", limit=5000)
-    retrievals = list_events(tenant_id=tenant_id, project=project, environment=environment, event_type="retrieval.call", limit=5000)
-    guardrails = list_events(tenant_id=tenant_id, project=project, environment=environment, event_type="guardrail.decision", limit=5000)
-    agent_runs = list_events(tenant_id=tenant_id, project=project, environment=environment, event_type="agent.run", limit=5000)
+    # Fetch events that indicate AI usage, paging through all of them.
+    model_calls, t1 = _collect_events("model.call", tenant_id, project, environment)
+    retrievals, t2 = _collect_events("retrieval.call", tenant_id, project, environment)
+    guardrails, t3 = _collect_events("guardrail.decision", tenant_id, project, environment)
+    agent_runs, t4 = _collect_events("agent.run", tenant_id, project, environment)
+    truncated = t1 or t2 or t3 or t4
 
     systems = {}
     providers_in_use = set()
@@ -175,37 +210,101 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
         if sys_key in systems:
             systems[sys_key]["agents"].add(agent_name)
 
-    # Format output for ISO 42001 and AIBOM standard
-    ai_systems_inventory = []
-    for sys_key, data in systems.items():
-        ai_systems_inventory.append({
-            "system_identifier": sys_key,
-            "application_name": data["application"],
-            "workflow_name": data["workflow"],
-            "intended_purpose": data["purpose"],
-            "use_case": data["use_case"],
-            "components": {
-                "models": list(data["models"]),
-                "providers": list(data["providers"]),
-                "guardrails": list(data["guardrails"]),
-                "retrievers": list(data["retrievers"]),
-                "agents": list(data["agents"])
-            }
+    # Emit a schema-valid CycloneDX 1.6 BOM (audit finding H7). Each AI system is
+    # an "application" component; each distinct model is a "machine-learning-
+    # model" component with a modelCard; each provider is a "platform" component.
+    # Guardrails, retrievers and agents observed for a system are attached to it
+    # as namespaced properties, and dependency edges link systems to the models
+    # and providers they use, so SBOM tooling accepts and can traverse the BOM.
+    components: list[dict[str, Any]] = []
+    dependencies: list[dict[str, Any]] = []
+
+    def _model_ref(provider: str, model: str) -> str:
+        return f"model:{provider}/{model}"
+
+    def _provider_ref(provider: str) -> str:
+        return f"provider:{provider}"
+
+    for provider in sorted(providers_in_use):
+        components.append({
+            "type": "platform",
+            "bom-ref": _provider_ref(provider),
+            "name": provider,
+            "description": "Model provider observed in runtime telemetry",
         })
 
+    seen_models: set[str] = set()
+    for data in systems.values():
+        for model in data["models"]:
+            provider = next(iter(data["providers"]), "unknown")
+            ref = _model_ref(provider, model)
+            if ref in seen_models:
+                continue
+            seen_models.add(ref)
+            components.append({
+                "type": "machine-learning-model",
+                "bom-ref": ref,
+                "name": model,
+                "publisher": provider,
+                "modelCard": {
+                    "modelParameters": {"task": "text-generation"},
+                },
+            })
+
+    for sys_key, data in sorted(systems.items()):
+        properties = [{"name": "norinth:workflow", "value": data["workflow"]}]
+        if data["use_case"]:
+            properties.append({"name": "norinth:use_case", "value": data["use_case"]})
+        for guardrail in sorted(data["guardrails"]):
+            properties.append({"name": "norinth:guardrail", "value": guardrail})
+        for retriever in sorted(data["retrievers"]):
+            properties.append({"name": "norinth:retriever", "value": retriever})
+        for agent in sorted(data["agents"]):
+            properties.append({"name": "norinth:agent", "value": agent})
+        components.append({
+            "type": "application",
+            "bom-ref": f"system:{sys_key}",
+            "name": data["application"],
+            "description": data["purpose"] or data["use_case"] or "AI system observed in runtime telemetry",
+            "properties": properties,
+        })
+        depends_on = sorted({_model_ref(next(iter(data["providers"]), "unknown"), m) for m in data["models"]})
+        depends_on += sorted(_provider_ref(p) for p in data["providers"])
+        dependencies.append({"ref": f"system:{sys_key}", "dependsOn": depends_on})
+
+    portfolio_ref = "urn:norinth:ai-portfolio"
+    metadata: dict[str, Any] = {
+        "timestamp": model_calls[0].get("timestamp") if model_calls else now(),
+        "component": {
+            "type": "application",
+            "bom-ref": portfolio_ref,
+            "name": "norinth-ai-portfolio",
+            "description": "AI Bill of Materials generated from runtime telemetry",
+        },
+        "tools": {
+            "components": [
+                {"type": "application", "name": "Norinth", "publisher": "Revenant Research"}
+            ]
+        },
+    }
+    if truncated:
+        # Never under-report silently: disclose that the ceiling was reached.
+        metadata["properties"] = [
+            {"name": "norinth:truncated", "value": "true"},
+            {"name": "norinth:max_events_scanned", "value": str(_AIBOM_MAX_EVENTS)},
+        ]
+    dependencies.append({
+        "ref": portfolio_ref,
+        "dependsOn": [f"system:{sys_key}" for sys_key in sorted(systems)],
+    })
+
+    serial = uuid.uuid5(_AIBOM_NAMESPACE, f"{tenant_id}|{project}|{environment}")
     return {
         "bomFormat": "CycloneDX",
-        "specVersion": "1.5",
+        "specVersion": "1.6",
+        "serialNumber": f"urn:uuid:{serial}",
         "version": 1,
-        "metadata": {
-            "timestamp": model_calls[0].get("timestamp") if model_calls else None,
-            "component": {
-                "type": "application",
-                "name": "enterprise-ai-portfolio",
-                "description": "Auto-generated AI Bill of Materials from runtime telemetry"
-            }
-        },
-        "providers_in_use": list(providers_in_use),
-        "models_in_use": list(models_in_use),
-        "ai_systems_inventory": ai_systems_inventory
+        "metadata": metadata,
+        "components": components,
+        "dependencies": dependencies,
     }
