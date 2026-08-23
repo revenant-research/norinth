@@ -5,8 +5,11 @@ immutable to tenants; each tenant's customizations are its own.
 
 from __future__ import annotations
 
+import os
 import pathlib
 import sys
+
+import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "apps" / "platform"))
 
@@ -55,21 +58,13 @@ def test_config_customizations_are_tenant_isolated(super_admin_client):
     assert acme.post("/api/review-queue-policies", json={"policy_id": "intake", "task_type": "intake_review", "assigned_role": "org_admin", "due_days": 1, "escalation_days": 1}).status_code == 200
     assert acme.post("/api/owner-policies", json={"policy_id": "p1", "subject_type": "application", "owner_role": "business_owner"}).status_code == 200
 
-    # The effective assessment respects the tenant's own controls. beta ingests
-    # against the (unchanged) default for `sample`; acme against its override.
-    from app.main import app
-    from fastapi.testclient import TestClient  # noqa: F401
-
     # Super admins cannot write config (platform plane).
     assert super_admin_client.post("/api/control-catalog", json={"control_id": "X", "name": "n", "evidence_event_types": ["model.call"], "required_fields": [], "rationale": "r"}).status_code == 403
     acme.close()
     beta.close()
 
 
-import pytest
-
-
-@pytest.mark.skipif(bool(__import__("os").environ.get("NORINTH_TEST_DATABASE_URL")), reason="uses a throwaway SQLite file")
+@pytest.mark.skipif(bool(os.environ.get("NORINTH_TEST_DATABASE_URL")), reason="uses a throwaway SQLite file")
 def test_migration_9_upgrades_populated_config_tables():
     """A database created before migration 9 (single-column PK, seeded rows)
     upgrades to the composite-key schema with existing rows as defaults."""

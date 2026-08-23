@@ -284,7 +284,7 @@ def serialize_writer(connection) -> None:
     On SQLite the caller's ``BEGIN IMMEDIATE`` already holds the write lock.
     """
     if is_postgres():
-        connection.execute("SELECT pg_advisory_xact_lock(%s)" % _AUDIT_LOCK_KEY)
+        connection.execute(f"SELECT pg_advisory_xact_lock({_AUDIT_LOCK_KEY})")
 
 
 def connect():

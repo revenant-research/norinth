@@ -4,7 +4,6 @@ either backend, and the HMAC anchor detects a chain rewritten without the key.
 
 from __future__ import annotations
 
-import os
 import pathlib
 import sys
 import threading
@@ -61,9 +60,7 @@ def test_hmac_anchor_detects_rewrite_without_the_key(fresh_db, monkeypatch):
 
     with connect() as connection:
         rows = [dict(r) for r in connection.execute("SELECT * FROM audit_logs ORDER BY id").fetchall()]
-        prev = GENESIS_HASH if rows[0]["id"] == rows[0]["id"] else GENESIS_HASH
         # tamper the 3rd row's action, then rebuild hashes (not hmacs) forward
-        prev = rows[0]["prev_hash"]
         expected_prev = GENESIS_HASH
         for idx, row in enumerate(rows):
             action = "PRIVILEGE-GRANTED" if idx == 2 else row["action"]

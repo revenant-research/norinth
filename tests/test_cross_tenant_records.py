@@ -57,7 +57,6 @@ def test_cross_tenant_record_overwrite_is_impossible(super_admin_client):
     assert len(dep) == 1 and dep[0]["current_version"] == "1.0.0" and dep[0]["artifact_ref"] == "sha256:acme-good"
     inc = {i["title"] for i in acme.get("/api/incidents").json()["incidents"]}
     assert inc == {"acme incident"}
-    pr = acme.get("/api/prompts").json().get("prompt_templates", acme.get("/api/prompts").json())
     # evals: acme's passing eval still passing and attributed to acme.
     evals = [e for e in acme.get("/api/evals").json()["evals"]]
     assert evals and all(e["passed"] for e in evals)
