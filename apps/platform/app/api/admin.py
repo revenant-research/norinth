@@ -67,8 +67,9 @@ def _scrub(user: dict[str, Any]) -> dict[str, Any]:
 
 def _temp_password() -> str:
     """A readable one-time password the admin can hand to the user. The user is
-    forced to change it on first sign in."""
-    return f"Norinth-{secrets.token_hex(4)}"
+    forced to change it on first sign in. token_hex(4) was only 32 bits of
+    entropy (audit finding L111); 12 bytes gives 96 bits."""
+    return f"Norinth-{secrets.token_hex(12)}"
 
 # Roles an org admin is allowed to grant within their organization. The platform
 # role plane (super_admin) is intentionally excluded.

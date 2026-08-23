@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -33,6 +34,14 @@ from app.services.notifications import start_worker as start_notification_worker
 from app.storage.errors import RecordNotFound
 from app.storage.migrations import run_migrations
 from app.storage.workflow import load_platform_user
+
+# The application configures logging (previously nothing did, so records below
+# WARNING were dropped and operators had no visibility — audit finding M108).
+# Level is env-tunable; the default is INFO.
+logging.basicConfig(
+    level=os.getenv("NORINTH_LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 
 STATIC_DIR = Path(__file__).resolve().parent / "dashboard" / "static"
 ASSETS_DIR = STATIC_DIR / "assets"
