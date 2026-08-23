@@ -31,6 +31,39 @@ jobs:
       - name: Test (pytest)
         run: pytest
 
+  python-postgres:
+    name: Python tests (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: norinth
+          POSTGRES_PASSWORD: norinth
+          POSTGRES_DB: norinth_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U norinth"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+          pip install -e packages/python-sdk
+      - name: Test against PostgreSQL
+        env:
+          NORINTH_TEST_DATABASE_URL: postgresql://norinth:norinth@127.0.0.1:5432/norinth_test
+        run: pytest
+
   frontend:
     name: Frontend (typecheck + build)
     runs-on: ubuntu-latest

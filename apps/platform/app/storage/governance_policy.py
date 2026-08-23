@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import sqlite3
 from typing import Any
 
+from . import db
 from .entities import decode_json, encode_json, entity_id
 from .raw_events import connect
 
@@ -191,7 +191,7 @@ def init_governance_policy() -> None:
         )
         try:
             connection.execute("ALTER TABLE risk_rules ADD COLUMN signal TEXT NOT NULL DEFAULT 'provider_dependency'")
-        except sqlite3.OperationalError:
+        except db.OperationalError:
             pass
         connection.execute(
             """

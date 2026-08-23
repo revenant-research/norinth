@@ -35,6 +35,25 @@ program from the SDK and shares only the public wire protocol
   the Platform.
 
 
+## Database backend
+
+The platform runs on **SQLite by default** (zero configuration, for local
+development) and on **PostgreSQL for production**. Select PostgreSQL by setting:
+
+```bash
+export NORINTH_DATABASE_URL=postgresql://user:password@host:5432/norinth
+```
+
+PostgreSQL gives the evidence store the properties enterprise buyers require —
+multiple writers, replication/HA, point-in-time recovery, and managed
+encryption — which SQLite (single-writer, file-local) cannot. The storage layer
+is backend-neutral via `app/storage/db.py`, and the full test suite runs against
+both backends in CI (`make test` for SQLite, `make test-postgres` with
+`NORINTH_TEST_DATABASE_URL` set).
+
+With Docker: `docker compose --profile postgres up` starts a PostgreSQL service;
+point `NORINTH_DATABASE_URL` at it in `docker-compose.yml`.
+
 ## Ingestion authentication
 
 Telemetry ingestion (`POST /v1/events/batch`) authenticates with a **per-tenant

@@ -25,6 +25,9 @@ type: ## Type-check the SDK
 test: ## Run the test suite
 	pytest
 
+test-postgres: ## Run the test suite against PostgreSQL (needs NORINTH_TEST_DATABASE_URL)
+	NORINTH_TEST_DATABASE_URL=$${NORINTH_TEST_DATABASE_URL:?set to a postgresql:// URL} pytest
+
 test-cov: ## Run tests with coverage
 	pytest --cov=app --cov=norinth_logger --cov-report=term-missing
 

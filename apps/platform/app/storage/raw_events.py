@@ -1,30 +1,22 @@
 from __future__ import annotations
 
 import json
-import os
-import sqlite3
 from pathlib import Path
 from typing import Any
+
+from . import db
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "norinth.sqlite3"
 
 
 def database_path() -> Path:
-    return Path(os.getenv("NORINTH_PLATFORM_DB", str(DEFAULT_DB_PATH)))
+    return db.database_path()
 
 
-def connect() -> sqlite3.Connection:
-    path = database_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # WAL lets readers proceed concurrently with a writer, and a busy timeout
-    # makes writers wait for the lock instead of failing immediately with
-    # "database is locked" (audit C-3). Both are set per connection; WAL is a
-    # persistent database property and idempotent to re-assert.
-    connection = sqlite3.connect(path, timeout=30)
-    connection.row_factory = sqlite3.Row
-    connection.execute("PRAGMA journal_mode=WAL")
-    connection.execute("PRAGMA busy_timeout=30000")
-    return connection
+def connect():
+    """Open a connection to the configured backend (SQLite by default,
+    PostgreSQL when NORINTH_DATABASE_URL is set). See storage/db.py."""
+    return db.connect()
 
 
 def init_storage() -> None:
@@ -81,7 +73,7 @@ def init_storage() -> None:
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_sdk_events_span "
                 "ON sdk_events(trace_id, span_id)"
             )
-        except sqlite3.IntegrityError:
+        except db.IntegrityError:
             pass
 
 
@@ -94,8 +86,7 @@ def insert_events(events: list[dict[str, Any]]) -> int:
     """
     rows = [event_to_row(event) for event in events]
     with connect() as connection:
-        before = connection.total_changes
-        connection.executemany(
+        cursor = connection.executemany(
             """
             INSERT OR IGNORE INTO sdk_events (
                 event_type, schema_version, trace_id, span_id, parent_span_id, timestamp, service,
@@ -113,7 +104,7 @@ def insert_events(events: list[dict[str, Any]]) -> int:
             """,
             rows,
         )
-        return connection.total_changes - before
+        return max(cursor.rowcount, 0)
 
 
 def event_to_row(event: dict[str, Any]) -> dict[str, Any]:
