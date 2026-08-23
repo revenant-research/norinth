@@ -1,0 +1,194 @@
+name: Release
+
+# Tag a release (v0.2.0) and this workflow publishes everything a self-hoster
+# needs, with provenance:
+#   * container image  ghcr.io/revenant-research/norinth:<version>, :latest
+#     (multi-arch, cosign keyless signature, SBOM attestation, Trivy scanned)
+#   * Helm chart       oci://ghcr.io/revenant-research/charts/norinth
+#   * Python SDK       norinth-logger on PyPI (trusted publishing)
+#   * GitHub Release   with the CHANGELOG section, SBOM and checksums attached
+#
+# Pushes to main publish the image as :edge so installers can track the tip.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write      # cosign keyless + PyPI trusted publishing
+  attestations: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+  CHART: ghcr.io/${{ github.repository_owner }}/charts
+
+jobs:
+  image:
+    name: Container image (build, sign, SBOM, scan, push)
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
+          labels: |
+            org.opencontainers.image.title=Norinth
+            org.opencontainers.image.description=Open-source AI governance from runtime evidence
+            org.opencontainers.image.licenses=Apache-2.0
+            org.opencontainers.image.vendor=Revenant Research
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/platform/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+      - name: Sign image (keyless, Sigstore)
+        run: cosign sign --yes "${IMAGE}@${{ steps.build.outputs.digest }}"
+      - name: Generate SBOM (SPDX) with syft
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+      - name: Attest SBOM to the image
+        run: cosign attest --yes --predicate sbom.spdx.json --type spdxjson "${IMAGE}@${{ steps.build.outputs.digest }}"
+      - name: GitHub build provenance attestation
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Vulnerability scan (Trivy, fail on CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          format: table
+          severity: CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.spdx.json
+
+  chart:
+    name: Helm chart (package, push OCI)
+    runs-on: ubuntu-latest
+    needs: image
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Lint
+        run: helm lint deploy/helm/norinth
+      - name: Package with the release version
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          helm package deploy/helm/norinth --version "$VERSION" --app-version "$VERSION" -d dist
+      - name: Push to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+          helm push dist/norinth-*.tgz "oci://${CHART}"
+
+  sdk:
+    name: Python SDK (build, publish to PyPI)
+    runs-on: ubuntu-latest
+    # Publishing needs a PyPI project with a trusted publisher for this repo.
+    # Until repository variable PYPI_PUBLISH=true is set, the SDK is built and
+    # attached to the GitHub Release instead (pip can install it from there).
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment: ${{ vars.PYPI_PUBLISH == 'true' && 'pypi' || '' }}
+    defaults:
+      run:
+        working-directory: packages/python-sdk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Version must match the tag
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          test "$TAG" = "$PKG" || { echo "tag $TAG != pyproject version $PKG"; exit 1; }
+      - run: python -m pip install --upgrade build && python -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdk-dist
+          path: packages/python-sdk/dist/*
+      - name: Publish to PyPI (trusted publishing)
+        if: vars.PYPI_PUBLISH == 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/python-sdk/dist
+          attestations: true
+      - name: PyPI publishing not configured
+        if: vars.PYPI_PUBLISH != 'true'
+        run: echo "Set repository variable PYPI_PUBLISH=true after creating the PyPI project + trusted publisher. The wheel is attached to the GitHub Release."
+
+  release:
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    needs: [image, chart, sdk]
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: sbom
+      - uses: actions/download-artifact@v4
+        with:
+          name: sdk-dist
+          path: sdk-dist
+      - name: Extract this version's changelog section
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" {p=1; next}
+            /^## \[/ && p {exit}
+            p {print}
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then echo "See CHANGELOG.md." > notes.md; fi
+          printf '\n\n**Image:** `%s@%s`\n**Verify:** `cosign verify %s@%s --certificate-identity-regexp ".*" --certificate-oidc-issuer https://token.actions.githubusercontent.com`\n' \
+            "${IMAGE}" "${{ needs.image.outputs.digest }}" "${IMAGE}" "${{ needs.image.outputs.digest }}" >> notes.md
+      - name: Checksums
+        run: sha256sum sbom.spdx.json scripts/install.sh docker-compose.yml sdk-dist/* > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          body_path: notes.md
+          files: |
+            sbom.spdx.json
+            SHA256SUMS
+            scripts/install.sh
+            docker-compose.yml
+            sdk-dist/*

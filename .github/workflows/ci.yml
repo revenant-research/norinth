@@ -113,6 +113,25 @@ jobs:
       - name: With the bundle the root route serves index.html and its assets
         run: pytest tests/test_dashboard_bundle.py -q -k "built"
 
+  helm:
+    name: Helm chart (lint + render)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: helm lint deploy/helm/norinth
+      - name: Render with required values
+        run: |
+          helm template test deploy/helm/norinth \
+            --set database.url=postgresql://u:p@h:5432/norinth \
+            --set secrets.secretKey=$(openssl rand -base64 32) \
+            --set secrets.superAdminPassword=test-password-123 \
+            --set ingress.enabled=true > rendered.yaml
+          grep -c '^kind:' rendered.yaml
+      - name: Refuses to render without secrets
+        run: |
+          if helm template test deploy/helm/norinth >/dev/null 2>&1; then echo "chart rendered without secrets"; exit 1; fi
+
   docker:
     name: Docker image (multi-stage build + smoke)
     runs-on: ubuntu-latest

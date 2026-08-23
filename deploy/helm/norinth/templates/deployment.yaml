@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "norinth.fullname" . }}
+  labels: {{- include "norinth.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {{- include "norinth.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "norinth.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/secrets: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
+    spec:
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: {{ include "norinth.fullname" . }}
+      {{- end }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: norinth
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8001
+          env:
+            - name: NORINTH_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "norinth.dbSecretName" . }}
+                  key: {{ .Values.database.existingSecretKey }}
+            - name: NORINTH_SECRET_KEY
+              valueFrom:
+                secretKeyRef: {name: {{ include "norinth.secretName" . }}, key: NORINTH_SECRET_KEY}
+            - name: NORINTH_SUPER_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: {{ include "norinth.secretName" . }}, key: NORINTH_SUPER_ADMIN_PASSWORD}
+            - name: NORINTH_SUPER_ADMIN_EMAIL
+              value: {{ .Values.secrets.superAdminEmail | quote }}
+            - name: NORINTH_PUBLIC_BASE_URL
+              value: {{ .Values.config.publicBaseUrl | quote }}
+            - name: NORINTH_COOKIE_SECURE
+              value: {{ .Values.config.cookieSecure | quote }}
+            - name: NORINTH_TRUST_PROXY
+              value: {{ .Values.config.trustProxy | quote }}
+            - name: NORINTH_SESSION_TTL_HOURS
+              value: {{ .Values.config.sessionTtlHours | quote }}
+            {{- with .Values.config.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+      volumes:
+        - name: data
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
