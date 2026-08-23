@@ -21,6 +21,8 @@ import { LandingPage } from "./components/landing";
 import { LeadsView } from "./components/leads";
 import { SetupWizard } from "./components/setup";
 import { InviteScreen } from "./components/invite";
+import { Home } from "./components/home";
+import { SystemHubHeader } from "./components/systemHub";
 import { GettingStarted } from "./components/guide";
 import { DocsView } from "./components/docs";
 import { Sidebar, SkipLink, useRouteAnnouncement } from "./components/shell";
@@ -42,13 +44,13 @@ import { Badge, Chip, EmptyState, MetricCard, RecordList, Section, SkeletonCards
 import { ToastHost, toast } from "./components/toast";
 import { ConfirmHost, confirm } from "./components/confirm";
 
-type RouteDef = { id: string; label: string; description: string; permission?: string };
+type RouteDef = { id: string; label: string; description: string; permission?: string; group?: string };
 
 // Detail routes (#gate/<id>, #incident/<id>, ...) previously fell back to the
 // "Overview" heading and title, which misreported the page to screen readers
 // and in the tab strip.
 const DETAIL_ROUTE_META: Record<string, RouteDef> = {
-  application: { id: "application", label: "Application", description: "Application inventory record, evidence, and linked governance work." },
+  application: { id: "application", label: "AI system", description: "Stage, owners, what is blocking it, and every piece of evidence and work linked to it." },
   workflow: { id: "workflow", label: "Workflow", description: "Workflow record, models, and linked governance work." },
   review: { id: "review", label: "Review Task", description: "Evidence packet and reviewer decision for one review task." },
   gate: { id: "gate", label: "Release Gate", description: "Release readiness evidence and approval decision." },
@@ -56,25 +58,29 @@ const DETAIL_ROUTE_META: Record<string, RouteDef> = {
   trace: { id: "trace", label: "Trace", description: "Request trace and the events captured for it." },
 };
 
+// Navigation is grouped by what a person is doing, not by data type. Route ids
+// are stable (links elsewhere keep working); only grouping and labels changed.
 const baseRoutes: RouteDef[] = [
-  { id: "overview", label: "Overview", description: "How much of your AI estate is governed, who is accountable for it, and what is waiting on a decision.", permission: "user.manage" },
-  { id: "portfolio", label: "My Work", description: "Everything waiting on you: reviews to decide, releases to approve, incidents to close." },
-  { id: "myqueue", label: "My Queue", description: "Review tasks assigned to you. Decide them here with a rationale; the decision is recorded in the audit trail." },
-  { id: "intake", label: "Intake", description: "Register an AI use case before it ships. It gets a risk tier and a review task the moment you submit.", permission: "intake.submit" },
-  { id: "inventory", label: "Inventory", description: "Every AI system seen in production, including the ones nobody registered. Open one to see its owners, risks, controls, releases and incidents." },
-  { id: "reviews", label: "Review Work", description: "Decide open reviews, name accountable owners, and manage accepted risks. Submitters can never decide their own work." },
-  { id: "risk", label: "Risk", description: "Findings raised by the platform and by people. Accept a risk only with an owner, a compensating control and an expiry." },
-  { id: "compliance", label: "Compliance", description: "Which requirements of NIST AI RMF, ISO 42001, the EU AI Act and OWASP you can evidence today, and the packet to hand an auditor." },
-  { id: "controls", label: "Controls", description: "Each control assessed from what actually ran: passing with linked evidence, or missing with the gap named." },
-  { id: "deployments", label: "Deployments", description: "Nothing ships without a gate. Gates are approved by a named reviewer with a linked prompt version and signed eval evidence, never automatically." },
-  { id: "monitoring", label: "Monitoring", description: "The raw evidence: traces, model calls, tool use, guardrail decisions and eval results as the SDK reported them." },
-  { id: "incidents", label: "Incidents", description: "Incidents reported by guardrails, evals or people. Close one only with a root cause, impact and remediation on record." },
-  { id: "agents", label: "Agents", description: "Register the agents you sanction with an autonomy level and tool allow-list. Unregistered agents and off-policy tool use become findings." },
-  { id: "identity", label: "Identity & Integrations", description: "Connect your identity provider, issue SDK ingestion keys, and register the CI key that signs release evidence.", permission: "user.manage" },
-  { id: "team", label: "People & Access", description: "Invite people and give them a role. Administrators and decision-makers are kept separate by design.", permission: "user.manage" },
-  { id: "audit", label: "Audit Log", description: "Who did what, when. Hash-chained and verifiable; it is the trail your auditor will read." },
-  { id: "guide", label: "Getting started", description: "Set up your organization step by step. Each step is checked against your real state.", permission: "user.manage" },
-  { id: "docs", label: "Docs", description: "Roles, terms and integrations, explained in plain language." },
+  { id: "home", label: "Home", description: "What needs you, and where your organization stands.", group: "" },
+  { id: "inventory", label: "AI systems", description: "Every AI system seen in production, including the ones nobody registered. Open one to see its owners, risks, controls, releases and incidents.", group: "Systems" },
+  { id: "intake", label: "Register a system", description: "Register an AI use case before it ships. It gets a risk tier and a review task the moment you submit.", permission: "intake.submit", group: "Systems" },
+  { id: "agents", label: "Agents", description: "Register the agents you sanction with an autonomy level and tool allow-list. Unregistered agents and off-policy tool use become findings.", group: "Systems" },
+  { id: "myqueue", label: "My queue", description: "Review tasks assigned to you. Decide them here with a rationale; the decision is recorded in the audit trail.", group: "Work" },
+  { id: "reviews", label: "Reviews & owners", description: "Decide open reviews, name accountable owners, and manage accepted risks. Submitters can never decide their own work.", group: "Work" },
+  { id: "deployments", label: "Release gates", description: "Nothing ships without a gate. Gates are approved by a named reviewer with a linked prompt version and signed eval evidence, never automatically.", group: "Work" },
+  { id: "risk", label: "Risk findings", description: "Findings raised by the platform and by people. Accept a risk only with an owner, a compensating control and an expiry.", group: "Work" },
+  { id: "incidents", label: "Incidents", description: "Incidents reported by guardrails, evals or people. Close one only with a root cause, impact and remediation on record.", group: "Work" },
+  { id: "compliance", label: "Compliance", description: "Which requirements of NIST AI RMF, ISO 42001, the EU AI Act and OWASP you can evidence today, and the packet to hand an auditor.", group: "Evidence" },
+  { id: "controls", label: "Controls", description: "Each control assessed from what actually ran: passing with linked evidence, or missing with the gap named.", group: "Evidence" },
+  { id: "monitoring", label: "Telemetry", description: "The raw evidence: traces, model calls, tool use, guardrail decisions and eval results as the SDK reported them.", group: "Evidence" },
+  { id: "audit", label: "Audit log", description: "Who did what, when. Hash-chained and verifiable; it is the trail your auditor will read.", group: "Evidence" },
+  { id: "overview", label: "Organization posture", description: "How much of your AI estate is governed, who is accountable for it, and what is waiting on a decision.", permission: "user.manage", group: "Setup" },
+  { id: "team", label: "People & access", description: "Invite people and give them a role. Administrators and decision-makers are kept separate by design.", permission: "user.manage", group: "Setup" },
+  { id: "identity", label: "Identity & integrations", description: "Connect your identity provider, issue SDK ingestion keys, register the CI key that signs release evidence, and route notifications.", permission: "user.manage", group: "Setup" },
+  { id: "guide", label: "Getting started", description: "Set up your organization step by step. Each step is checked against your real state.", permission: "user.manage", group: "Setup" },
+  { id: "docs", label: "Docs", description: "Roles, terms and integrations, explained in plain language.", group: "Setup" },
+  // Kept for old links; not shown in navigation.
+  { id: "portfolio", label: "My work", description: "Everything waiting on you: reviews to decide, releases to approve, incidents to close.", group: "hidden" },
 ];
 
 type Mutate = (path: string, payload: unknown, success: string) => Promise<void>;
@@ -87,6 +93,7 @@ function currentHash(): string[] {
 
 function visibleRoutes(user: User): RouteDef[] {
   return baseRoutes.filter((route) => {
+    if (route.group === "hidden") return false;
     if (route.id === "audit") return user.permissions.includes("user.manage");
     if (route.permission) return user.permissions.includes(route.permission);
     return true;
@@ -358,8 +365,14 @@ function Workspace({ user, onSignOut }: { user: User; onSignOut: () => void }) {
   const routes = useMemo(() => visibleRoutes(user), [user]);
   // Org admins land on the organization overview; everyone else lands on their
   // daily work queue.
-  const defaultRoute = user.permissions.includes("user.manage") ? "overview" : "portfolio";
-  const active = route[0] || defaultRoute;
+  const active = route[0] || "home";
+  const [setupComplete, setSetupComplete] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!user.permissions.includes("user.manage")) return;
+    getJson<{ complete: boolean }>("/api/onboarding")
+      .then((state) => setSetupComplete(Boolean(state.complete)))
+      .catch(() => setSetupComplete(null));
+  }, [user]);
   const routeMeta =
     routes.find((item) => item.id === active) ||
     baseRoutes.find((item) => item.id === active) ||
@@ -448,7 +461,7 @@ function Workspace({ user, onSignOut }: { user: User; onSignOut: () => void }) {
               <button type="button" className="linklike" onClick={refresh}>Retry</button>
             </div>
           ) : null}
-          {data && !isAdminRoute(active) ? <View route={route} data={data} scope={scope} user={user} mutate={mutate} /> : null}
+          {data && !isAdminRoute(active) ? <View route={route} data={data} scope={scope} user={user} mutate={mutate} setupComplete={setupComplete} /> : null}
         </div>
       </main>
     </div>
@@ -514,7 +527,7 @@ function AdminRoutes({ active, scope, user }: { active: string; scope: Scope; us
   }
 }
 
-function View({ route, data, scope, user, mutate }: { route: string[]; data: DashboardData; scope: Scope; user: User; mutate: Mutate }) {
+function View({ route, data, scope, user, mutate, setupComplete }: { route: string[]; data: DashboardData; scope: Scope; user: User; mutate: Mutate; setupComplete: boolean | null }) {
   if (route[0] === "application" && route[1]) return <DetailRoute kind="application" id={route[1]} scope={scope} mutate={mutate} />;
   if (route[0] === "workflow" && route[1]) return <DetailRoute kind="workflow" id={route[1]} scope={scope} mutate={mutate} />;
   if (route[0] === "review" && route[1]) return <DetailRoute kind="review" id={route[1]} scope={scope} mutate={mutate} />;
@@ -539,8 +552,10 @@ function View({ route, data, scope, user, mutate }: { route: string[]; data: Das
     case "incidents":
       return <Incidents data={data} mutate={mutate} />;
     case "portfolio":
-    default:
       return <Portfolio data={data} mutate={mutate} />;
+    case "home":
+    default:
+      return <Home user={user} data={data} setupComplete={setupComplete} />;
   }
 }
 
@@ -802,13 +817,8 @@ function ApplicationDetail({ detail, graph, mutate }: { detail: Record<string, a
   if (!application) return <EmptyState>The requested record is no longer available.</EmptyState>;
   return (
     <ObjectWorkspace title={application.application_name} subtitle={`${application.tenant_id || "Unscoped"} / ${application.environment || "unknown environment"}`}>
-      <div className="detail-rail">
-        <MetricCard label="Calls" value={application.model_calls} />
-        <MetricCard label="Errors" value={application.errors} />
-        <MetricCard label="Risks" value={(detail.risks || []).length} />
-        <MetricCard label="Open Reviews" value={(detail.review_tasks || []).filter((task: Record<string, any>) => task.status === "open").length} />
-      </div>
       <div className="detail-stack">
+        <SystemHubHeader detail={detail} />
         <Section title="Overview">
           <div className="chip-row">
             {(application.providers || []).map((provider: string) => <Chip key={provider}>{provider}</Chip>)}

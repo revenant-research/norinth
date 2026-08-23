@@ -6,6 +6,34 @@ to Semantic Versioning once it reaches a tagged release.
 
 ## [Unreleased]
 
+### Changed
+- **Role-shaped Home replaces the dashboard landing.** `#home` shows "Needs
+  you" — reviews assigned to you, unassigned work in your role, release gates
+  you can decide, open incidents, high-severity findings, systems without an
+  owner — computed from your permissions and assignments; administrators also
+  see organization posture (systems, unregistered, without an owner, gates
+  pending, reviews overdue, incidents) and a setup nudge; owners see the
+  systems they own with what blocks them; everyone sees recent decisions. A
+  person with nothing to do is told why.
+- **Navigation grouped by activity** — Home · Systems (AI systems, Register a
+  system, Agents) · Work (My queue, Reviews & owners, Release gates, Risk
+  findings, Incidents) · Evidence (Compliance, Controls, Telemetry, Audit
+  log) · Setup (Organization posture, People & access, Identity &
+  integrations, Getting started, Docs). Route ids are unchanged; old links
+  keep working.
+- **AI System hub.** The application detail opens with a hub header: stage
+  (discovered / in review / approved / recertified / rejected / retired),
+  risk tier, accountable owners, calls/errors/findings/gates, and a one-line
+  "what is blocking this system".
+- **Lifecycle wired end to end.** Systems seen in telemetry but never
+  registered are `discovered` (shadow AI); Intake makes them `in_review` with
+  a tier; approving or rejecting the intake review moves the use case (and
+  the system) to `approved` / `rejected` — previously a decision never changed
+  the use case's status. Inventory rows carry `stage`, `risk_tier`,
+  `intake_ids`.
+- Landing hero buttons hover toward paper/white instead of brighter accent
+  colours that clashed with the streak imagery.
+
 ### Added
 - **Notifications (email + signed webhooks).** A notification outbox with a
   background delivery worker (retries with backoff, every outcome recorded)

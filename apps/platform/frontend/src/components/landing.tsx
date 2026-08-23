@@ -181,7 +181,7 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
           </Lede>
           <div className={styles.actions}>
             <ButtonLink size="lg" href="#start" className={styles.heroCta}>Install it</ButtonLink>
-            <ButtonLink variant="secondary" size="lg" href="https://github.com/revenant-research/norinth">Read the source</ButtonLink>
+            <ButtonLink variant="secondary" size="lg" href="https://github.com/revenant-research/norinth" className={styles.heroGhost}>Read the source</ButtonLink>
           </div>
           <ul className={styles.proof} aria-label="Key facts">
             <li>No hosted tier, no paid tier, no vendor in the data path</li>

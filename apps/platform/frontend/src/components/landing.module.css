@@ -34,8 +34,13 @@
 }
 .hero h1 { max-width: 18ch; color: var(--n-white); }
 .hero p { color: rgba(255, 252, 245, 0.9); }
+/* Hero buttons sit on dark chrome: hover states move toward paper/white, never
+   toward brighter accent colours that fight the streak imagery. */
 .heroCta { background: var(--n-teal); border-color: var(--n-teal); color: var(--n-ink); font-weight: 600; }
-.heroCta:hover { background: #33c7cb; border-color: #33c7cb; }
+a.heroCta:hover, a.heroCta.heroCta:hover { background: var(--n-paper); border-color: var(--n-paper); color: var(--n-ink); }
+a.heroGhost.heroGhost { background: transparent; border-color: rgba(255, 252, 245, 0.6); color: var(--n-white); }
+a.heroGhost.heroGhost:hover { background: rgba(255, 252, 245, 0.12); border-color: var(--n-white); color: var(--n-white); }
+.heroCta:focus-visible, .heroGhost:focus-visible { outline-color: var(--n-white); }
 .proof { list-style: none; margin: var(--n-space-2) 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--n-space-2) var(--n-space-5); font-size: var(--n-text-sm); color: rgba(255, 252, 245, 0.9); }
 .proof li::before { content: "✓ "; color: #7fe6e9; font-weight: 700; }
 .paperBand { background: var(--n-paper); border-top: 1px solid var(--n-rule); border-bottom: 1px solid var(--n-rule); margin-top: var(--n-space-7); padding-bottom: var(--n-space-7); }

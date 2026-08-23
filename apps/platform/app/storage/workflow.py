@@ -806,6 +806,13 @@ def apply_decision_status(connection, target_type: str, target_id: str, decision
         return
     if target_type == "review_task":
         connection.execute("UPDATE review_tasks SET status = ?, updated_at = datetime('now') WHERE task_id = ?", (status, target_id))
+        # An intake review decides the use case's lifecycle: approve -> approved,
+        # reject -> rejected. Other decisions leave it submitted (awaiting changes).
+        task = connection.execute("SELECT task_type, change_id FROM review_tasks WHERE task_id = ?", (target_id,)).fetchone()
+        if task is not None and task["task_type"] == "intake_review" and status in {"approved", "rejected"}:
+            connection.execute(
+                "UPDATE ai_use_cases SET status = ?, updated_at = datetime('now') WHERE intake_id = ?", (status, task["change_id"])
+            )
     if target_type == "risk_finding":
         connection.execute("UPDATE risk_findings SET status = ?, evaluated_at = datetime('now') WHERE finding_id = ?", (status, target_id))
     if target_type == "change_event":
