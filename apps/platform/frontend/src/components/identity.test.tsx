@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as api from "../api";
 import * as confirmModule from "./confirm";
-import { IngestionKeySettings, SecretReveal, SsoSettings } from "./identity";
+import { AttestationKeySettings, IngestionKeySettings, SecretReveal, SsoSettings } from "./identity";
 
 describe("SecretReveal", () => {
   it("shows the secret once and copies it", async () => {
@@ -110,5 +110,54 @@ describe("SamlSettings", () => {
     expect(path).toBe("/api/org/saml");
     expect(body).toMatchObject({ idp_entity_id: "https://idp.example.test/saml", idp_sso_url: "https://idp.example.test/sso" });
     expect((body as any).idp_certificate).toContain("BEGIN CERTIFICATE");
+  });
+});
+
+describe("AttestationKeySettings", () => {
+  it("explains enforcement state, registers a public key, and can revoke it", async () => {
+    const user = userEvent.setup();
+    let keys: any[] = [];
+    vi.spyOn(api, "getJson").mockImplementation(
+      async () => ({ attestation_keys: keys, attestation_required: keys.some((k) => k.status === "active") }) as any,
+    );
+    const post = vi.spyOn(api, "postJson").mockImplementation(async (path: string, body: any) => {
+      if (path === "/api/attestation-keys") {
+        expect(body.public_key_pem).toContain("BEGIN PUBLIC KEY");
+        keys = [
+          {
+            key_id: "nak_abc123",
+            name: body.name,
+            status: "active",
+            fingerprint: "sha256:deadbeef",
+            created_at: "2026-08-23",
+            last_used_at: null,
+          },
+        ];
+        return { attestation_key: keys[0] } as any;
+      }
+      if (path.endsWith("/revoke")) {
+        keys = [{ ...keys[0], status: "revoked", revoked_at: "2026-08-24" }];
+        return {} as any;
+      }
+      throw new Error(path);
+    });
+    vi.spyOn(confirmModule, "confirm").mockResolvedValue(true);
+
+    render(<AttestationKeySettings />);
+    await waitFor(() => expect(screen.getByText("No attestation keys registered.")).toBeInTheDocument());
+    expect(screen.getByRole("status")).toHaveTextContent("No key registered yet");
+
+    await user.type(screen.getByLabelText("Name"), "GitHub Actions");
+    await user.type(screen.getByLabelText("Public key (PEM)"), "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA\n-----END PUBLIC KEY-----");
+    await user.click(screen.getByRole("button", { name: "Register key" }));
+
+    await waitFor(() => expect(screen.getAllByTestId("attestation-key-row")).toHaveLength(1));
+    expect(screen.getByText("sha256:deadbeef")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Attestation is enforced");
+
+    await user.click(screen.getByRole("button", { name: "Revoke" }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith("/api/attestation-keys/nak_abc123/revoke", {}));
+    await waitFor(() => expect(screen.getByText("revoked")).toBeInTheDocument());
+    expect(screen.getByRole("status")).toHaveTextContent("No key registered yet");
   });
 });

@@ -442,6 +442,130 @@ export function IngestionKeySettings() {
   );
 }
 
+// --- Evidence attestation keys -----------------------------------------------------
+
+type AttestationKey = {
+  key_id: string;
+  name: string;
+  status: string;
+  fingerprint: string;
+  created_at: string;
+  created_by?: string | null;
+  last_used_at?: string | null;
+  revoked_at?: string | null;
+};
+
+/**
+ * Registers the Ed25519 public keys a CI pipeline uses to sign eval results.
+ * Registering the first key is the opt-in: from then on, deployment gates in
+ * this organization only count *attested* passing evals, so a self-reported
+ * `passed: true` from any ingestion-key holder can no longer satisfy a gate.
+ */
+export function AttestationKeySettings() {
+  const { value, error, reload } = useResource(() =>
+    getJson<{ attestation_keys: AttestationKey[]; attestation_required: boolean }>("/api/attestation-keys"),
+  );
+  const [name, setName] = useState("");
+  const [pem, setPem] = useState("");
+  const rows = value?.attestation_keys || [];
+  const required = Boolean(value?.attestation_required);
+
+  async function register(event: React.FormEvent) {
+    event.preventDefault();
+    try {
+      await postJson("/api/attestation-keys", { name, public_key_pem: pem });
+      toast.success("Attestation key registered. Only attested evals now satisfy release gates.");
+      setName("");
+      setPem("");
+      reload();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Could not register key.");
+    }
+  }
+
+  async function revoke(row: AttestationKey) {
+    const ok = await confirm({
+      title: `Revoke "${row.name}"?`,
+      body: "Eval results signed with this key will be rejected at ingestion from now on. Evidence already verified keeps its attested status.",
+      confirmLabel: "Revoke",
+      tone: "danger",
+    });
+    if (!ok) return;
+    try {
+      await postJson(`/api/attestation-keys/${encodeURIComponent(row.key_id)}/revoke`, {});
+      toast.success("Key revoked.");
+      reload();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Revoke failed.");
+    }
+  }
+
+  return (
+    <Section
+      title="Evidence attestation"
+      description="Public keys your CI pipeline uses to sign eval results. Signed evals are verified at ingestion and marked attested; release gates then require attested evidence instead of a self-reported pass."
+    >
+      {error ? <p className="feedback error" role="alert">{error}</p> : null}
+      <p className="hint" role="status">
+        {required
+          ? "Attestation is enforced: release gates in this organization only count attested passing evals."
+          : "No key registered yet: any passing eval currently satisfies a release gate. Register a key to require signed evidence."}
+      </p>
+      <p className="hint">
+        Generate a key pair with <code>python -m norinth_logger.attest keygen</code>, keep the private key in your CI secret store, and sign results with{" "}
+        <code>norinth_logger.attest.sign_eval_result(...)</code> before sending them. Ed25519 only.
+      </p>
+      <form className="admin-form" onSubmit={register} aria-label="Register attestation key">
+        <label>
+          Name
+          <input value={name} onChange={(e) => setName(e.target.value)} required placeholder="e.g. GitHub Actions – claims-api" />
+        </label>
+        <label>
+          Public key (PEM)
+          <textarea
+            value={pem}
+            onChange={(e) => setPem(e.target.value)}
+            required
+            rows={4}
+            spellCheck={false}
+            placeholder={"-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"}
+          />
+        </label>
+        <button type="submit">Register key</button>
+      </form>
+      {rows.length === 0 ? (
+        <EmptyState>No attestation keys registered.</EmptyState>
+      ) : (
+        <RecordList empty="" label="keys">
+          {rows.map((row) => (
+            <article className="record-card" key={row.key_id} data-testid="attestation-key-row">
+              <div className="record-main">
+                <span className="record-title">{row.name}</span>
+                <Badge value={row.status} />
+                <code>{row.key_id}</code>
+              </div>
+              <p>
+                <code>{row.fingerprint}</code>
+              </p>
+              <p>
+                Registered {row.created_at}
+                {row.created_by ? ` by ${row.created_by}` : ""}
+                {row.last_used_at ? ` · last verified ${row.last_used_at}` : " · no evidence verified yet"}
+                {row.revoked_at ? ` · revoked ${row.revoked_at}` : ""}
+              </p>
+              {row.status === "active" ? (
+                <button type="button" className="secondary" onClick={() => revoke(row)}>
+                  Revoke
+                </button>
+              ) : null}
+            </article>
+          ))}
+        </RecordList>
+      )}
+    </Section>
+  );
+}
+
 export function IdentityView({ tenantId }: { tenantId: string }) {
   return (
     <>
@@ -449,6 +573,7 @@ export function IdentityView({ tenantId }: { tenantId: string }) {
       <SamlSettings />
       <ScimSettings />
       <IngestionKeySettings />
+      <AttestationKeySettings />
     </>
   );
 }

@@ -675,10 +675,22 @@ textarea {
   color: var(--warning);
 }
 
+.badge-row {
+  display: inline-flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.badge-unattested {
+  background: #fef3c7;
+  color: var(--warning);
+}
+
 .badge-approved,
 .badge-passing,
 .badge-success,
 .badge-closed,
+.badge-attested,
 .badge-active {
   background: #e9f7ef;
   color: var(--success);

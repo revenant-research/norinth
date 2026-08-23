@@ -6,6 +6,21 @@ to Semantic Versioning once it reaches a tagged release.
 
 ## [Unreleased]
 
+### Security
+- **Signed eval evidence for release gates (roadmap #20, C-2 hardening).**
+  Organizations register Ed25519 public keys (`/api/attestation-keys`,
+  Identity & Integrations → Evidence attestation); CI signs `eval.result`
+  events with `norinth_logger.attest.sign_eval_result` (optional
+  `cryptography` extra, `python -m norinth_logger.attest keygen`). The platform
+  verifies the signature at ingestion over a canonical statement that binds
+  tenant, application, workflow, eval id, pass/fail, score, prompt version,
+  artifact, trace, span and timestamp, then sets `attested` — which clients can
+  never set themselves. Tampered, replayed, cross-tenant, unknown-key and
+  revoked-key attestations reject the batch (400) and are audit-logged as
+  `evidence.attestation_rejected`. From the first active key onward, deployment
+  gates in that organization count only attested passing evals and report
+  "missing attested passing eval evidence". Eval records and the gate evidence
+  panel show attested/unattested and the signing key id. Migration 5.
 ### Changed
 - **Dashboard bundle is no longer committed.** `apps/platform/app/dashboard/static/`
   is built from source by `make build-frontend`, by CI (uploaded as an

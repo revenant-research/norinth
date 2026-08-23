@@ -53,6 +53,46 @@ norinth path/to/your/codebase
 Scans a codebase for AI provider/model usage and writes a CycloneDX-style
 `ai-manifest.json`. Runs entirely locally; no server required.
 
+## Signed eval evidence (CI attestation)
+
+A passing eval is only trustworthy as release evidence if it came from your
+CI pipeline rather than from anyone holding an ingestion key. The SDK can sign
+`eval.result` events with an Ed25519 key whose public half is registered on the
+platform (Identity & Integrations → Evidence attestation). Once a key is
+registered, the platform verifies every signed result at ingestion and release
+gates only count **attested** passing evals.
+
+```bash
+pip install "norinth-logger[attest]"
+python -m norinth_logger.attest keygen   # private key → CI secret store; public key → platform
+```
+
+```python
+import os
+from norinth_logger.attest import sign_eval_result
+
+event = {
+    "type": "eval.result", "schema_version": "2026-01",
+    "trace_id": run_id, "span_id": f"{run_id}-safety", "timestamp": now_iso(),
+    "service": "claims-ci", "environment": "prod", "project": "claims",
+    "status": "success",
+    "attributes": {
+        "eval_id": "safety-suite", "passed": True, "score": 0.97,
+        "prompt_version": "p12", "artifact_ref": "sha256:...",
+        "metadata": {"tenant_id": "acme", "application_name": "Claims", "workflow_name": "triage"},
+    },
+}
+sign_eval_result(event, private_key_pem=os.environ["NORINTH_ATTEST_KEY"], key_id=os.environ["NORINTH_ATTEST_KEY_ID"])
+client.record(event)   # attributes.attestation = {key_id, signature}
+```
+
+What is signed: tenant, application, workflow, eval id, pass/fail, score,
+prompt version, artifact, trace id, span id and timestamp — so a signature
+cannot be replayed onto another organization, application, run, or flipped
+from fail to pass. A present-but-invalid attestation rejects the batch and is
+written to the organization's audit log. Clients cannot set `attested`
+themselves; the platform strips it and sets it only after verification.
+
 ## Safety defaults
 
 - **Observe-only by default.** The SDK records structured metadata and hashes

@@ -164,6 +164,8 @@ def build_evals(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
                 "score": event["attributes"].get("score"),
                 "threshold": event["attributes"].get("threshold"),
                 "passed": event["attributes"].get("passed"),
+                "attested": event["attributes"].get("attested") is True,
+                "attested_key_id": event["attributes"].get("attested_key_id"),
                 "workflow_name": event.get("workflow_name") or "unknown",
                 "application_name": event.get("application_name") or "unknown",
                 "status": event["status"],

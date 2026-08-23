@@ -10,7 +10,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from app.dependencies import ingestion_tenant
 from app.ingestion.otel import otel_spans_to_events
 from app.schemas.events import EventBatch
+from app.services.attestation import AttestationError, verify_eval_attestation
 from app.storage.agents import refresh_agent_posture
+from app.storage.attestation_keys import load_active_attestation_key, touch_attestation_key
+from app.storage.audit import record_audit
 from app.storage.deployments import process_deployment_events, refresh_deployment_gates
 from app.storage.entities import process_events
 from app.storage.governance_policy import refresh_governance_assessments
@@ -119,11 +122,59 @@ async def ingest_otel_traces(
     return _ingest(events, tenant_id)
 
 
+def _verify_eval_attestations(events: list[dict[str, Any]], tenant_id: str) -> None:
+    """Signed eval evidence (roadmap #20). ``attested`` is a platform-set fact,
+    never a client claim: it is stripped from every event and set only after
+    an Ed25519 signature verifies against one of the tenant's *active*
+    attestation keys. A present-but-invalid attestation rejects the batch and
+    is audit-logged, because a forged attestation is an integrity signal, not a
+    formatting error."""
+    for event in events:
+        attrs = event.get("attributes")
+        if not isinstance(attrs, dict):
+            continue
+        attrs.pop("attested", None)
+        attrs.pop("attested_key_id", None)
+        if event.get("type") != "eval.result":
+            attrs.pop("attestation", None)
+            continue
+        attestation = attrs.get("attestation")
+        if attestation is None:
+            attrs["attested"] = False
+            continue
+        if not isinstance(attestation, dict):
+            raise HTTPException(status_code=400, detail="attestation must be an object {key_id, signature}")
+        key_id = str(attestation.get("key_id") or "")
+        signature = str(attestation.get("signature") or "")
+        key = load_active_attestation_key(tenant_id, key_id) if key_id else None
+        try:
+            if key is None:
+                raise AttestationError("attestation key is unknown, revoked, or belongs to another organization")
+            verify_eval_attestation(event, key["public_key_pem"], signature)
+        except AttestationError as error:
+            record_audit(
+                actor_ref=f"ingestion:{tenant_id}",
+                action="evidence.attestation_rejected",
+                tenant_id=tenant_id,
+                target_type="eval_result",
+                target_id=f"{event.get('trace_id')}/{event.get('span_id')}",
+                detail={"key_id": key_id, "reason": str(error)},
+            )
+            raise HTTPException(
+                status_code=400,
+                detail=f"eval attestation rejected for span {event.get('span_id')}: {error}",
+            ) from error
+        attrs["attested"] = True
+        attrs["attested_key_id"] = key_id
+        touch_attestation_key(key_id)
+
+
 def _ingest(events: list[dict[str, Any]], tenant_id: str) -> dict[str, Any]:
     # Validate and bind BEFORE any write, so a malformed batch is rejected
     # atomically (422) rather than crashing mid-pipeline after a partial insert.
     _validate_event_attributes(events)
     _bind_events_to_tenant(events, tenant_id)
+    _verify_eval_attestations(events, tenant_id)
     accepted = insert_events(events)
     process_events(events)
     process_prompt_events(events)

@@ -82,3 +82,8 @@ class DeploymentGateDecisionRequest(BaseModel):
 
 class IngestionKeyRequest(BaseModel):
     name: str = Field(min_length=1, max_length=120)
+
+
+class AttestationKeyRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    public_key_pem: str = Field(min_length=40, max_length=4096)

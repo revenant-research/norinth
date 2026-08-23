@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.admin import router as admin_router
 from app.api.agents import router as agents_router
+from app.api.attestation_keys import router as attestation_keys_router
 from app.api.auth import router as auth_router
 from app.api.compliance import router as compliance_router
 from app.api.ingestion_keys import router as ingestion_keys_router
@@ -44,6 +45,7 @@ app.include_router(sso_router)
 app.include_router(saml_router)
 app.include_router(scim_router)
 app.include_router(agents_router)
+app.include_router(attestation_keys_router)
 
 # Endpoints reachable while a user still owes a password change.
 _PASSWORD_CHANGE_ALLOWLIST = {
