@@ -271,6 +271,7 @@ def gate_evidence_counts(connection, version: dict[str, Any]) -> dict[str, int]:
         "application_name": version["application_name"],
         "workflow_name": version["workflow_name"],
         "prompt_version": version.get("prompt_version"),
+        "artifact_ref": version.get("artifact_ref"),
     }
     risk_count = count_scoped(connection, "risk_findings", "status IN ('open', 'mitigation_required')", params)
     missing_control_count = count_scoped(connection, "control_assessments", "status = 'missing'", params)
@@ -328,6 +329,8 @@ def count_passing_eval_evidence(connection, params: dict[str, Any]) -> int:
     # self-reported ``passed: true`` no longer satisfies the gate (C-2
     # hardening, roadmap #20).
     require_attested = tenant_requires_attestation(params.get("tenant_id"), connection)
+    version_artifact = params.get("artifact_ref")
+    version_prompt = params.get("prompt_version")
     count = 0
     for row in rows:
         try:
@@ -338,6 +341,20 @@ def count_passing_eval_evidence(connection, params: dict[str, Any]) -> int:
             continue
         if require_attested and attrs.get("attested") is not True:
             continue
+        # The eval must be about THIS release. Prefer the artifact_ref (which the
+        # attestation signs); fall back to the prompt_version when the eval
+        # carries no artifact. An eval with neither, or with a mismatch, does not
+        # count -- so an earlier version's evals cannot pass an untested build.
+        eval_artifact = attrs.get("artifact_ref")
+        eval_prompt = attrs.get("prompt_version")
+        if eval_artifact is not None:
+            if version_artifact is None or eval_artifact != version_artifact:
+                continue
+        elif eval_prompt is not None:
+            if version_prompt is None or eval_prompt != version_prompt:
+                continue
+        else:
+            continue  # eval names neither artifact nor prompt version -> not bindable
         count += 1
     return count
 
@@ -364,8 +381,15 @@ def set_deployment_gate_status(gate_id: str, status: str, actor_ref: str, ration
         if row is None:
             raise ValueError("deployment gate not found")
         gate = dict(row)
-        if status == "approved" and (gate.get("prompt_evidence_status") != "linked" or int(gate.get("passing_eval_count") or 0) == 0):
-            raise ValueError("deployment gate requires linked prompt version and passing eval evidence")
+        if status == "approved":
+            if gate.get("prompt_evidence_status") != "linked" or int(gate.get("passing_eval_count") or 0) == 0:
+                raise ValueError("deployment gate requires a linked prompt version and passing eval evidence bound to this version")
+            if int(gate.get("risk_count") or 0) > 0:
+                raise ValueError("deployment gate cannot be approved while risk findings are open; mitigate or accept them first")
+            if int(gate.get("missing_control_count") or 0) > 0:
+                raise ValueError("deployment gate cannot be approved while controls are missing evidence")
+        if not (rationale or "").strip():
+            raise ValueError("a decision rationale is required")
         connection.execute(
             """
             UPDATE deployment_approval_gates
@@ -412,7 +436,30 @@ def list_deployment_versions(*, tenant_id: str | None = None, project: str | Non
 
 
 def list_deployment_gates(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
-    return scoped_rows("deployment_approval_gates", tenant_id=tenant_id, project=project, environment=environment)
+    # Enrich each gate with the human version and artifact it gates, so callers
+    # (and the UI) can see which build a decision applies to.
+    clauses, params = ["1=1"], {}
+    if tenant_id:
+        clauses.append("g.tenant_id = :tenant_id")
+        params["tenant_id"] = tenant_id
+    if project:
+        clauses.append("g.project = :project")
+        params["project"] = project
+    if environment:
+        clauses.append("g.environment = :environment")
+        params["environment"] = environment
+    with connect() as connection:
+        rows = connection.execute(
+            f"""
+            SELECT g.*, v.version AS version, v.artifact_ref AS artifact_ref
+            FROM deployment_approval_gates g
+            LEFT JOIN deployment_versions v ON v.version_id = g.version_id
+            WHERE {' AND '.join(clauses)}
+            ORDER BY g.updated_at DESC
+            """,
+            params,
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def find_gate_for_release(tenant_id: str, deployment_id: str, version: str) -> dict[str, Any] | None:
