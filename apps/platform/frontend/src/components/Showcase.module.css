@@ -1,0 +1,57 @@
+/* Streak palettes: indigo→magenta→amber (1), indigo→violet→magenta (2),
+   teal→pink→violet (3), red→amber→green (4). Image layered above fallback. */
+.streak1 { background-image: url("/assets/brand/streak-1.jpg"), linear-gradient(115deg, #1b1740 0%, #2a2d7a 30%, #7a3b84 55%, #e07a2e 80%, #f4b44c 100%); }
+.streak2 { background-image: url("/assets/brand/streak-2.jpg"), linear-gradient(135deg, #1d1f7a 0%, #3b2aa8 45%, #9a2f8a 75%, #c4562e 100%); }
+.streak3 { background-image: url("/assets/brand/streak-3.jpg"), linear-gradient(120deg, #0f5a6a 0%, #2b6f9a 35%, #c23f8a 65%, #5c4bb8 100%); }
+.streak4 { background-image: url("/assets/brand/streak-4.jpg"), linear-gradient(120deg, #6b1a3a 0%, #c8402a 35%, #d9a52c 60%, #1f9a6a 100%); }
+.streak1, .streak2, .streak3, .streak4 { background-size: cover, cover; background-position: center, center; }
+
+.band {
+  position: relative;
+  isolation: isolate;
+  margin-top: var(--n-space-7);
+  padding: var(--n-space-7) 0;
+  color: var(--n-white);
+  border-top: 1px solid var(--n-rule);
+  border-bottom: 1px solid var(--n-rule);
+}
+/* Dark scrim keeps white text ≥ 7:1 regardless of image brightness. */
+.scrim { position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, rgba(18, 14, 28, 0.72), rgba(18, 14, 28, 0.82)); }
+.bandInner { position: relative; }
+.band :is(h2, h3, strong) { color: var(--n-white); }
+.band p, .band span { color: rgba(255, 252, 245, 0.88); }
+
+.strip {
+  position: relative;
+  height: 72px;
+  margin: calc(-1 * var(--n-space-5)) calc(-1 * var(--n-space-5)) var(--n-space-2);
+  border-radius: var(--n-radius) var(--n-radius) 0 0;
+  border-bottom: 1px solid var(--n-rule);
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  padding: 0 var(--n-space-4) 10px;
+}
+.strip::before { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, rgba(18, 14, 28, 0.15), rgba(18, 14, 28, 0.7)); }
+.stripLabel {
+  position: relative;
+  font-size: var(--n-text-xs);
+  font-weight: 700;
+  letter-spacing: var(--n-track-eyebrow);
+  text-transform: uppercase;
+  color: var(--n-white);
+}
+
+.shot { margin: 0; display: grid; gap: var(--n-space-2); min-width: 0; }
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--n-rule);
+  border-radius: var(--n-radius);
+  background: var(--n-paper);
+  box-shadow: 0 18px 40px -24px rgba(18, 14, 28, 0.55);
+}
+.shot figcaption { font-size: var(--n-text-sm); color: var(--n-ink-dim); }
+.band .shot img { border-color: rgba(255, 252, 245, 0.35); }
+.band .shot figcaption { color: rgba(255, 252, 245, 0.85); }

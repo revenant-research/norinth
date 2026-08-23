@@ -1,0 +1,13 @@
+.page { min-height: 100vh; background: var(--n-bg); padding: var(--n-space-7) 0; }
+.frame { display: grid; gap: var(--n-space-5); max-width: 52rem; margin: 0 auto; }
+.progress { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--n-space-2); }
+.progress li { display: grid; gap: 6px; padding-top: var(--n-space-2); border-top: 2px solid var(--n-rule-dim); color: var(--n-ink-dim); font-size: var(--n-text-xs); line-height: 1.3; }
+.progress li.current { border-top-color: var(--n-accent); color: var(--n-ink); }
+.progress li.done { border-top-color: var(--n-ink); }
+.dot { width: 20px; height: 20px; border-radius: 999px; border: 1px solid currentColor; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; }
+.current .dot { background: var(--n-accent); border-color: var(--n-accent); color: var(--n-white); }
+.done .dot { background: var(--n-ink); border-color: var(--n-ink); color: var(--n-white); }
+.label { display: none; }
+@media (min-width: 760px) { .label { display: block; } }
+.pulse { width: 10px; height: 10px; border-radius: 999px; background: var(--n-accent); animation: pulse 1.4s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: 0.35; transform: scale(0.85); } 50% { opacity: 1; transform: scale(1); } }

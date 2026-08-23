@@ -22,6 +22,7 @@ import {
   TextArea,
   TextField,
 } from "../design";
+import { ChromeBand, ChromeStrip, Screenshot } from "./Showcase";
 import styles from "./landing.module.css";
 
 /**
@@ -35,21 +36,21 @@ import styles from "./landing.module.css";
 const CATALYSTS = [
   { label: "EU AI Act high-risk", value: "Dec 2027", note: "obligations apply" },
   { label: "Colorado ADMT", value: "Jan 2027", note: "in force" },
-  { label: "Joint Commission / CHAI", value: "Live", note: "RUAIH certification" },
+  { label: "HIPAA / FDA PCCP", value: "In force", note: "for clinical AI" },
   { label: "ISO/IEC 42001", value: "Table stakes", note: "for regulated AI" },
 ];
 
 const AUDIENCES = [
   {
-    eyebrow: "Beachhead · Health systems",
+    eyebrow: "Health systems",
     title: "Ambient scribes, imaging models and back-office agents, most of them outside the EHR vendor's governance.",
-    body: "Joint Commission and CHAI certification asks for organizational evidence: an inventory, monitoring, named accountability, and a record of decisions. Norinth produces that evidence from what actually runs, across the whole estate, not just the Epic footprint.",
-    tags: ["RUAIH", "CHAI model cards", "HIPAA", "FDA PCCP", "21 CFR Part 11"],
+    body: "Healthcare AI assurance programs ask for organizational evidence: an inventory, monitoring, named accountability, decisions on record. Norinth produces it from what actually runs.",
+    tags: ["HIPAA", "FDA PCCP", "21 CFR Part 11", "ISO/IEC 42001"],
   },
   {
     eyebrow: "Regulated enterprise",
     title: "Credit, insurance, hiring and customer-facing decisions now carry statutory obligations.",
-    body: "The EU AI Act, Colorado, Texas, New York City and bank model-risk guidance all ask the same three questions: which systems do you run, who approved them, and on what evidence. Norinth answers with records, not spreadsheets.",
+    body: "The EU AI Act, Colorado, Texas, New York City and bank model-risk guidance ask the same three questions: which systems do you run, who approved them, on what evidence. Norinth answers with records.",
     tags: ["EU AI Act", "NIST AI RMF", "ISO/IEC 42001", "Colorado ADMT", "SR 11-7"],
   },
 ];
@@ -102,7 +103,7 @@ const POSITIONING = [
   { them: "Compliance automation files the paperwork.", us: "We generate the AI evidence it cannot see." },
 ];
 
-const FRAMEWORKS = ["NIST AI RMF 1.0", "ISO/IEC 42001", "EU AI Act", "OWASP LLM Top 10", "OWASP Agentic", "HIPAA", "SOC 2", "CHAI / RUAIH"];
+const FRAMEWORKS = ["NIST AI RMF 1.0", "ISO/IEC 42001", "EU AI Act", "OWASP LLM Top 10", "OWASP Agentic", "HIPAA", "SOC 2"];
 
 const GET_STARTED = [
   {
@@ -169,18 +170,18 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
         </div>
       </header>
 
-      <Container>
+      <ChromeBand streak={2} className={styles.heroBand}>
+        <Container>
         <div className={styles.hero}>
-          <Eyebrow>Open source · Apache-2.0 · Runs in your network</Eyebrow>
+          <Eyebrow tone="inverse">Open source · Apache-2.0 · Runs in your network</Eyebrow>
           <Heading level={1}>AI governance you can install in ten minutes and never pay for.</Heading>
           <Lede>
-            Norinth turns the telemetry your AI applications already produce into a live inventory, routes reviews to
-            named owners, blocks releases that lack evidence, and produces the audit packet your auditor, regulator and
-            board ask for. Free, open source, self-hosted. The closed governance suites become unnecessary.
+            A live inventory from the telemetry you already produce. Reviews routed to named owners. Releases blocked
+            without evidence. The audit packet your auditor asks for. Free, open source, in your network.
           </Lede>
           <div className={styles.actions}>
-            <ButtonLink size="lg" href="#start">Install it</ButtonLink>
-            <ButtonLink variant="link" href="https://github.com/revenant-research/norinth">Read the source on GitHub</ButtonLink>
+            <ButtonLink size="lg" href="#start" className={styles.heroCta}>Install it</ButtonLink>
+            <ButtonLink variant="secondary" size="lg" href="https://github.com/revenant-research/norinth">Read the source</ButtonLink>
           </div>
           <ul className={styles.proof} aria-label="Key facts">
             <li>No hosted tier, no paid tier, no vendor in the data path</li>
@@ -189,11 +190,25 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
           </ul>
         </div>
 
+        <div className={styles.heroShot}>
+        <Screenshot
+          src="/assets/screens/deployments.jpg"
+          alt="Norinth Deployments view: a Claims Copilot release gate in pending review, listing three open risk findings, seven missing controls, two material changes and a missing linked prompt version"
+          caption="A release gate, blocked: the reviewer sees exactly what is missing before anything ships."
+          priority
+        />
+        </div>
+        </Container>
+      </ChromeBand>
+
+      <Container>
+        <div className={styles.catalysts}>
         <StatGroup columns={4}>
           {CATALYSTS.map((c) => (
             <Stat key={c.label} label={c.label} value={c.value} note={c.note} />
           ))}
         </StatGroup>
+        </div>
 
         <Section id="start" eyebrow="Get started" title="Ten minutes, three ways in." lede="Pick the path that matches where you are. Each ends in the same place: the setup wizard, your first ingestion key, and the first AI system appearing in the inventory.">
           <Grid min="300px" gap={4}>
@@ -228,11 +243,14 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
           </div>
         </Section>
 
+      </Container>
+      <div className={styles.paperBand}>
+      <Container>
         <Section id="who" eyebrow="Who it is for" title="Built for teams that answer to regulators.">
           <Grid min="320px" gap={4}>
-            {AUDIENCES.map((a) => (
-              <Card key={a.eyebrow} as="article" padding="lg">
-                <Eyebrow>{a.eyebrow}</Eyebrow>
+            {AUDIENCES.map((a, i) => (
+              <Card key={a.eyebrow} as="article" padding="md">
+                <ChromeStrip streak={i === 0 ? 3 : 4} label={a.eyebrow} />
                 <Heading level={3}>{a.title}</Heading>
                 <Text>{a.body}</Text>
                 <ul className={styles.tagRow} aria-label="Relevant frameworks">
@@ -247,9 +265,9 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
 
         <Section id="wedge" eyebrow="Start here" title="Two things only a runtime-native product does well." lede="Land with the inventory and the evidence. Expand into intake, review routing, release gates and incidents once the estate is visible.">
           <Grid min="320px" gap={4}>
-            {WEDGE.map((w) => (
-              <Card key={w.eyebrow} as="article" padding="lg" tone="lead">
-                <Eyebrow>{w.eyebrow}</Eyebrow>
+            {WEDGE.map((w, i) => (
+              <Card key={w.eyebrow} as="article" padding="md" tone="lead">
+                <ChromeStrip streak={i === 0 ? 1 : 2} label={w.eyebrow} />
                 <Heading level={3}>{w.title}</Heading>
                 <Text>{w.body}</Text>
               </Card>
@@ -257,6 +275,9 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
           </Grid>
         </Section>
 
+      </Container>
+      </div>
+      <Container>
         <Section id="how" eyebrow="How it works" title="Three steps from first event to audit packet.">
           <Grid min="260px" gap={5}>
             {STEPS.map((s, i) => (
@@ -270,6 +291,26 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
           </Grid>
         </Section>
 
+      </Container>
+
+      <ChromeBand streak={1}>
+        <Container>
+          <Stack gap={5}>
+            <div className={styles.sectionHead}>
+              <Eyebrow tone="inverse">See it</Eyebrow>
+              <Heading level={2}>From first event to audit packet, on screen.</Heading>
+            </div>
+            <Grid min="440px" gap={5}>
+              <Screenshot src="/assets/screens/inventory.jpg" alt="Inventory view listing AI systems, workflows, models and providers discovered from telemetry" caption="Inventory: every system seen in production, registered or not." />
+              <Screenshot src="/assets/screens/compliance.jpg" alt="Compliance view showing framework coverage bars per framework and the audit packet export" caption="Compliance: coverage per framework, gaps named, packet export." />
+              <Screenshot src="/assets/screens/agents.jpg" alt="Agents view showing registered agents with autonomy level, tool allow-list and posture findings" caption="Agents: autonomy, tool allow-lists, off-policy use as findings." />
+              <Screenshot src="/assets/screens/guide.jpg" alt="Getting started checklist showing completed and pending setup steps for an organization" caption="Getting started: a checklist computed from your real state." />
+            </Grid>
+          </Stack>
+        </Container>
+      </ChromeBand>
+
+      <Container>
         <Section id="capabilities" eyebrow="The platform" title="Governance as enforcement, not a dashboard.">
           <Grid min="280px" gap={4}>
             {CAPABILITIES.map((c) => (
@@ -287,10 +328,10 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
         </Section>
       </Container>
 
-      <div className={styles.band}>
+      <ChromeBand streak={2}>
         <Container>
           <Stack gap={5}>
-            <Eyebrow>Why Norinth</Eyebrow>
+            <Eyebrow tone="inverse">Why Norinth</Eyebrow>
             <div className={styles.quoteRow}>
               {POSITIONING.map((p) => (
                 <div className={styles.quote} key={p.them}>
@@ -304,8 +345,9 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
             </Text>
           </Stack>
         </Container>
-      </div>
+      </ChromeBand>
 
+      <div className={styles.paperBand}>
       <Container>
         <Section id="trust" eyebrow="Security" title="The trust program is the product." lede="Your AppSec team reviews source, SBOM and CI instead of a vendor questionnaire. Every control below is shipped and verified in CI.">
           <Grid min="300px" gap={4}>
@@ -352,6 +394,9 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
           </Grid>
         </Section>
 
+      </Container>
+      </div>
+      <Container>
         <ContactSection />
       </Container>
 
@@ -396,7 +441,7 @@ export function ContactSection() {
       id="contact"
       eyebrow="Get help"
       title="Talk to the maintainers."
-      lede="Stuck on an install, reviewing it for your security team, or want to be a design partner for a healthcare or EU AI Act pack? Tell us what you run. Bugs and feature requests belong on GitHub issues; everything else here."
+      lede="Stuck on an install, reviewing it for your security team, or want to help shape the healthcare or EU AI Act pack? Tell us what you run. Bugs and feature requests belong on GitHub issues; everything else here."
     >
       {state === "sent" ? (
         <Callout tone="success" title="Thanks.">We have your message and will reply within a few business days.</Callout>
@@ -413,7 +458,7 @@ export function ContactSection() {
                 onChange={(e) => setForm({ ...form, interest: e.target.value })}
                 options={[
                   { value: "pilot", label: "Get help with a deployment" },
-                  { value: "demo", label: "Become a design partner" },
+                  { value: "demo", label: "Help shape a healthcare or EU AI Act pack" },
                   { value: "pricing", label: "Ask about implementation services" },
                   { value: "security", label: "Security review questions" },
                 ]}

@@ -7,9 +7,9 @@ function cx(...parts: Array<string | false | null | undefined>): string {
 }
 
 /** Uppercase, letter-spaced label in the signal colour: "CORE IP · RELU". */
-export function Eyebrow({ children, tone = "signal", className, ...rest }: { children: ReactNode; tone?: "signal" | "dim" } & HTMLAttributes<HTMLSpanElement>) {
+export function Eyebrow({ children, tone = "signal", className, ...rest }: { children: ReactNode; tone?: "signal" | "dim" | "inverse" } & HTMLAttributes<HTMLSpanElement>) {
   return (
-    <span className={cx(styles.eyebrow, tone === "dim" && styles.eyebrowDim, className)} {...rest}>
+    <span className={cx(styles.eyebrow, tone === "dim" && styles.eyebrowDim, tone === "inverse" && styles.eyebrowInverse, className)} {...rest}>
       {children}
     </span>
   );

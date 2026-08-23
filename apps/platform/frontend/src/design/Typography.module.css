@@ -10,6 +10,8 @@
   font-weight: 600;
   color: var(--n-ink-dim);
 }
+/* On dark chrome: light teal, ≥ 8:1 on the scrim. */
+.eyebrowInverse { color: #7fe6e9; }
 .heading {
   margin: 0;
   color: var(--n-ink);

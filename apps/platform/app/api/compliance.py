@@ -30,7 +30,7 @@ def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilte
     """Assemble an audit-ready evidence packet for the actor's tenant.
 
     A single, self-contained export of governance posture that an auditor or a
-    certification body (SOC 2, ISO 42001, EU AI Act, Joint Commission RUAIH) can
+    certification body (SOC 2, ISO 42001, EU AI Act, healthcare AI assurance programs) can
     review: inventory, framework-mapped control assessments, risk findings,
     governance decisions and exceptions, deployment approvals, incidents,
     material changes, the CycloneDX AI-BOM, and the tamper-evidence status of the

@@ -8,6 +8,7 @@ import {
   type User,
   changePassword,
   fetchMe,
+  getJson,
   loadDashboardData,
   totalOf,
   loadDetail,
@@ -18,6 +19,7 @@ import {
 } from "./api";
 import { LandingPage } from "./components/landing";
 import { LeadsView } from "./components/leads";
+import { SetupWizard } from "./components/setup";
 import { GettingStarted } from "./components/guide";
 import { DocsView } from "./components/docs";
 import { Sidebar, SkipLink, useRouteAnnouncement } from "./components/shell";
@@ -93,15 +95,18 @@ function visibleRoutes(user: User): RouteDef[] {
 export function App() {
   const [user, setUser] = useState<User | null>(null);
   const [bootstrapped, setBootstrapped] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    fetchMe()
-      .then((value) => {
-        if (!cancelled) setUser(value);
-      })
-      .catch(() => {
-        if (!cancelled) setUser(null);
+    Promise.all([
+      fetchMe().catch(() => null),
+      getJson<{ needs_setup: boolean }>("/api/setup/state").catch(() => ({ needs_setup: false })),
+    ])
+      .then(([me, setup]) => {
+        if (cancelled) return;
+        setUser(me);
+        setNeedsSetup(Boolean(setup.needs_setup));
       })
       .finally(() => {
         if (!cancelled) setBootstrapped(true);
@@ -113,6 +118,20 @@ export function App() {
 
   function content() {
     if (!bootstrapped) return <div className="boot">Loading workspace</div>;
+    // A fresh install: no organizations yet. Guide the operator instead of
+    // showing a landing page to someone who just ran the installer.
+    if (needsSetup && (!user || user.is_super_admin)) {
+      return (
+        <SetupWizard
+          initialUser={user}
+          onFinished={(orgUser) => {
+            setNeedsSetup(false);
+            setUser(orgUser);
+            window.location.hash = "#guide";
+          }}
+        />
+      );
+    }
     if (!user) return <PublicEntry onAuthenticated={setUser} />;
     if (user.must_change_password) return <ChangePasswordScreen user={user} onChanged={setUser} />;
     if (user.is_super_admin) return <PlatformConsole user={user} onSignOut={() => setUser(null)} />;
