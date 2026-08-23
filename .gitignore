@@ -49,3 +49,7 @@ ai-manifest.json
 
 # ---- Claude Code local runtime ----
 .claude/
+
+# Installer working dirs / database dumps
+.norinth-install/
+backups/

@@ -129,6 +129,21 @@ jobs:
           tags: norinth-platform:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Lint installer scripts (shellcheck)
+        run: shellcheck scripts/install.sh scripts/backup.sh scripts/restore.sh
+      - name: Installer end-to-end (compose + generated secrets + health)
+        env:
+          NORINTH_IMAGE: norinth-platform:ci
+        run: |
+          # Uses the image built above instead of pulling from GHCR.
+          NORINTH_REPO_RAW="file://$PWD" bash scripts/install.sh --dir "$PWD/.norinth-install" --port 8002 --yes --no-pull
+          curl -fsS http://127.0.0.1:8002/health
+          test -f .norinth-install/.env
+          grep -q NORINTH_SECRET_KEY .norinth-install/.env
+          # Not in development mode: the well-known dev key must be rejected.
+          status=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8002/v1/events/batch -H 'Authorization: Bearer dev' -H 'Content-Type: application/json' -d '{"events":[]}')
+          test "$status" = "401" || { echo "dev key accepted ($status) — installer left development defaults"; exit 1; }
+          (cd .norinth-install && docker compose down -v)
       - name: Smoke test (health + built dashboard served)
         run: |
           docker run -d --name norinth -p 8001:8001 norinth-platform:ci

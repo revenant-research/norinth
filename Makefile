@@ -50,8 +50,8 @@ run: apps/platform/app/dashboard/static/index.html ## Run the platform locally o
 docker-build: ## Build the platform Docker image
 	docker compose build
 
-docker-up: ## Run the platform via Docker Compose
-	docker compose up --build
+docker-up: ## Install/run the full stack (PostgreSQL + platform) from this checkout via the installer
+	scripts/install.sh --source --dir . --yes
 
 clean: ## Remove caches and build artifacts
 	find . -type d -name __pycache__ -not -path './.venv/*' -exec rm -rf {} + 2>/dev/null || true
