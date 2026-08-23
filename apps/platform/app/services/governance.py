@@ -641,6 +641,7 @@ def build_control_evidence(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]
 # framework so a buyer/auditor sees coverage by regulation, not a flat list
 # (audit §6.2, GTM: framework crosswalks are table-stakes).
 _FRAMEWORK_FAMILIES: list[tuple[str, str]] = [
+    ("OWASP Agentic", "OWASP Top 10 for Agentic Applications (2026)"),
     ("NIST AI 600", "NIST GenAI Profile (AI 600-1)"),
     ("NIST AI RMF", "NIST AI RMF"),
     ("ISO/IEC 42001", "ISO/IEC 42001"),

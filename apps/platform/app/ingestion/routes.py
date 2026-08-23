@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from app.dependencies import ingestion_tenant
 from app.ingestion.otel import otel_spans_to_events
 from app.schemas.events import EventBatch
+from app.storage.agents import refresh_agent_posture
 from app.storage.deployments import process_deployment_events, refresh_deployment_gates
 from app.storage.entities import process_events
 from app.storage.governance_policy import refresh_governance_assessments
@@ -130,6 +131,7 @@ def _ingest(events: list[dict[str, Any]], tenant_id: str) -> dict[str, Any]:
     process_incident_events(events)
     refresh_lifecycle_state()
     refresh_governance_assessments()
+    refresh_agent_posture()
     refresh_workflow_state()
     refresh_deployment_gates()
     return {"accepted": accepted, "total": count_events()}

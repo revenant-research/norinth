@@ -61,6 +61,7 @@ def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilte
         build_risk_register,
         build_summary,
     )
+    from app.storage.agents import compute_agent_posture, list_registered_agents, public_posture
     from app.storage.entities import list_providers
 
     return {
@@ -87,6 +88,8 @@ def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilte
         "incidents": build_incidents(scope).get("incidents", []),
         "material_changes": build_change_events(scope).get("changes", []),
         "open_review_tasks": build_review_tasks(scope).get("review_tasks", []),
+        "agent_registry": list_registered_agents(scope.tenant_id or ""),
+        "agent_posture": public_posture(compute_agent_posture(scope.tenant_id or "")),
         "aibom": generate_aibom(
             tenant_id=scope.tenant_id, project=scope.project, environment=scope.environment
         ),

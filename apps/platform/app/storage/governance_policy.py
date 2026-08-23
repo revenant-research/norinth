@@ -12,6 +12,12 @@ SUPPORTED_RISK_SIGNALS = {
     "missing_eval",
     "missing_agent_run",
     "operational_errors",
+    # Agentic-governance signals, evaluated by storage/agents.py against the
+    # agent registry rather than by the generic event evaluator.
+    "unregistered_agent",
+    "unauthorized_tool",
+    "agent_trifecta",
+    "autonomy_without_oversight",
 }
 
 DEFAULT_CONTROLS = [
@@ -256,8 +262,10 @@ def init_governance_policy() -> None:
                 )
             )
 
-        # Seed default risk rules
-        for rule in DEFAULT_RISK_RULES:
+        # Seed default risk rules (including the agentic-governance rules)
+        from .agents import AGENT_RISK_RULES
+
+        for rule in [*DEFAULT_RISK_RULES, *AGENT_RISK_RULES]:
             connection.execute(
                 """
                 INSERT OR IGNORE INTO risk_rules (
