@@ -123,6 +123,17 @@ to Semantic Versioning once it reaches a tagged release.
   target.
 
 ### Added
+- **OpenTelemetry GenAI ingestion.** New `POST /v1/otel/traces` accepts OTLP/HTTP
+  JSON spans and maps the OpenTelemetry GenAI semantic conventions (`gen_ai.*`)
+  to Norinth events — chat/completions/embeddings -> model.call, execute_tool ->
+  tool.call, invoke_agent/workflow -> agent.run, retrieval/data-source ->
+  retrieval.call — so telemetry from any OTel-instrumented framework or LLM
+  gateway (LiteLLM, Portkey, Kong, Microsoft Agent Framework, Pydantic AI,
+  Vercel AI SDK, ...) feeds the same governance pipeline as the first-party SDK.
+  Key-authenticated and tenant-bound like SDK ingestion; non-GenAI spans are
+  skipped. This is the "consume everyone's signals" ingestion path from the GTM.
+
+### Added
 - **Framework coverage crosswalk.** New `GET /api/compliance/framework-coverage`
   rolls the flat control assessments up into per-framework compliance posture
   (NIST AI RMF, NIST GenAI Profile, ISO/IEC 42001, EU AI Act, SOC 2): total

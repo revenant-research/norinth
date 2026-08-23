@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.dependencies import ingestion_tenant
+from app.ingestion.otel import otel_spans_to_events
 from app.schemas.events import EventBatch
 from app.storage.deployments import process_deployment_events, refresh_deployment_gates
 from app.storage.entities import process_events
@@ -91,6 +92,33 @@ async def ingest_events(
             raise HTTPException(status_code=401, detail="Signature mismatch")
 
     events = [event.model_dump() for event in batch.events]
+    return _ingest(events, tenant_id)
+
+
+@router.post("/v1/otel/traces")
+async def ingest_otel_traces(
+    request: Request,
+    tenant_id: str = Depends(ingestion_tenant),
+):
+    """Ingest OpenTelemetry GenAI spans (OTLP/HTTP JSON).
+
+    Lets Norinth consume telemetry from any OTel-instrumented framework or LLM
+    gateway, mapping gen_ai.* spans to the same event shapes the SDK emits so the
+    governance pipeline processes them unchanged. Non-GenAI spans are skipped.
+    """
+    try:
+        payload = await request.json()
+    except Exception as error:
+        raise HTTPException(status_code=400, detail="invalid JSON body") from error
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="OTLP payload must be a JSON object")
+    events = otel_spans_to_events(payload)
+    if not events:
+        return {"accepted": 0, "total": count_events(), "skipped": "no GenAI spans found"}
+    return _ingest(events, tenant_id)
+
+
+def _ingest(events: list[dict[str, Any]], tenant_id: str) -> dict[str, Any]:
     # Validate and bind BEFORE any write, so a malformed batch is rejected
     # atomically (422) rather than crashing mid-pipeline after a partial insert.
     _validate_event_attributes(events)
