@@ -123,6 +123,19 @@ to Semantic Versioning once it reaches a tagged release.
   target.
 
 ### Added
+- **SSO via OpenID Connect with JIT provisioning.** Organizations can configure
+  their identity provider (Okta, Entra ID, Auth0, ...) at `PUT /api/org/sso`,
+  which runs OpenID discovery against the issuer. Users sign in through
+  `/api/auth/sso/{tenant}/start` -> IdP -> callback. The flow uses the
+  authorization-code grant with PKCE (S256), single-use state, and nonce
+  binding; the id_token is verified (RS256 against the provider's JWKS; iss, aud,
+  exp, nonce). New users are provisioned just-in-time inside the tenant with the
+  configured default role — never an administration role (separation of
+  duties) — and have no password, so the IdP is their sole authority. Optional
+  email-domain restriction. SSO is table-stakes for every enterprise and
+  health-system buyer.
+
+### Added
 - **PostgreSQL backend (C-5 / enterprise architecture).** The platform now runs
   on PostgreSQL by setting `NORINTH_DATABASE_URL` (SQLite remains the
   zero-config default for local development). A new backend abstraction
