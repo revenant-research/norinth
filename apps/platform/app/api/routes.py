@@ -56,7 +56,7 @@ from app.services.governance import (
     build_systems,
     build_tools,
     build_trace_detail,
-    build_traces,
+    build_traces_page,
     build_workflow_detail,
     build_workflows,
 )
@@ -570,7 +570,7 @@ def sdk_health(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams
 
 @router.get("/api/traces")
 def traces(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_traces(scope), "traces", page)
+    return build_traces_page(scope, limit=page.limit, offset=page.offset)
 
 
 @router.get("/api/traces/{trace_id}")

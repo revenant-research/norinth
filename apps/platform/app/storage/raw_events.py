@@ -198,6 +198,80 @@ def count_scoped_events(
     return int(row["count"])
 
 
+def count_events_by_type(
+    *,
+    tenant_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+) -> dict[str, int]:
+    """Per-event-type counts computed in SQL, so summary metrics are correct for
+    a tenant of any size instead of capping at a 10,000-row window (H9)."""
+    where, params = _event_filters(tenant_id, project, environment, None)
+    with connect() as connection:
+        rows = connection.execute(
+            f"SELECT event_type, COUNT(*) AS count FROM sdk_events {where} GROUP BY event_type", params
+        ).fetchall()
+    return {row["event_type"]: int(row["count"]) for row in rows}
+
+
+def count_error_events(
+    *,
+    tenant_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+) -> int:
+    where, params = _event_filters(tenant_id, project, environment, None)
+    clause = f"{where} AND status = :status" if where else "WHERE status = :status"
+    params["status"] = "error"
+    with connect() as connection:
+        row = connection.execute(f"SELECT COUNT(*) AS count FROM sdk_events {clause}", params).fetchone()
+    return int(row["count"])
+
+
+def count_distinct(
+    column: str,
+    *,
+    tenant_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+) -> int:
+    # column is a fixed identifier chosen by callers below, never user input.
+    where, params = _event_filters(tenant_id, project, environment, None)
+    with connect() as connection:
+        row = connection.execute(
+            f"SELECT COUNT(DISTINCT {column}) AS count FROM sdk_events {where}", params
+        ).fetchone()
+    return int(row["count"])
+
+
+def aggregate_traces(
+    *,
+    tenant_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+    limit: int = 200,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    """Trace list with per-trace event counts, grouped and paged in SQL.
+
+    Returns (rows, total_distinct_traces) so the route never materialises every
+    event just to count and slice them in Python (H9)."""
+    where, params = _event_filters(tenant_id, project, environment, None)
+    with connect() as connection:
+        total_row = connection.execute(
+            f"SELECT COUNT(*) AS count FROM (SELECT trace_id FROM sdk_events {where} GROUP BY trace_id) AS distinct_traces",
+            params,
+        ).fetchone()
+        page_params = {**params, "limit": limit, "offset": offset}
+        rows = connection.execute(
+            f"SELECT trace_id, COUNT(*) AS event_count FROM sdk_events {where} "
+            "GROUP BY trace_id ORDER BY event_count DESC, trace_id LIMIT :limit OFFSET :offset",
+            page_params,
+        ).fetchall()
+    traces = [{"trace_id": row["trace_id"], "event_count": int(row["event_count"])} for row in rows]
+    return traces, int(total_row["count"])
+
+
 def list_events(
     *,
     tenant_id: str | None = None,

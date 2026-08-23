@@ -23,7 +23,13 @@ from app.storage.governance_policy import (
 from app.storage.incidents import list_incidents
 from app.storage.lifecycle import list_change_events, list_review_tasks
 from app.storage.prompts import list_prompt_templates, list_prompt_versions
-from app.storage.raw_events import list_events
+from app.storage.raw_events import (
+    aggregate_traces,
+    count_distinct,
+    count_error_events,
+    count_events_by_type,
+    list_events,
+)
 from app.storage.workflow import (
     list_configured_owner_policies,
     list_decisions,
@@ -34,20 +40,34 @@ from app.storage.workflow import (
     list_role_assignments,
 )
 
-MAX_QUERY_LIMIT = 10000
+# Page size used when a builder must aggregate over every matching event, and
+# the safety ceiling on that scan. The old single 10,000-row window silently
+# truncated aggregates (event/error counts, resource graph, per-model rollups)
+# for any tenant past that size and reported "10,000" forever (audit finding H9).
+_SCAN_PAGE = 5000
+MAX_QUERY_LIMIT = 500_000
 
 
 def scoped_events(scope: ScopeFilter, *, event_type: str | None = None, limit: int = MAX_QUERY_LIMIT) -> list[Event]:
-    return [
-        Event.model_validate(event)
-        for event in list_events(
+    """All matching events (up to ``limit``), paged so aggregation builders are
+    correct beyond a single query window. Prefer the SQL count/aggregate helpers
+    for pure counts; this exists for builders that must parse event attributes."""
+    events: list[Event] = []
+    offset = 0
+    while offset < limit:
+        page = list_events(
             tenant_id=scope.tenant_id,
             project=scope.project,
             environment=scope.environment,
             event_type=event_type,
-            limit=limit,
+            limit=min(_SCAN_PAGE, limit - offset),
+            offset=offset,
         )
-    ]
+        events.extend(Event.model_validate(event) for event in page)
+        if len(page) < _SCAN_PAGE:
+            break
+        offset += _SCAN_PAGE
+    return events
 
 
 def event_attributes(event: Event) -> dict[str, Any]:
@@ -731,18 +751,29 @@ def build_exceptions(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
     return {"exceptions": list_exceptions(**scope.model_dump())}
 
 
-def build_traces(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
-    trace_ids = Counter(event.trace_id for event in scoped_events(scope))
+def build_traces_page(scope: ScopeFilter, *, limit: int, offset: int) -> dict[str, Any]:
+    """Trace list paged and counted in SQL (H9): the whole event table is never
+    loaded just to count events per trace and slice the result in Python."""
+    traces, total = aggregate_traces(**scope.model_dump(), limit=limit, offset=offset)
     return {
-        "traces": [
-            {"trace_id": trace_id, "event_count": count}
-            for trace_id, count in trace_ids.most_common()
-        ]
+        "traces": traces,
+        "page": {
+            "offset": offset,
+            "limit": limit,
+            "total": total,
+            "has_more": offset + len(traces) < total,
+        },
     }
 
 
 def build_summary(scope: ScopeFilter) -> dict[str, Any]:
-    events = scoped_events(scope)
+    # Event counts are computed in SQL, not by materialising a 10,000-row window
+    # and counting in Python, so they stay correct past that size (H9).
+    scope_filters = scope.model_dump()
+    by_type = count_events_by_type(**scope_filters)
+    total_events = sum(by_type.values())
+    error_events = count_error_events(**scope_filters)
+    distinct_systems = count_distinct("COALESCE(system, service)", **scope_filters)
     applications = list_applications(**scope.model_dump())
     workflows = list_workflows(**scope.model_dump())
     providers = list_providers(**scope.model_dump())
@@ -758,18 +789,18 @@ def build_summary(scope: ScopeFilter) -> dict[str, Any]:
     decisions = list_decisions(**scope.model_dump())
     exceptions = list_exceptions(**scope.model_dump())
     return {
-        "events": len(events),
-        "model_calls": sum(1 for event in events if event.type == "model.call"),
-        "agent_runs": sum(1 for event in events if event.type == "agent.run"),
-        "retrievals": sum(1 for event in events if event.type == "retrieval.call"),
-        "tool_calls": sum(1 for event in events if event.type == "tool.call"),
-        "guardrail_decisions": sum(1 for event in events if event.type == "guardrail.decision"),
-        "eval_results": sum(1 for event in events if event.type == "eval.result"),
-        "prompt_events": sum(1 for event in events if event.type == "prompt.event"),
-        "deployment_events": sum(1 for event in events if event.type == "deployment.event"),
-        "incident_events": sum(1 for event in events if event.type == "incident.event"),
-        "errors": sum(1 for event in events if event.status == "error"),
-        "systems": len({event.system or event.service for event in events}),
+        "events": total_events,
+        "model_calls": by_type.get("model.call", 0),
+        "agent_runs": by_type.get("agent.run", 0),
+        "retrievals": by_type.get("retrieval.call", 0),
+        "tool_calls": by_type.get("tool.call", 0),
+        "guardrail_decisions": by_type.get("guardrail.decision", 0),
+        "eval_results": by_type.get("eval.result", 0),
+        "prompt_events": by_type.get("prompt.event", 0),
+        "deployment_events": by_type.get("deployment.event", 0),
+        "incident_events": by_type.get("incident.event", 0),
+        "errors": error_events,
+        "systems": distinct_systems,
         "applications": len(applications),
         "workflows": len(workflows),
         "providers": sorted({provider["provider"] for provider in providers}),
