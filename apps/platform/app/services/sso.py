@@ -20,6 +20,7 @@ import base64
 import hashlib
 import ipaddress
 import json
+import os
 import socket
 from typing import Any
 from urllib import parse, request
@@ -89,8 +90,27 @@ def http_post_form(url: str, data: dict[str, str], timeout: float = 10.0) -> dic
 # --- discovery -------------------------------------------------------------------
 
 
+def _enforce_allowed_issuer(issuer: str) -> None:
+    """
+    Restrict discovery to explicitly authorized issuer hosts.
+
+    Configure allowed hosts via NORINTH_ALLOWED_SSO_ISSUER_HOSTS as a comma-separated
+    list, e.g. "login.microsoftonline.com,accounts.google.com".
+    """
+    configured = os.getenv("NORINTH_ALLOWED_SSO_ISSUER_HOSTS", "")
+    allowed_hosts = {host.strip().lower() for host in configured.split(",") if host.strip()}
+    if not allowed_hosts:
+        raise SsoError("No allowed SSO issuer hosts are configured")
+
+    parsed = parse.urlparse(issuer)
+    host = (parsed.hostname or "").lower()
+    if host not in allowed_hosts:
+        raise SsoError("SSO issuer host is not in the allowed list")
+
+
 def discover(issuer: str) -> dict[str, str]:
     """Fetch the provider's OpenID configuration and return the endpoints we need."""
+    _enforce_allowed_issuer(issuer)
     _validate_outbound_url(issuer)
     url = issuer.rstrip("/") + "/.well-known/openid-configuration"
     doc = http_get_json(url)
