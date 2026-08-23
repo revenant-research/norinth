@@ -38,7 +38,7 @@ class SsoConfigurationRequest(BaseModel):
     issuer: str = Field(min_length=1)
     client_id: str = Field(min_length=1)
     client_secret: str = Field(min_length=1)
-    default_role: str = Field(default="governance_reviewer", min_length=1)
+    default_role: str = Field(default="governance_viewer", min_length=1)
     allowed_email_domain: str | None = None
 
 

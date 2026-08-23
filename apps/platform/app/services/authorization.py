@@ -19,6 +19,11 @@ ORG_ADMIN = "org_admin"
 RISK_OWNER = "risk_owner"
 CONTROL_OWNER = "control_owner"
 GOVERNANCE_REVIEWER = "governance_reviewer"
+# Read-only role with no governance permissions. It is the least-privilege
+# default for identity-federated (JIT/SCIM) users so that merely authenticating
+# at the corporate IdP never grants review.decide (audit finding M100); an admin
+# must deliberately elevate a user to a decision role.
+GOVERNANCE_VIEWER = "governance_viewer"
 
 # Permission identifiers (mirrors workflow.DEFAULT_PERMISSIONS).
 PERM_ORG_MANAGE = "org.manage"

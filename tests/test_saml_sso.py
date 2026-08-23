@@ -155,7 +155,9 @@ def test_full_saml_login_with_jit(super_admin_client, idp):
         assert me["email"] == "jane@acme.test"
         assert me["tenant_id"] == "acme"
         assert me["display_name"] == "Jane Doe"
-        assert "review.decide" in me["permissions"]
+        # Least-privilege JIT default (viewer): no decision or admin rights until
+        # an org admin deliberately elevates the user (audit finding M100).
+        assert "review.decide" not in me["permissions"]
         assert "role.assign" not in me["permissions"]
     org.close()
 

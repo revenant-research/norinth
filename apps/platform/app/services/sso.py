@@ -182,11 +182,13 @@ def _provision_user(tenant_id: str, email: str, claims: dict[str, Any], config: 
         tenant_id=tenant_id,
         must_change_password=False,
     )
-    default_role = config.get("default_role") or "governance_reviewer"
-    # JIT provisioning never grants administration rights; an org admin must
-    # elevate a user deliberately (separation of duties, audit C-4).
+    # Least privilege: an unconfigured default provisions a read-only viewer, not
+    # a reviewer with review.decide, so authenticating at the IdP never grants
+    # decision rights on its own (audit finding M100). An org admin sets
+    # default_role deliberately to grant more, and can never auto-grant admin.
+    default_role = config.get("default_role") or "governance_viewer"
     if default_role in ADMINISTRATION_ROLES:
-        default_role = "governance_reviewer"
+        default_role = "governance_viewer"
     upsert_role_assignment(
         {
             "user_ref": email,

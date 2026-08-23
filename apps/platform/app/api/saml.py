@@ -24,7 +24,7 @@ class SamlConfigurationRequest(BaseModel):
     idp_entity_id: str = Field(min_length=1)
     idp_sso_url: str = Field(min_length=1)
     idp_certificate: str = Field(min_length=1, description="IdP signing certificate, PEM")
-    default_role: str = Field(default="governance_reviewer", min_length=1)
+    default_role: str = Field(default="governance_viewer", min_length=1)
     allowed_email_domain: str | None = None
 
 

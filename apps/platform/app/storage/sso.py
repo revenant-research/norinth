@@ -32,7 +32,7 @@ def init_sso() -> None:
                 authorization_endpoint TEXT NOT NULL,
                 token_endpoint TEXT NOT NULL,
                 jwks_uri TEXT NOT NULL,
-                default_role TEXT NOT NULL DEFAULT 'governance_reviewer',
+                default_role TEXT NOT NULL DEFAULT 'governance_viewer',
                 allowed_email_domain TEXT,
                 enabled INTEGER NOT NULL DEFAULT 1,
                 created_by TEXT,

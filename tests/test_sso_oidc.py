@@ -158,8 +158,9 @@ def test_full_sso_login_with_jit_provisioning(super_admin_client, idp):
         assert user["email"] == "jane@acme.test"
         assert user["tenant_id"] == "acme"
         assert user["must_change_password"] is False
-        # JIT default role (governance_reviewer) grants review.decide.
-        assert "review.decide" in user["permissions"]
+        # JIT default is the read-only viewer: authenticate and view, but no
+        # decision rights until an admin elevates the user (audit finding M100).
+        assert "review.decide" not in user["permissions"]
 
         # The PKCE verifier and client secret went to the token endpoint.
         assert idp.token_requests[0]["client_secret"] == "s3cret"
@@ -251,6 +252,22 @@ def test_jit_never_grants_admin_role(super_admin_client, idp):
         perms = browser.get("/api/auth/me").json()["user"]["permissions"]
         assert "role.assign" not in perms
         assert "user.manage" not in perms
+    org.close()
+
+
+def test_admin_can_configure_a_decision_default(super_admin_client, idp):
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    org = _org_admin(super_admin_client)
+    # An admin who deliberately configures governance_reviewer as the JIT default
+    # owns that choice; the fix only changes the *unconfigured* fallback (M100).
+    _configure(org, default_role="governance_reviewer")
+    with TestClient(app) as browser:
+        state = _start_and_capture(browser, idp)
+        browser.get(f"/api/auth/sso/callback?code=good-code&state={state}", follow_redirects=False)
+        perms = browser.get("/api/auth/me").json()["user"]["permissions"]
+        assert "review.decide" in perms
     org.close()
 
 

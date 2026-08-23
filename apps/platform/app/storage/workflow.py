@@ -239,6 +239,8 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, set[str]] = {
     "risk_owner": {"review.decide", "risk.accept", "owner.assign"},
     "control_owner": {"review.decide", "owner.assign"},
     "governance_reviewer": {"review.decide"},
+    # Read-only: authenticate and view, but no decision or configuration rights.
+    "governance_viewer": set(),
 }
 
 

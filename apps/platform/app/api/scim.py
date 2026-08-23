@@ -101,9 +101,12 @@ def _load_tenant_user(user_ref: str, tenant_id: str) -> dict[str, Any] | None:
 
 
 def _default_role(tenant_id: str) -> str:
+    # Least privilege for SCIM-provisioned users: read-only viewer unless the org
+    # admin deliberately configured a higher default; never auto-grant a decision
+    # role merely for existing in the IdP directory (audit finding M100).
     config = load_sso_configuration(tenant_id)
-    role = (config or {}).get("default_role") or "governance_reviewer"
-    return "governance_reviewer" if role in ADMINISTRATION_ROLES else role
+    role = (config or {}).get("default_role") or "governance_viewer"
+    return "governance_viewer" if role in ADMINISTRATION_ROLES else role
 
 
 # --- ServiceProviderConfig -----------------------------------------------------

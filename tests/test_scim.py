@@ -132,7 +132,10 @@ def test_provisioning_lifecycle(super_admin_client):
     users = org.get("/api/org/users").json()["users"]
     jane = next(u for u in users if u["user_ref"] == "jane@acme.test")
     assert jane["tenant_id"] == "acme"
-    assert "governance_reviewer" in jane["roles"]
+    # Least-privilege default: read-only viewer, never a decision or admin role
+    # merely for existing in the IdP directory (audit finding M100).
+    assert "governance_viewer" in jane["roles"]
+    assert "governance_reviewer" not in jane["roles"]
     assert "org_admin" not in jane["roles"]
     org.close()
 
