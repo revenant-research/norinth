@@ -7,7 +7,6 @@
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -22,6 +21,7 @@ from app.services.authorization import (
     AuthorizationError,
     require_permission,
 )
+from app.services.base_url import external_base_url
 from app.services.sso import SsoError, complete_login, discover, start_login
 from app.storage.audit import record_audit
 from app.storage.sso import (
@@ -53,12 +53,11 @@ def _require_tenant_admin(actor: ActorContext) -> str:
 
 
 def _callback_url(request: Request) -> str:
-    # Allow an explicit public base URL (behind a proxy/ingress) to override the
-    # request-derived one, so the redirect_uri registered with the IdP matches.
-    base = os.getenv("NORINTH_PUBLIC_BASE_URL")
-    if base:
-        return base.rstrip("/") + "/api/auth/sso/callback"
-    return str(request.url_for("sso_callback"))
+    # NORINTH_PUBLIC_BASE_URL (behind a proxy/ingress) takes precedence so the
+    # redirect_uri registered with the IdP matches. Otherwise the request base is
+    # used only after the Host is validated against the allowlist, so the
+    # redirect_uri cannot be steered by a spoofed Host (audit finding M98).
+    return external_base_url(request) + "/api/auth/sso/callback"
 
 
 @router.get("/api/org/sso")

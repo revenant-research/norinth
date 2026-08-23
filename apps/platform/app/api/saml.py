@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -13,6 +12,7 @@ from app.api.auth import _set_session_cookie
 from app.dependencies import ActorContext, current_actor
 from app.services.auth import create_session
 from app.services.authorization import PERM_USER_MANAGE, AuthorizationError, require_permission
+from app.services.base_url import external_base_url
 from app.services.saml import SamlError, acs_url, build_authn_redirect, process_response, sp_entity_id
 from app.storage.audit import record_audit
 from app.storage.saml import disable_saml_configuration, load_saml_configuration, upsert_saml_configuration
@@ -29,7 +29,11 @@ class SamlConfigurationRequest(BaseModel):
 
 
 def _base_url(request: Request) -> str:
-    return (os.getenv("NORINTH_PUBLIC_BASE_URL") or str(request.base_url)).rstrip("/")
+    # Validates the Host against the allowlist when NORINTH_PUBLIC_BASE_URL is not
+    # set, so the SAML Audience/Recipient cannot be steered by a spoofed Host
+    # (audit finding M98). Scoped to the identity flow — health probes are
+    # unaffected.
+    return external_base_url(request)
 
 
 def _require_tenant_admin(actor: ActorContext) -> str:
