@@ -26,7 +26,7 @@ Three-word positioning: **runtime → evidence → assurance.** The open-source 
 
 Same ICP as before; the open model widens the front door.
 
-- **Health systems and medical-AI builders** (beachhead). Joint Commission / CHAI certification, HIPAA, FDA PCCP, Part 11. Ambient documentation, imaging, agentic back-office — most of it outside the EHR vendor's governance. Health systems are especially receptive to self-hosting: no BAA negotiation with yet another vendor, no PHI-adjacent telemetry leaving the network.
+- **Health systems and medical-AI builders** (beachhead). HIPAA, FDA PCCP, Part 11, and the healthcare AI assurance/certification programs now emerging (Norinth has no affiliation with any of them; it produces the organizational evidence they ask for). Ambient documentation, imaging, agentic back-office — most of it outside the EHR vendor's governance. Health systems are especially receptive to self-hosting: no BAA negotiation with yet another vendor, no PHI-adjacent telemetry leaving the network.
 - **Regulated enterprises with consequential AI**: EU AI Act high-risk (2 Dec 2027), Colorado ADMT (Jan 2027), Texas TRAIGA, NYC LL144, bank model-risk.
 - **Public sector and defence-adjacent**, who cannot use SaaS governance tools at all.
 
@@ -89,7 +89,7 @@ There is no revenue in the product and none is planned inside it. Norinth is Rev
 
 ## 8. Proof and content
 
-- Regulatory-deadline content timed to catalysts: EU AI Act Dec 2027, Colorado Jan 2027, RUAIH certification checklist.
+- Regulatory-deadline content timed to catalysts: EU AI Act Dec 2027, Colorado Jan 2027, healthcare AI assurance evidence checklists.
 - The ten-minute demo: install, instrument the sample app, watch the inventory, findings and AI-BOM appear, export the packet.
 - Design partners: 3–5 named health systems and regulated enterprises co-developing crosswalks and packs, credited publicly.
 - Publish the security posture: SECURITY.md, threat model, audit history, CI results.

@@ -36,7 +36,7 @@ import styles from "./landing.module.css";
 const CATALYSTS = [
   { label: "EU AI Act high-risk", value: "Dec 2027", note: "obligations apply" },
   { label: "Colorado ADMT", value: "Jan 2027", note: "in force" },
-  { label: "Joint Commission / CHAI", value: "Live", note: "RUAIH certification" },
+  { label: "HIPAA / FDA PCCP", value: "In force", note: "for clinical AI" },
   { label: "ISO/IEC 42001", value: "Table stakes", note: "for regulated AI" },
 ];
 
@@ -44,8 +44,8 @@ const AUDIENCES = [
   {
     eyebrow: "Health systems",
     title: "Ambient scribes, imaging models and back-office agents, most of them outside the EHR vendor's governance.",
-    body: "Joint Commission and CHAI certification asks for organizational evidence: inventory, monitoring, named accountability, decisions on record. Norinth produces it from what actually runs.",
-    tags: ["RUAIH", "CHAI model cards", "HIPAA", "FDA PCCP", "21 CFR Part 11"],
+    body: "Healthcare AI assurance programs ask for organizational evidence: an inventory, monitoring, named accountability, decisions on record. Norinth produces it from what actually runs.",
+    tags: ["HIPAA", "FDA PCCP", "21 CFR Part 11", "ISO/IEC 42001"],
   },
   {
     eyebrow: "Regulated enterprise",
@@ -103,7 +103,7 @@ const POSITIONING = [
   { them: "Compliance automation files the paperwork.", us: "We generate the AI evidence it cannot see." },
 ];
 
-const FRAMEWORKS = ["NIST AI RMF 1.0", "ISO/IEC 42001", "EU AI Act", "OWASP LLM Top 10", "OWASP Agentic", "HIPAA", "SOC 2", "CHAI / RUAIH"];
+const FRAMEWORKS = ["NIST AI RMF 1.0", "ISO/IEC 42001", "EU AI Act", "OWASP LLM Top 10", "OWASP Agentic", "HIPAA", "SOC 2"];
 
 const GET_STARTED = [
   {
@@ -170,17 +170,18 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
         </div>
       </header>
 
-      <Container>
+      <ChromeBand streak={2} className={styles.heroBand}>
+        <Container>
         <div className={styles.hero}>
-          <Eyebrow>Open source · Apache-2.0 · Runs in your network</Eyebrow>
+          <Eyebrow tone="inverse">Open source · Apache-2.0 · Runs in your network</Eyebrow>
           <Heading level={1}>AI governance you can install in ten minutes and never pay for.</Heading>
           <Lede>
             A live inventory from the telemetry you already produce. Reviews routed to named owners. Releases blocked
             without evidence. The audit packet your auditor asks for. Free, open source, in your network.
           </Lede>
           <div className={styles.actions}>
-            <ButtonLink size="lg" href="#start">Install it</ButtonLink>
-            <ButtonLink variant="link" href="https://github.com/revenant-research/norinth">Read the source on GitHub</ButtonLink>
+            <ButtonLink size="lg" href="#start" className={styles.heroCta}>Install it</ButtonLink>
+            <ButtonLink variant="secondary" size="lg" href="https://github.com/revenant-research/norinth">Read the source</ButtonLink>
           </div>
           <ul className={styles.proof} aria-label="Key facts">
             <li>No hosted tier, no paid tier, no vendor in the data path</li>
@@ -197,12 +198,17 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
           priority
         />
         </div>
+        </Container>
+      </ChromeBand>
 
+      <Container>
+        <div className={styles.catalysts}>
         <StatGroup columns={4}>
           {CATALYSTS.map((c) => (
             <Stat key={c.label} label={c.label} value={c.value} note={c.note} />
           ))}
         </StatGroup>
+        </div>
 
         <Section id="start" eyebrow="Get started" title="Ten minutes, three ways in." lede="Pick the path that matches where you are. Each ends in the same place: the setup wizard, your first ingestion key, and the first AI system appearing in the inventory.">
           <Grid min="300px" gap={4}>
@@ -237,6 +243,9 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
           </div>
         </Section>
 
+      </Container>
+      <div className={styles.paperBand}>
+      <Container>
         <Section id="who" eyebrow="Who it is for" title="Built for teams that answer to regulators.">
           <Grid min="320px" gap={4}>
             {AUDIENCES.map((a, i) => (
@@ -266,6 +275,9 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
           </Grid>
         </Section>
 
+      </Container>
+      </div>
+      <Container>
         <Section id="how" eyebrow="How it works" title="Three steps from first event to audit packet.">
           <Grid min="260px" gap={5}>
             {STEPS.map((s, i) => (
@@ -335,6 +347,7 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
         </Container>
       </ChromeBand>
 
+      <div className={styles.paperBand}>
       <Container>
         <Section id="trust" eyebrow="Security" title="The trust program is the product." lede="Your AppSec team reviews source, SBOM and CI instead of a vendor questionnaire. Every control below is shipped and verified in CI.">
           <Grid min="300px" gap={4}>
@@ -381,6 +394,9 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
           </Grid>
         </Section>
 
+      </Container>
+      </div>
+      <Container>
         <ContactSection />
       </Container>
 
@@ -425,7 +441,7 @@ export function ContactSection() {
       id="contact"
       eyebrow="Get help"
       title="Talk to the maintainers."
-      lede="Stuck on an install, reviewing it for your security team, or want to be a design partner for a healthcare or EU AI Act pack? Tell us what you run. Bugs and feature requests belong on GitHub issues; everything else here."
+      lede="Stuck on an install, reviewing it for your security team, or want to help shape the healthcare or EU AI Act pack? Tell us what you run. Bugs and feature requests belong on GitHub issues; everything else here."
     >
       {state === "sent" ? (
         <Callout tone="success" title="Thanks.">We have your message and will reply within a few business days.</Callout>
@@ -442,7 +458,7 @@ export function ContactSection() {
                 onChange={(e) => setForm({ ...form, interest: e.target.value })}
                 options={[
                   { value: "pilot", label: "Get help with a deployment" },
-                  { value: "demo", label: "Become a design partner" },
+                  { value: "demo", label: "Help shape a healthcare or EU AI Act pack" },
                   { value: "pricing", label: "Ask about implementation services" },
                   { value: "security", label: "Security review questions" },
                 ]}
