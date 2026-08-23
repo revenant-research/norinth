@@ -336,9 +336,10 @@ def compute_agent_posture(tenant_id: str) -> dict[str, Any]:
     }
 
 
-def refresh_agent_posture() -> None:
-    """Derive agent risk findings for every tenant with agent activity and
-    write them into the risk register (preserving reviewer decisions)."""
+def refresh_agent_posture(tenant_ids: list[str] | None = None) -> None:
+    """Derive agent risk findings and write them into the risk register
+    (preserving reviewer decisions). ``tenant_ids`` limits the work to the
+    tenants an ingest batch touched; None recomputes every tenant."""
     from .governance_policy import upsert_rule_finding
 
     rules = {rule["rule_id"]: rule for rule in AGENT_RISK_RULES}
@@ -349,6 +350,8 @@ def refresh_agent_posture() -> None:
                 "SELECT DISTINCT tenant_id FROM governance_observed_events WHERE entity_type = 'agent.run' AND tenant_id IS NOT NULL"
             ).fetchall()
         ]
+    if tenant_ids is not None:
+        tenants = [t for t in tenants if t in set(tenant_ids)]
     for tenant_id in tenants:
         posture = compute_agent_posture(tenant_id)
         with connect() as connection:

@@ -88,16 +88,30 @@ def init_lifecycle() -> None:
         connection.execute("CREATE INDEX IF NOT EXISTS idx_review_tasks_scope ON review_tasks(tenant_id, project, environment)")
 
 
-def refresh_lifecycle_state() -> None:
+def refresh_lifecycle_state(scopes: list[dict[str, Any]] | None = None) -> None:
+    """Recompute change fingerprints. ``scopes`` limits the work to the
+    applications an ingest batch touched; None recomputes everything."""
     with connect() as connection:
-        applications = connection.execute(
-            "SELECT DISTINCT tenant_id, project, environment, application_name FROM governance_applications"
-        ).fetchall()
+        applications = _applications_in_scope(connection, scopes)
         for application in applications:
             app_context = dict(application)
             events = list_application_events(connection, app_context)
             for fingerprint in build_fingerprints(app_context, events):
                 upsert_fingerprint(connection, app_context, fingerprint)
+
+
+def _applications_in_scope(connection, scopes: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    rows = connection.execute(
+        "SELECT DISTINCT tenant_id, project, environment, application_name FROM governance_applications"
+    ).fetchall()
+    if scopes is None:
+        return [dict(row) for row in rows]
+    wanted = {(s.get("tenant_id"), s["project"], s["environment"], s["application_name"]) for s in scopes}
+    return [
+        dict(row)
+        for row in rows
+        if (row["tenant_id"], row["project"], row["environment"], row["application_name"]) in wanted
+    ]
 
 
 def list_application_events(connection, app_context: dict[str, Any]) -> list[dict[str, Any]]:

@@ -169,6 +169,26 @@ def _verify_eval_attestations(events: list[dict[str, Any]], tenant_id: str) -> N
         touch_attestation_key(key_id)
 
 
+def batch_scopes(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The (tenant, project, environment, application) scopes a batch touches.
+    Derived state is recomputed only for these, so one tenant's ingest cost
+    does not grow with other tenants' history."""
+    seen: dict[tuple, dict[str, Any]] = {}
+    for event in events:
+        metadata = (event.get("attributes") or {}).get("metadata") or {}
+        application_name = metadata.get("application_name")
+        if not application_name:
+            continue
+        scope = {
+            "tenant_id": metadata.get("tenant_id"),
+            "project": event.get("project"),
+            "environment": event.get("environment"),
+            "application_name": application_name,
+        }
+        seen[tuple(scope.values())] = scope
+    return list(seen.values())
+
+
 def _ingest(events: list[dict[str, Any]], tenant_id: str) -> dict[str, Any]:
     # Validate and bind BEFORE any write, so a malformed batch is rejected
     # atomically (422) rather than crashing mid-pipeline after a partial insert.
@@ -180,11 +200,13 @@ def _ingest(events: list[dict[str, Any]], tenant_id: str) -> dict[str, Any]:
     process_prompt_events(events)
     process_deployment_events(events)
     process_incident_events(events)
-    refresh_lifecycle_state()
-    refresh_governance_assessments()
-    refresh_agent_posture()
-    refresh_workflow_state()
-    refresh_deployment_gates()
+    # Recompute derived state only for the scopes this batch touched.
+    scopes = batch_scopes(events)
+    refresh_lifecycle_state(scopes)
+    refresh_governance_assessments(scopes)
+    refresh_agent_posture([tenant_id])
+    refresh_workflow_state(scopes)
+    refresh_deployment_gates(scopes)
     return {"accepted": accepted, "total": count_events()}
 
 

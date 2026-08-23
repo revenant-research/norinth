@@ -283,13 +283,13 @@ def init_governance_policy() -> None:
                 )
             )
 
-def refresh_governance_assessments() -> None:
+def refresh_governance_assessments(scopes: list[dict[str, Any]] | None = None) -> None:
+    from .lifecycle import _applications_in_scope
+
     with connect() as connection:
         controls = list_control_library(connection)
         rules = list_risk_rules(connection)
-        applications = connection.execute(
-            "SELECT DISTINCT tenant_id, project, environment, application_name FROM governance_applications"
-        ).fetchall()
+        applications = _applications_in_scope(connection, scopes)
         for application in applications:
             app_context = dict(application)
             events = list_application_events(connection, app_context)

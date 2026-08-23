@@ -189,9 +189,12 @@ def deliver_one(row: dict[str, Any]) -> tuple[bool, str | None]:
         return False, f"{type(error).__name__}: {error}"
 
 
+_WORKER_ID = f"{os.uname().nodename}:{os.getpid()}"
+
+
 def deliver_pending(limit: int = 50) -> dict[str, int]:
     sent = failed = 0
-    for row in store.claim_pending(limit):
+    for row in store.claim_pending(limit, worker_id=_WORKER_ID):
         ok, error = deliver_one(row)
         attempts = int(row["attempts"]) + 1
         store.mark_result(int(row["id"]), ok=ok, error=error, attempts=attempts)

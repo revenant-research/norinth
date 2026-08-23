@@ -50,7 +50,9 @@ def ensure_notification_tables(connection) -> None:
             last_error TEXT,
             created_at TEXT NOT NULL,
             sent_at TEXT,
-            next_attempt_at TEXT
+            next_attempt_at TEXT,
+            claimed_by TEXT,
+            claimed_at TEXT
         )
         """
     )
@@ -112,12 +114,54 @@ def enqueue(
     )
 
 
-def claim_pending(limit: int = 50) -> list[dict[str, Any]]:
-    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+STALE_CLAIM_MINUTES = 10
+
+
+def ensure_claim_columns(connection) -> None:
+    """Schema for migration 8 (idempotent)."""
+    for statement in (
+        "ALTER TABLE notification_outbox ADD COLUMN claimed_by TEXT",
+        "ALTER TABLE notification_outbox ADD COLUMN claimed_at TEXT",
+    ):
+        try:
+            connection.execute(statement)
+        except Exception:  # noqa: BLE001 - column already exists
+            pass
+
+
+def claim_pending(limit: int = 50, *, worker_id: str) -> list[dict[str, Any]]:
+    """Atomically claim up to ``limit`` due rows for this worker.
+
+    Multiple platform replicas each run a delivery worker. Claiming is a single
+    UPDATE that flips status to 'delivering' for rows that are still 'pending',
+    so two replicas can never both deliver the same row: on PostgreSQL the
+    second updater blocks on the row lock and then re-evaluates the WHERE
+    (READ COMMITTED), on SQLite writes are serialized. Rows claimed by a worker
+    that died are returned to 'pending' after STALE_CLAIM_MINUTES.
+    """
+    now_dt = datetime.now(UTC)
+    now = now_dt.strftime("%Y-%m-%d %H:%M:%S")
+    stale_before = (now_dt - timedelta(minutes=STALE_CLAIM_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
     with connect() as connection:
+        connection.execute(
+            "UPDATE notification_outbox SET status = 'pending', claimed_by = NULL, claimed_at = NULL "
+            "WHERE status = 'delivering' AND claimed_at <= ?",
+            (stale_before,),
+        )
+        connection.execute(
+            """
+            UPDATE notification_outbox SET status = 'delivering', claimed_by = ?, claimed_at = ?
+            WHERE id IN (
+                SELECT id FROM notification_outbox
+                WHERE status = 'pending' AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+                ORDER BY id LIMIT ?
+            )
+            """,
+            (worker_id, now, now, limit),
+        )
         rows = connection.execute(
-            "SELECT * FROM notification_outbox WHERE status = 'pending' AND (next_attempt_at IS NULL OR next_attempt_at <= ?) ORDER BY id LIMIT ?",
-            (now, limit),
+            "SELECT * FROM notification_outbox WHERE status = 'delivering' AND claimed_by = ? ORDER BY id",
+            (worker_id,),
         ).fetchall()
     return [dict(r) for r in rows]
 
@@ -126,20 +170,20 @@ def mark_result(row_id: int, *, ok: bool, error: str | None, attempts: int, max_
     with connect() as connection:
         if ok:
             connection.execute(
-                "UPDATE notification_outbox SET status = 'sent', attempts = ?, last_error = NULL, sent_at = datetime('now') WHERE id = ?",
+                "UPDATE notification_outbox SET status = 'sent', attempts = ?, last_error = NULL, sent_at = datetime('now'), claimed_by = NULL, claimed_at = NULL WHERE id = ?",
                 (attempts, row_id),
             )
             return
         if attempts >= max_attempts:
             connection.execute(
-                "UPDATE notification_outbox SET status = 'failed', attempts = ?, last_error = ? WHERE id = ?",
+                "UPDATE notification_outbox SET status = 'failed', attempts = ?, last_error = ?, claimed_by = NULL, claimed_at = NULL WHERE id = ?",
                 (attempts, (error or "")[:500], row_id),
             )
             return
         backoff = timedelta(minutes=min(60, 2 ** attempts))
         next_at = (datetime.now(UTC) + backoff).strftime("%Y-%m-%d %H:%M:%S")
         connection.execute(
-            "UPDATE notification_outbox SET attempts = ?, last_error = ?, next_attempt_at = ? WHERE id = ?",
+            "UPDATE notification_outbox SET status = 'pending', attempts = ?, last_error = ?, next_attempt_at = ?, claimed_by = NULL, claimed_at = NULL WHERE id = ?",
             (attempts, (error or "")[:500], next_at, row_id),
         )
 

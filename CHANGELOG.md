@@ -6,6 +6,20 @@ to Semantic Versioning once it reaches a tagged release.
 
 ## [Unreleased]
 
+### Fixed
+- **Ingest no longer recomputes every tenant's derived state.** Each batch now
+  recomputes lifecycle fingerprints, control/risk assessments, agent posture,
+  owner policies, the review queue and gate evidence only for the
+  (tenant, project, environment, application) scopes the batch touched, so one
+  organization's ingest cost no longer grows with every other organization's
+  history. The no-argument refresh functions still recompute everything (used
+  by intake and admin paths). Within a touched application the full event
+  history is still read; that remains the next optimization.
+- **Notification delivery is safe with multiple replicas.** Workers now claim
+  outbox rows atomically (status flip with a worker id) before delivering, so
+  two platform replicas can never send the same email or webhook twice; rows
+  claimed by a crashed worker return to pending after 10 minutes. Migration 8.
+
 ### Changed
 - **Role-shaped Home replaces the dashboard landing.** `#home` shows "Needs
   you" — reviews assigned to you, unassigned work in your role, release gates
