@@ -27,8 +27,27 @@ to Semantic Versioning once it reaches a tagged release.
   longer blanks every view: the remaining data renders, a banner names the
   failed endpoints with a Retry action, and session loss (401) still signs the
   user out.
+- **Accessibility sweep of the original workspace views (audit L: a11y).**
+  Every placeholder-only control in the owner-assignment, exception,
+  review-decision, release-readiness and incident-closure forms now has an
+  accessible name; the sidebar is a labelled `navigation` landmark with
+  `aria-current="page"`; a skip-to-content link precedes it; hash-route
+  changes update `document.title` and move focus to the page heading; the
+  workspace is `aria-busy` while loading; auth errors are `role="alert"`;
+  detail routes (#gate/…, #incident/…) get their own heading/title instead of
+  "Overview". `--faint` text colour raised from 2.8:1 to 4.6:1 (WCAG AA).
+  axe-core (WCAG 2.1 A/AA + best-practice) reports zero violations across all
+  16 tenant views and the gate/incident/risk/trace detail views in a live
+  browser, and jsdom axe checks now run in vitest for the shell, record lists,
+  audit log and agents views.
 
-### Added
+### Fixed
+- **White-screen crash navigating between detail records.** `DetailRoute`
+  re-rendered with the previous route's payload for one frame when the route
+  kind changed (e.g. #gate/… → #incident/…), so `IncidentDetail` read
+  `detail.incident.title` on `undefined` and React unmounted the whole app.
+  Loaded records are now tagged with the route they belong to and detail views
+  guard against a missing primary record. Regression test included.
 - Version control for the repository (previously unversioned), with a hardened
   `.gitignore` excluding virtualenvs, `node_modules`, SQLite databases, build
   artifacts, and local secrets.
