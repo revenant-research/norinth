@@ -25,6 +25,14 @@ def aibom(scope: ScopeFilter = Depends(scoped_dependency)) -> dict[str, Any]:
     return generate_aibom(tenant_id=scope.tenant_id, project=scope.project, environment=scope.environment)
 
 
+@router.get("/api/compliance/framework-coverage")
+def framework_coverage(scope: ScopeFilter = Depends(scoped_dependency)) -> dict[str, Any]:
+    """Per-framework compliance posture rolled up from control assessments."""
+    from app.services.governance import build_framework_coverage
+
+    return build_framework_coverage(scope)
+
+
 @router.get("/api/compliance/audit-packet")
 def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilter = Depends(scoped_dependency)) -> dict[str, Any]:
     """Assemble an audit-ready evidence packet for the actor's tenant.
@@ -46,6 +54,7 @@ def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilte
         build_decisions,
         build_deployment_gates,
         build_exceptions,
+        build_framework_coverage,
         build_incidents,
         build_models,
         build_review_tasks,
@@ -69,6 +78,7 @@ def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilte
                 tenant_id=scope.tenant_id, project=scope.project, environment=scope.environment
             ),
         },
+        "framework_coverage": build_framework_coverage(scope).get("framework_coverage", []),
         "control_assessments": build_control_evidence(scope).get("controls", []),
         "risk_findings": build_risk_register(scope).get("risks", []),
         "governance_decisions": build_decisions(scope).get("decisions", []),

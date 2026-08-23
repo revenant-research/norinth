@@ -100,6 +100,15 @@ to Semantic Versioning once it reaches a tagged release.
   target.
 
 ### Added
+- **Framework coverage crosswalk.** New `GET /api/compliance/framework-coverage`
+  rolls the flat control assessments up into per-framework compliance posture
+  (NIST AI RMF, NIST GenAI Profile, ISO/IEC 42001, EU AI Act, SOC 2): total
+  mapped requirements, how many are satisfied by passing/waived evidence, the
+  coverage percentage, and the specific outstanding gaps. Also embedded in the
+  audit-evidence packet. Turns the audit's "framework string labels" into an
+  actual crosswalk — a table-stakes governance capability.
+
+### Added
 - **Audit-ready evidence packet.** New `GET /api/compliance/audit-packet`
   assembles a single, self-contained export of a tenant's governance posture —
   inventory, framework-mapped control assessments, risk findings, governance

@@ -635,6 +635,65 @@ def build_control_evidence(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]
     return {"controls": list_control_assessments(**scope.model_dump())}
 
 
+# Prefixes used in control framework_refs, mapped to a display family. A control
+# assessment cites specific requirements (e.g. "NIST AI RMF MAP 1.1",
+# "ISO/IEC 42001 A.5.2", "EU AI Act Art 26", "SOC 2 CC7.2"); we roll these up per
+# framework so a buyer/auditor sees coverage by regulation, not a flat list
+# (audit §6.2, GTM: framework crosswalks are table-stakes).
+_FRAMEWORK_FAMILIES: list[tuple[str, str]] = [
+    ("NIST AI 600", "NIST GenAI Profile (AI 600-1)"),
+    ("NIST AI RMF", "NIST AI RMF"),
+    ("ISO/IEC 42001", "ISO/IEC 42001"),
+    ("ISO/IEC 23894", "ISO/IEC 23894"),
+    ("EU AI Act", "EU AI Act"),
+    ("SOC 2", "SOC 2"),
+]
+
+_SATISFIED_STATUSES = {"passing", "waived"}
+
+
+def _framework_family(ref: str) -> str:
+    for prefix, name in _FRAMEWORK_FAMILIES:
+        if ref.startswith(prefix) or prefix in ref:
+            return name
+    return "Other"
+
+
+def build_framework_coverage(scope: ScopeFilter) -> dict[str, Any]:
+    """Roll control assessments up into per-framework coverage.
+
+    A framework requirement counts as satisfied if any control that cites it has
+    a passing or waived assessment. The result is a compliance-posture-by-
+    framework view: total mapped requirements, how many are satisfied, the
+    coverage percentage, and the specific gaps still outstanding.
+    """
+    assessments = list_control_assessments(**scope.model_dump())
+    # family -> {requirement_ref: satisfied?}
+    by_family: dict[str, dict[str, bool]] = {}
+    for assessment in assessments:
+        satisfied = assessment.get("status") in _SATISFIED_STATUSES
+        for ref in assessment.get("framework_refs", []):
+            family = _framework_family(ref)
+            requirements = by_family.setdefault(family, {})
+            requirements[ref] = requirements.get(ref, False) or satisfied
+
+    coverage: list[dict[str, Any]] = []
+    for family, requirements in by_family.items():
+        total = len(requirements)
+        satisfied_count = sum(1 for ok in requirements.values() if ok)
+        coverage.append(
+            {
+                "framework": family,
+                "total_requirements": total,
+                "satisfied": satisfied_count,
+                "coverage_pct": round(100 * satisfied_count / total) if total else 0,
+                "gaps": sorted(ref for ref, ok in requirements.items() if not ok),
+                "satisfied_requirements": sorted(ref for ref, ok in requirements.items() if ok),
+            }
+        )
+    return {"framework_coverage": sorted(coverage, key=lambda item: item["framework"])}
+
+
 def build_change_events(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
     return {"changes": list_change_events(**scope.model_dump())}
 
