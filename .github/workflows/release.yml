@@ -70,7 +70,7 @@ jobs:
           provenance: true
           sbom: true
       - name: Install cosign
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@v4
       - name: Sign image (keyless, Sigstore)
         run: cosign sign --yes "${IMAGE}@${{ steps.build.outputs.digest }}"
       - name: Generate SBOM (SPDX) with syft
@@ -83,13 +83,13 @@ jobs:
       - name: Attest SBOM to the image
         run: cosign attest --yes --predicate sbom.spdx.json --type spdxjson "${IMAGE}@${{ steps.build.outputs.digest }}"
       - name: GitHub build provenance attestation
-        uses: actions/attest-build-provenance@v1
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.IMAGE }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
       - name: Vulnerability scan (Trivy, fail on CRITICAL)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
           format: table
