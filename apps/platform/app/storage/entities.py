@@ -174,9 +174,26 @@ def init_entities() -> None:
 
 
 def process_events(events: list[dict[str, Any]]) -> None:
-    with connect() as connection:
+    # Entity upserts are read-modify-write on JSON set columns (fetch_one +
+    # merge_sets + ON CONFLICT). Under concurrent ingest, two batches could each
+    # read the old set and the second write would clobber the first, dropping a
+    # provider/model from the inventory (audit H-11). Run the whole batch inside
+    # an IMMEDIATE transaction so a second concurrent ingest waits for the write
+    # lock (up to busy_timeout) and then reads the committed state — making the
+    # merge safe. SQLite is single-writer regardless, so this adds no throughput
+    # cost beyond what the engine already imposes.
+    connection = connect()
+    connection.isolation_level = None
+    try:
+        connection.execute("BEGIN IMMEDIATE")
         for event in events:
             process_event(connection, event)
+        connection.execute("COMMIT")
+    except Exception:
+        connection.execute("ROLLBACK")
+        raise
+    finally:
+        connection.close()
 
 
 def process_event(connection, event: dict[str, Any]) -> None:

@@ -80,6 +80,16 @@ to Semantic Versioning once it reaches a tagged release.
   their valid values.
 
 ### Fixed
+- **Atomic inventory set-merge (H-11).** The application/model/provider inventory
+  rows accumulate JSON sets via a read-modify-write (fetch, merge in Python,
+  write back). Under concurrent ingest two batches could each read the old set
+  and the second write clobber the first, dropping a provider/model from the
+  inventory. Entity processing now runs inside an IMMEDIATE transaction so a
+  concurrent batch waits for the write lock and reads committed state before
+  merging. SQLite is single-writer regardless, so there is no added throughput
+  cost.
+
+### Fixed
 - **Human decisions survive re-computation (B6).** Every ingest re-derives
   control assessments and risk findings; it used to `INSERT OR REPLACE` them
   back to `passing`/`missing`/`open`, silently reopening a risk a reviewer had
