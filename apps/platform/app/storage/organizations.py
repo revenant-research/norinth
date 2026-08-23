@@ -61,3 +61,12 @@ def load_organization(tenant_id: str) -> dict[str, Any] | None:
     with connect() as connection:
         row = connection.execute("SELECT * FROM organizations WHERE tenant_id = ?", (tenant_id,)).fetchone()
     return None if row is None else dict(row)
+
+
+def organization_is_active(tenant_id: str | None) -> bool:
+    """False when the organization does not exist (purged) or is suspended."""
+    if not tenant_id:
+        return False
+    with connect() as connection:
+        row = connection.execute("SELECT status FROM organizations WHERE tenant_id = ?", (tenant_id,)).fetchone()
+    return row is not None and row["status"] == "active"

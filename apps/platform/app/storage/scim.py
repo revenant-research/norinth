@@ -75,6 +75,13 @@ def resolve_scim_token(token: str | None) -> dict[str, Any] | None:
         ).fetchone()
         if row is None:
             return None
+        # A token for a purged or suspended organization is dead: a purge removes
+        # the org row (and the token), and a suspension must stop provisioning.
+        org = connection.execute(
+            "SELECT status FROM organizations WHERE tenant_id = ?", (row["tenant_id"],)
+        ).fetchone()
+        if org is None or org["status"] != "active":
+            return None
         connection.execute(
             "UPDATE scim_tokens SET last_used_at = datetime('now') WHERE token_id = ?", (row["token_id"],)
         )
