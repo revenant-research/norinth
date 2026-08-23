@@ -44,6 +44,25 @@ automatically. Higher-level governance events (`prompt`, `deployment`,
 `incident`, `guardrail`, `eval_result`, `agent_run`, `retrieval`, `tool_call`)
 can be emitted explicitly through the SDK API.
 
+## Command line: `norinth`
+
+```bash
+norinth init                    # asks for endpoint + key, writes NORINTH_* to .env (mode 600), detects AI clients
+norinth doctor                  # reachability, key validity, sends a test event — says exactly what is wrong if not
+norinth gate check --deployment dep-1 --version v12 [--wait 600]   # CI: exit 0 only if the release gate is approved
+norinth attest keygen           # Ed25519 key pair for signing eval results
+norinth attest sign --key-id nak_… < eval.json > signed.json
+norinth scan [DIR]              # static inventory of AI providers/models in a codebase
+```
+
+`gate check` exit codes: `0` approved, `1` pending or rejected (blockers printed), `2` no gate for that deployment/version, `3` configuration or auth error. Put it after your deploy step:
+
+```yaml
+- run: pip install norinth-logger
+- run: norinth gate check --deployment "$DEPLOYMENT_ID" --version "$GIT_SHA" --wait 900
+  env: { NORINTH_ENDPOINT: https://norinth.internal, NORINTH_API_KEY: ${{ secrets.NORINTH_API_KEY }} }
+```
+
 ## CLI: static AI inventory scanner
 
 ```bash

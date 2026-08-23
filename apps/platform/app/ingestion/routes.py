@@ -14,7 +14,7 @@ from app.services.attestation import AttestationError, verify_eval_attestation
 from app.storage.agents import refresh_agent_posture
 from app.storage.attestation_keys import load_active_attestation_key, touch_attestation_key
 from app.storage.audit import record_audit
-from app.storage.deployments import process_deployment_events, refresh_deployment_gates
+from app.storage.deployments import find_gate_for_release, process_deployment_events, refresh_deployment_gates
 from app.storage.entities import process_events
 from app.storage.governance_policy import refresh_governance_assessments
 from app.storage.incidents import process_incident_events
@@ -186,3 +186,26 @@ def _ingest(events: list[dict[str, Any]], tenant_id: str) -> dict[str, Any]:
     refresh_workflow_state()
     refresh_deployment_gates()
     return {"accepted": accepted, "total": count_events()}
+
+
+@router.get("/v1/gates/check")
+def gate_check(deployment_id: str, version: str, tenant_id: str = Depends(ingestion_tenant)) -> dict[str, Any]:
+    """Release-gate status for CI (``norinth gate check``), authenticated with
+    an ingestion key. Read-only, tenant-bound, and deliberately minimal: CI
+    learns whether it may ship, by whom it was decided, and what is blocking —
+    nothing else about the organization."""
+    gate = find_gate_for_release(tenant_id, deployment_id, version)
+    if gate is None:
+        raise HTTPException(status_code=404, detail="no release gate for that deployment and version (has the deployment.event been ingested?)")
+    return {
+        "gate_id": gate["gate_id"],
+        "deployment_id": gate["deployment_id"],
+        "version": gate["version"],
+        "application_name": gate["application_name"],
+        "workflow_name": gate["workflow_name"],
+        "status": gate["gate_status"],
+        "approved": gate["gate_status"] == "approved",
+        "blocking": None if gate["gate_status"] == "approved" else gate.get("required_reason"),
+        "decided_by": gate.get("actor_ref"),
+        "decided_at": gate.get("decided_at"),
+    }
