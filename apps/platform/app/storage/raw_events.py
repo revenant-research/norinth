@@ -6,6 +6,10 @@ from typing import Any
 
 from . import db
 
+
+def _as_object(value):
+    return value if isinstance(value, dict) else {}
+
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "norinth.sqlite3"
 
 
@@ -109,8 +113,8 @@ def insert_events(events: list[dict[str, Any]]) -> int:
 
 def event_to_row(event: dict[str, Any]) -> dict[str, Any]:
     attributes = event.get("attributes") or {}
-    metadata = attributes.get("metadata") or {}
-    usage = attributes.get("usage") or {}
+    metadata = _as_object(attributes.get("metadata"))
+    usage = _as_object(attributes.get("usage"))
     return {
         "event_type": event["type"],
         "schema_version": event["schema_version"],

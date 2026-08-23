@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from . import db
-from .entities import decode_json, encode_json, entity_id
+from .entities import as_object, decode_json, encode_json, entity_id
 from .raw_events import connect
 
 SUPPORTED_RISK_SIGNALS = {
@@ -428,7 +428,7 @@ def assess_controls(connection, app_context: dict[str, Any], controls: list[dict
 
 def event_satisfies_required_fields(event: dict[str, Any], required_fields: list[str]) -> bool:
     attrs = event.get("attributes") or {}
-    metadata = attrs.get("metadata") or {}
+    metadata = as_object(attrs.get("metadata"))
     values: dict[str, Any] = {
         "trace_id": event.get("trace_id"),
         "status": event.get("status"),
@@ -453,8 +453,8 @@ def event_satisfies_required_fields(event: dict[str, Any], required_fields: list
         "mode": attrs.get("mode"),
         "fail_open": attrs.get("fail_open"),
         "failed_sends": attrs.get("failed_sends"),
-        "prompt.hash": (attrs.get("prompt") or {}).get("hash"),
-        "response.hash": (attrs.get("response") or {}).get("hash"),
+        "prompt.hash": as_object(attrs.get("prompt")).get("hash"),
+        "response.hash": as_object(attrs.get("response")).get("hash"),
     }
     return all(values.get(field) not in (None, "", []) for field in required_fields)
 

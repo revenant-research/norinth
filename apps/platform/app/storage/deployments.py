@@ -5,7 +5,7 @@ from typing import Any
 
 from . import db
 from .attestation_keys import tenant_requires_attestation
-from .entities import entity_id
+from .entities import as_object, entity_id
 from .raw_events import connect
 
 
@@ -103,7 +103,7 @@ def process_deployment_events(events: list[dict[str, Any]]) -> None:
 
 def upsert_deployment_event(connection, event: dict[str, Any]) -> None:
     attrs = event.get("attributes") or {}
-    metadata = attrs.get("metadata") or {}
+    metadata = as_object(attrs.get("metadata"))
     deployment_id = attrs["deployment_id"]
     version = attrs["version"]
     application_name = metadata.get("application_name")

@@ -7,6 +7,16 @@ from typing import Any
 from .raw_events import connect
 
 
+def as_object(value: Any) -> dict[str, Any]:
+    """Return value if it is a dict, else {}. Event attributes are typed
+    dict[str, Any] on the wire, so a client can send a string where an object
+    is expected (e.g. ``"prompt": "text"``); the consumers must not crash on
+    it. Ingestion validation rejects such events, but a row stored before that
+    check existed must also be survivable.
+    """
+    return value if isinstance(value, dict) else {}
+
+
 def entity_id(*parts: Any) -> str:
     encoded = "|".join("" if part is None else str(part) for part in parts).encode("utf-8")
     return sha256(encoded).hexdigest()
@@ -199,8 +209,8 @@ def process_events(events: list[dict[str, Any]]) -> None:
 def process_event(connection, event: dict[str, Any]) -> None:
     event_type = event["type"]
     attrs = event.get("attributes") or {}
-    metadata = attrs.get("metadata") or {}
-    usage = attrs.get("usage") or {}
+    metadata = as_object(attrs.get("metadata"))
+    usage = as_object(attrs.get("usage"))
 
     if event_type == "model.call":
         upsert_application(connection, event, attrs, metadata, usage)

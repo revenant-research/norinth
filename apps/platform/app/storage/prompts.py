@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .entities import entity_id
+from .entities import as_object, entity_id
 from .raw_events import connect
 
 
@@ -62,7 +62,7 @@ def process_prompt_events(events: list[dict[str, Any]]) -> None:
 
 def upsert_prompt_event(connection, event: dict[str, Any]) -> None:
     attrs = event.get("attributes") or {}
-    metadata = attrs.get("metadata") or {}
+    metadata = as_object(attrs.get("metadata"))
     application_name = metadata.get("application_name")
     workflow_name = metadata.get("workflow_name")
     if not application_name or not workflow_name:
@@ -71,8 +71,8 @@ def upsert_prompt_event(connection, event: dict[str, Any]) -> None:
     prompt_id = attrs["prompt_id"]
     version = attrs["version"]
     version_id = prompt_version_key(metadata.get("tenant_id"), event["project"], event["environment"], prompt_id, version)
-    template_summary = json.dumps(attrs.get("template") or {}, sort_keys=True)
-    change_notes_summary = json.dumps(attrs.get("change_notes") or {}, sort_keys=True)
+    template_summary = json.dumps(as_object(attrs.get("template")), sort_keys=True)
+    change_notes_summary = json.dumps(as_object(attrs.get("change_notes")), sort_keys=True)
     status = attrs.get("prompt_status") or event.get("status", "active")
     connection.execute(
         """

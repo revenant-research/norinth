@@ -36,14 +36,28 @@ _REQUIRED_ATTRIBUTES: dict[str, tuple[str, ...]] = {
 }
 
 
+# Attributes that the governance pipeline reads as nested objects. A client can
+# send a string where an object is expected (the wire type is dict[str, Any]);
+# such an event is schema-valid but poisons the derived-state recompute, so it
+# is rejected at the door rather than stored (finding C7).
+_OBJECT_ATTRIBUTES = ("metadata", "prompt", "response", "usage", "template", "change_notes", "description", "attestation")
+
+
 def _validate_event_attributes(events: list[dict[str, Any]]) -> None:
     for index, event in enumerate(events):
+        attributes = event.get("attributes")
+        if attributes is not None and not isinstance(attributes, dict):
+            raise HTTPException(status_code=422, detail=f"events[{index}].attributes must be an object")
+        attributes = attributes or {}
+        for key in _OBJECT_ATTRIBUTES:
+            if key in attributes and attributes[key] is not None and not isinstance(attributes[key], dict):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"events[{index}].attributes.{key} must be an object",
+                )
         required = _REQUIRED_ATTRIBUTES.get(event.get("type", ""))
         if not required:
             continue
-        attributes = event.get("attributes") or {}
-        if not isinstance(attributes, dict):
-            raise HTTPException(status_code=422, detail=f"events[{index}].attributes must be an object")
         missing = [field for field in required if attributes.get(field) in (None, "")]
         if missing:
             raise HTTPException(

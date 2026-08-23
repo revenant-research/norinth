@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .entities import entity_id
+from .entities import as_object, entity_id
 from .raw_events import connect
 
 
@@ -54,7 +54,7 @@ def process_incident_events(events: list[dict[str, Any]]) -> None:
 
 def upsert_incident_event(connection, event: dict[str, Any]) -> None:
     attrs = event.get("attributes") or {}
-    metadata = attrs.get("metadata") or {}
+    metadata = as_object(attrs.get("metadata"))
     application_name = metadata.get("application_name")
     workflow_name = metadata.get("workflow_name")
     if not application_name or not workflow_name:
@@ -71,7 +71,7 @@ def upsert_incident_event(connection, event: dict[str, Any]) -> None:
     evidence = incident_evidence_counts(connection, scope)
     incident_id = attrs.get("incident_id") or entity_id("incident", event["trace_id"], event["span_id"])
     incident_tenant = scope["tenant_id"] or ""
-    description_summary = json.dumps(attrs.get("description") or {}, sort_keys=True)
+    description_summary = json.dumps(as_object(attrs.get("description")), sort_keys=True)
     status = attrs.get("incident_status") or event.get("status", "open")
     is_new = connection.execute(
         "SELECT 1 FROM governance_incidents WHERE incident_id = ? AND tenant_id = ? AND project = ? AND environment = ?",
