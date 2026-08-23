@@ -123,6 +123,17 @@ to Semantic Versioning once it reaches a tagged release.
   target.
 
 ### Added
+- **Identity & Integrations UI.** Org admins can now self-serve enterprise
+  identity from a new workspace view: configure **SSO** (issuer, client, JIT
+  default role, optional email-domain restriction — with the exact redirect URI
+  to register at the IdP and the users' sign-in link), create/revoke **SCIM
+  provisioning tokens**, and create/revoke **SDK ingestion keys**. Secrets are
+  shown exactly once in a dismissable reveal with copy-to-clipboard and never
+  persist in the DOM (the audit flagged temp credentials lingering on screen).
+  Discovery failures surface as a readable error. Verified live in the browser;
+  3 new component tests (secret reveal, SSO submit, token create→reveal→revoke).
+
+### Added
 - **Agents UI + frontend test infrastructure.** A new "Agents" workspace view
   shows runtime posture (observed / registered / shadow / with-issues metrics,
   per-agent OWASP-mapped issue badges with the offending tools), a labeled
