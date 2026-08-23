@@ -252,7 +252,17 @@ def seed_role_permissions(connection) -> None:
             )
 
 
-def refresh_workflow_state() -> None:
+def _in_scopes(row: dict[str, Any], wanted: set[tuple] | None) -> bool:
+    if wanted is None:
+        return True
+    return (row.get("tenant_id"), row.get("project"), row.get("environment"), row.get("application_name")) in wanted
+
+
+def refresh_workflow_state(scopes: list[dict[str, Any]] | None = None) -> None:
+    """Apply owner policies and refresh the review queue. ``scopes`` limits the
+    work to the applications an ingest batch touched; None refreshes everything."""
+    wanted = None if scopes is None else {(s.get("tenant_id"), s["project"], s["environment"], s["application_name"]) for s in scopes}
+    tenant_filter = None if scopes is None else {s.get("tenant_id") for s in scopes}
     with connect() as connection:
         policies = list_owner_policies(connection)
         queue_policies = list_queue_policies(connection)
@@ -261,17 +271,25 @@ def refresh_workflow_state() -> None:
         ).fetchall()
         for application in applications:
             app_context = dict(application)
+            if not _in_scopes(app_context, wanted):
+                continue
             apply_owner_policies(connection, app_context, policies, "application", app_context["application_name"], "active")
         for row in connection.execute("SELECT DISTINCT tenant_id, project, environment, application_name, risk, finding_id FROM risk_findings").fetchall():
             app_context = dict(row)
+            if not _in_scopes(app_context, wanted):
+                continue
             apply_owner_policies(connection, app_context, policies, "risk_finding", row["finding_id"], "open")
         for row in connection.execute("SELECT DISTINCT tenant_id, project, environment, application_name, control_id, assessment_id FROM control_assessments WHERE status = 'missing'").fetchall():
             app_context = dict(row)
+            if not _in_scopes(app_context, wanted):
+                continue
             apply_owner_policies(connection, app_context, policies, "control_assessment", row["assessment_id"], "missing")
         for row in connection.execute("SELECT DISTINCT tenant_id, project, environment, application_name, incident_id, status FROM governance_incidents WHERE status != 'closed'").fetchall():
             app_context = dict(row)
+            if not _in_scopes(app_context, wanted):
+                continue
             apply_owner_policies(connection, app_context, policies, "incident", row["incident_id"], row["status"])
-        refresh_review_queue(connection, queue_policies)
+        refresh_review_queue(connection, queue_policies, tenant_filter)
 
 
 def list_queue_policies(connection) -> list[dict[str, Any]]:
@@ -279,9 +297,11 @@ def list_queue_policies(connection) -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
-def refresh_review_queue(connection, queue_policies: list[dict[str, Any]]) -> None:
+def refresh_review_queue(connection, queue_policies: list[dict[str, Any]], tenant_filter: set | None = None) -> None:
     for task in connection.execute("SELECT * FROM review_tasks WHERE status = 'open'").fetchall():
         task_record = dict(task)
+        if tenant_filter is not None and task_record.get("tenant_id") not in tenant_filter:
+            continue
         policy = next((item for item in queue_policies if item["task_type"] == task_record["task_type"]), None)
         if policy is None:
             mark_review_task_queue_state(connection, task_record, None, None, None, "unassigned")

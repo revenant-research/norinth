@@ -284,3 +284,34 @@ def test_review_assignment_and_escalation_notify_once(super_admin_client, smtp):
     assert recipients == ["oa@acme.test", "rev@acme.test"], recipients
     assert len(escalated) == 2  # one per recipient, sent once despite two refreshes
     org.close()
+
+
+def test_two_workers_never_deliver_the_same_row(super_admin_client):
+    """Replica safety: claiming is atomic, so concurrent workers get disjoint
+    rows; rows claimed by a dead worker are reclaimed after the stale window."""
+    from app.storage import notifications as store
+    from app.storage.raw_events import connect
+
+    with connect() as connection:
+        for i in range(20):
+            store.enqueue(connection, tenant_id="acme", channel="email", event_type="test", target=f"user{i}@acme.test", subject="s", payload={"text": "t"})
+
+    a = store.claim_pending(limit=50, worker_id="replica-a")
+    b = store.claim_pending(limit=50, worker_id="replica-b")
+    assert len(a) == 20 and b == []  # everything claimed by a; b gets nothing
+    assert {row["claimed_by"] for row in a} == {"replica-a"}
+
+    # replica-a dies without finishing; after the stale window replica-b reclaims.
+    with connect() as connection:
+        connection.execute("UPDATE notification_outbox SET claimed_at = '2020-01-01 00:00:00' WHERE claimed_by = 'replica-a'")
+    reclaimed = store.claim_pending(limit=50, worker_id="replica-b")
+    assert len(reclaimed) == 20 and {row["claimed_by"] for row in reclaimed} == {"replica-b"}
+
+    # Interleaved claiming with a smaller limit stays disjoint.
+    with connect() as connection:
+        connection.execute("UPDATE notification_outbox SET status = 'pending', claimed_by = NULL, claimed_at = NULL")
+    first = store.claim_pending(limit=10, worker_id="replica-a")
+    second = store.claim_pending(limit=10, worker_id="replica-b")
+    ids_a = {row["id"] for row in first}
+    ids_b = {row["id"] for row in second}
+    assert len(ids_a) == 10 and len(ids_b) == 10 and not (ids_a & ids_b)

@@ -128,6 +128,13 @@ def _0007_notifications(connection) -> None:
     ensure_notification_tables(connection)
 
 
+def _0008_outbox_claims(connection) -> None:
+    """Delivery claim columns so multiple replicas never deliver the same row."""
+    from app.storage.notifications import ensure_claim_columns
+
+    ensure_claim_columns(connection)
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
@@ -136,6 +143,7 @@ MIGRATIONS: list[Migration] = [
     Migration(5, "evidence attestation keys", _0005_attestation_keys),
     Migration(6, "inbound leads from the landing page", _0006_leads),
     Migration(7, "notification outbox, webhooks, invites", _0007_notifications),
+    Migration(8, "outbox delivery claims for multi-replica workers", _0008_outbox_claims),
 ]
 
 

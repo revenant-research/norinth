@@ -180,11 +180,17 @@ def upsert_deployment_event(connection, event: dict[str, Any]) -> None:
     )
 
 
-def refresh_deployment_gates() -> None:
+def refresh_deployment_gates(scopes: list[dict[str, Any]] | None = None) -> None:
+    """Recompute gate evidence. ``scopes`` limits the work to the applications
+    an ingest batch touched; None recomputes every version."""
+    wanted = None if scopes is None else {(s.get("tenant_id"), s["project"], s["environment"], s["application_name"]) for s in scopes}
     with connect() as connection:
         versions = connection.execute("SELECT * FROM deployment_versions ORDER BY observed_at DESC").fetchall()
         for version in versions:
-            upsert_deployment_gate(connection, dict(version))
+            record = dict(version)
+            if wanted is not None and (record.get("tenant_id"), record["project"], record["environment"], record["application_name"]) not in wanted:
+                continue
+            upsert_deployment_gate(connection, record)
 
 
 def upsert_deployment_gate(connection, version: dict[str, Any]) -> None:
