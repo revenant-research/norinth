@@ -38,11 +38,11 @@ export type DashboardData = {
   traces: Array<Record<string, any>>;
   modelCalls: Array<Record<string, any>>;
   intake: Array<Record<string, any>>;
-  /** Server-side totals per list (from `page.total`) so metrics count the whole
-   *  tenant, not just the first page held in memory. */
+  /** server-side totals per list (from `page.total`) so metrics count the whole
+   *  tenant, not just the first page in memory */
   totals: Partial<Record<ListKey, number>>;
-  /** Endpoints that failed on the last load; the rest of the dashboard still
-   *  renders (one failing endpoint no longer blanks every view). */
+  /** endpoints that failed on the last load; the rest of the dashboard still
+   *  renders so one failing endpoint doesn't blank every view */
   partialErrors: Array<{ key: string; message: string }>;
 };
 
@@ -143,7 +143,7 @@ async function parseError(response: Response): Promise<ApiError> {
     if (body && typeof body.detail === "string") {
       detail = body.detail;
     } else if (body && Array.isArray(body.detail)) {
-      // FastAPI validation errors arrive as a list of {msg, loc} objects.
+      // fastapi validation errors arrive as a list of {msg, loc} objects
       const messages = body.detail
         .map((item: { msg?: string }) => item?.msg)
         .filter((msg: unknown): msg is string => typeof msg === "string");
@@ -235,7 +235,7 @@ export async function loadDashboardData(scope: Scope): Promise<DashboardData> {
     const key = keys[index];
     if (result.status === "fulfilled") return result.value;
     const reason = result.reason;
-    // Session loss is not partial: surface it so the shell can sign out.
+    // session loss isn't partial: rethrow so the shell can sign out
     if (reason instanceof ApiError && reason.status === 401) throw reason;
     partialErrors.push({ key, message: reason instanceof Error ? reason.message : String(reason) });
     return [key, responseKeys[key] ? [] : {}] as const;

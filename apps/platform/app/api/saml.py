@@ -1,4 +1,4 @@
-"""SAML 2.0 SSO endpoints: SP metadata, login start, ACS, and org configuration."""
+"""saml 2.0 sso endpoints: metadata, start, acs, config"""
 
 from __future__ import annotations
 
@@ -29,10 +29,7 @@ class SamlConfigurationRequest(BaseModel):
 
 
 def _base_url(request: Request) -> str:
-    # Validates the Host against the allowlist when NORINTH_PUBLIC_BASE_URL is not
-    # set, so the SAML Audience/Recipient cannot be steered by a spoofed Host
-    # (audit finding M98). Scoped to the identity flow — health probes are
-    # unaffected.
+    # validate Host against allowlist so a spoofed Host can't steer the saml audience/recipient
     return external_base_url(request)
 
 
@@ -49,7 +46,7 @@ def _require_tenant_admin(actor: ActorContext) -> str:
 def _public(config: dict[str, Any] | None) -> dict[str, Any] | None:
     if config is None:
         return None
-    # The certificate is public material; return it so the admin can confirm what's configured.
+    # cert is public material; return it so admin can confirm config
     return config
 
 
@@ -94,7 +91,7 @@ def remove_saml(actor: ActorContext = Depends(current_actor)) -> dict[str, bool]
 
 @router.get("/api/auth/saml/metadata")
 def sp_metadata(request: Request) -> Response:
-    """SP metadata an IdP admin imports to set up the trust."""
+    """sp metadata for the idp admin to import"""
     base = _base_url(request)
     xml = (
         '<?xml version="1.0"?>'
@@ -109,9 +106,7 @@ def sp_metadata(request: Request) -> Response:
     return Response(content=xml, media_type="application/samlmetadata+xml")
 
 
-# Binds a SAML flow to the browser that started it. The ACS receives a cross-site
-# POST from the IdP, so this cookie must be SameSite=None (and therefore Secure)
-# to be sent — production SAML is always over https (audit finding M97).
+# binds the saml flow to the browser; acs is a cross-site POST so cookie needs SameSite=None+Secure
 _SAML_REQUEST_COOKIE = "norinth_saml_req"
 
 

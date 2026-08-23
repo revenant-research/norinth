@@ -1,4 +1,4 @@
-"""Tests for application-layer encryption of stored secrets."""
+"""application-layer encryption of stored secrets"""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def test_roundtrip_and_tenant_binding(monkeypatch):
     assert is_encrypted(stored)
     assert "s3cret" not in stored
     assert decrypt(stored, associated_data="acme") == "s3cret"
-    # Bound to the tenant: the same ciphertext cannot be read under another tenant.
+    # bound to the tenant: same ciphertext can't be read under another tenant
     with pytest.raises(SecretKeyMissing):
         decrypt(stored, associated_data="beta")
 
@@ -87,7 +87,7 @@ def test_sso_client_secret_is_ciphertext_at_rest(super_admin_client, monkeypatch
     assert row["client_secret"].startswith("enc:v1:")
     assert "super-secret-value" not in row["client_secret"]
 
-    # The service still reads the plaintext through the storage layer.
+    # service still reads the plaintext through the storage layer
     from app.storage.sso import load_sso_configuration
 
     assert load_sso_configuration("acme")["client_secret"] == "super-secret-value"

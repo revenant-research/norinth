@@ -1,14 +1,8 @@
-"""Data retention and right-to-erasure.
+"""data retention and right-to-erasure.
 
-Enterprise and health-system buyers require the ability to purge a tenant's data
-on offboarding (GDPR Art 17 erasure, CCPA deletion, HIPAA/BAA return-or-destroy)
-and to enforce a retention window on telemetry (audit finding H-10). Previously
-the only DELETE statements in the platform were for expired sessions.
-
-The tamper-evident audit log (audit_logs) is intentionally NOT purged here: it is
-retained under the legal-basis/records-retention exception, and deleting rows
-would break the hash chain that proves its integrity. A future enhancement can
-seal, export, and then rotate per-tenant audit segments.
+purge a tenant's data on offboarding and enforce a retention window on telemetry.
+audit_logs is intentionally not purged: it is retained under records-retention,
+and deleting rows would break the hash chain that proves its integrity.
 """
 
 from __future__ import annotations
@@ -18,8 +12,8 @@ from typing import Any
 
 from .raw_events import connect
 
-# Every tenant-scoped table except audit_logs (retained) and organizations
-# (the tenant record itself, removed last).
+# every tenant-scoped table except audit_logs (retained) and organizations
+# (the tenant record, removed last)
 _TENANT_SCOPED_TABLES = (
     "sdk_events",
     "governance_applications",
@@ -56,7 +50,7 @@ _TENANT_SCOPED_TABLES = (
     "scim_tokens",
     "sso_configurations",
     "sso_login_states",
-    # Config overrides carry the tenant's id (platform defaults are tenant_id '').
+    # config overrides carry the tenant's id (platform defaults are tenant_id '')
     "control_library",
     "risk_rules",
     "review_queue_policies",
@@ -66,10 +60,10 @@ _TENANT_SCOPED_TABLES = (
 
 
 def purge_tenant_data(tenant_id: str) -> dict[str, int]:
-    """Permanently delete all data for a tenant. Returns per-table row counts.
+    """permanently delete all data for a tenant, returning per-table row counts.
 
-    Also removes sessions and login-attempt records for the tenant's users, and
-    finally the organization record. The audit log is preserved.
+    also removes sessions and login-attempt records for the tenant's users, then
+    the organization record; the audit log is preserved.
     """
     counts: dict[str, int] = {}
     with connect() as connection:
@@ -79,7 +73,7 @@ def purge_tenant_data(tenant_id: str) -> dict[str, int]:
         user_refs = [row["user_ref"] for row in users]
         emails = [row["email"] for row in users if row["email"]]
 
-        # Sessions and login attempts are keyed by user/email, not tenant_id.
+        # sessions and login attempts are keyed by user/email, not tenant_id
         for user_ref in user_refs:
             cur = connection.execute("DELETE FROM sessions WHERE user_ref = ?", (user_ref,))
             counts["sessions"] = counts.get("sessions", 0) + (cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0)
@@ -96,11 +90,8 @@ def purge_tenant_data(tenant_id: str) -> dict[str, int]:
 
 
 def purge_events_older_than(retention_days: int) -> int:
-    """Delete raw SDK events older than the retention window. Returns the count.
-
-    Governance entities derived from those events are retained (they are the
-    durable inventory); only the raw event stream is aged out.
-    """
+    """delete raw sdk events older than the retention window, returning the count;
+    derived governance entities are retained, only the raw stream is aged out"""
     cutoff = (datetime.now(UTC) - timedelta(days=retention_days)).isoformat()
     with connect() as connection:
         cur = connection.execute("DELETE FROM sdk_events WHERE timestamp < ?", (cutoff,))
@@ -108,8 +99,8 @@ def purge_events_older_than(retention_days: int) -> int:
 
 
 def tenant_data_summary(tenant_id: str) -> dict[str, Any]:
-    """Row counts of a tenant's data across scoped tables, for an offboarding
-    preview before an irreversible purge."""
+    """row counts of a tenant's data across scoped tables, for an offboarding
+    preview before an irreversible purge"""
     summary: dict[str, int] = {}
     with connect() as connection:
         for table in _TENANT_SCOPED_TABLES:

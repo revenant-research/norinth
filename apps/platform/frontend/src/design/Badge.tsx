@@ -14,7 +14,7 @@ const STATUS_TONES: Record<string, Tone> = {
   low: "neutral", info: "neutral", observe: "neutral", unknown: "neutral", platform: "neutral",
 };
 
-/** Map a free-form status string to a tone. Unknown statuses are neutral. */
+/** map a free-form status string to a tone; unknown statuses are neutral */
 export function statusTone(status: unknown): Tone {
   return STATUS_TONES[String(status ?? "").toLowerCase()] ?? "neutral";
 }

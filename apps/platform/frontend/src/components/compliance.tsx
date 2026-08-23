@@ -5,14 +5,10 @@ import { toast } from "./toast";
 import { Badge, EmptyState, MetricCard, Section } from "./ui";
 import { useResource } from "./useResource";
 
-/**
- * Compliance: per-framework coverage and the audit-evidence packet.
- *
- * Coverage shows, for each regulation/standard the control library cites,
- * how many mapped requirements are satisfied by passing or waived evidence and
- * exactly which are still outstanding. The packet is the single export an
- * auditor reviews; it is downloaded as JSON from the browser.
- */
+// per-framework coverage and the audit-evidence packet. coverage shows, for
+// each standard the control library cites, how many mapped requirements are
+// satisfied by passing or waived evidence and which are still outstanding.
+// the packet is downloaded as json from the browser
 
 export type FrameworkCoverage = {
   framework: string;

@@ -1,7 +1,4 @@
-"""Tenant erasure removes every tenant-scoped table, a purged/suspended org's
-SCIM token is dead, and a suspended org's users and ingestion keys are frozen
-(critical C6, high H3).
-"""
+"""tenant erasure clears every tenant-scoped table and suspension freezes users and ingestion"""
 
 from __future__ import annotations
 
@@ -38,10 +35,10 @@ def test_suspension_freezes_users_and_ingestion(super_admin_client):
 
     super_admin_client.post("/api/admin/organizations/acme/status", json={"status": "suspended"})
 
-    # Users frozen, ingestion frozen.
+    # users and ingestion frozen
     with TestClient(app) as frozen:
         login = frozen.post("/api/auth/login", json={"email": "a@acme.test", "password": "acme-admin-pw-1"})
-        # Either login refuses, or the session is inert.
+        # either login refuses or the session is inert
         me = frozen.get("/api/auth/me")
         assert login.status_code != 200 or me.status_code == 403
     assert org.post("/v1/events/batch", json={"events": [ping]}, headers=h).status_code == 403
@@ -59,14 +56,14 @@ def test_purge_is_complete_and_kills_scim_token(super_admin_client):
     org.post("/api/ingestion-keys", json={"name": "k"})
     org.close()
 
-    # SCIM works before purge.
+    # scim works before purge
     with TestClient(app) as idp:
         r = idp.post("/scim/v2/Users", headers={"Authorization": f"Bearer {scim}", "Content-Type": "application/scim+json"}, json={"userName": "before@acme.test", "active": True})
         assert r.status_code in (201, 409)
 
     super_admin_client.post("/api/admin/organizations/acme/purge", json={"confirm_tenant_id": "acme"})
 
-    # Every tenant-scoped table is empty for acme.
+    # every tenant-scoped table is empty for acme
     from app.storage.raw_events import connect
     from app.storage.retention import _TENANT_SCOPED_TABLES
 
@@ -75,7 +72,7 @@ def test_purge_is_complete_and_kills_scim_token(super_admin_client):
             n = connection.execute(f"SELECT COUNT(*) AS c FROM {table} WHERE tenant_id = ?", ("acme",)).fetchone()["c"]
             assert n == 0, f"{table} still has acme rows after purge"
 
-    # The old SCIM token cannot resurrect the organization.
+    # old scim token cannot resurrect the org
     with TestClient(app) as idp:
         r = idp.post("/scim/v2/Users", headers={"Authorization": f"Bearer {scim}", "Content-Type": "application/scim+json"}, json={"userName": "ghost@acme.test", "active": True})
         assert r.status_code in (401, 403), r.text

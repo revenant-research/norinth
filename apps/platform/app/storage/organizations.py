@@ -64,7 +64,7 @@ def load_organization(tenant_id: str) -> dict[str, Any] | None:
 
 
 def organization_is_active(tenant_id: str | None) -> bool:
-    """False when the organization does not exist (purged) or is suspended."""
+    """false when the organization is missing (purged) or suspended"""
     if not tenant_id:
         return False
     with connect() as connection:
@@ -73,9 +73,8 @@ def organization_is_active(tenant_id: str | None) -> bool:
 
 
 def organization_is_suspended(tenant_id: str | None) -> bool:
-    """True only when an organization row exists and is not active. A missing
-    row (e.g. the local development tenant, which has no organization) is not
-    'suspended' -- the ingestion key is the authority there."""
+    """true only when an org row exists and is not active; a missing row (e.g.
+    the dev tenant) is not suspended, the ingestion key is the authority there"""
     if not tenant_id:
         return False
     with connect() as connection:

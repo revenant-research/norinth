@@ -58,7 +58,7 @@ def submit_intake(payload: IntakeRequest, actor: ActorContext = Depends(current_
         raise HTTPException(status_code=400, detail=f"data_sensitivity must be one of {DATA_SENSITIVITY_LEVELS}")
     if payload.autonomy_level not in AUTONOMY_LEVELS:
         raise HTTPException(status_code=400, detail=f"autonomy_level must be one of {AUTONOMY_LEVELS}")
-    # The use case is always pinned to the submitting actor's tenant.
+    # use case pinned to the submitter's tenant
     tenant_id = actor.tenant_id
     try:
         require_permission(actor, PERM_INTAKE_SUBMIT, {"tenant_id": tenant_id})

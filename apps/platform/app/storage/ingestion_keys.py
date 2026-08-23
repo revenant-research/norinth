@@ -1,14 +1,9 @@
-"""Per-tenant ingestion API keys.
+"""per-tenant ingestion api keys.
 
-Replaces the previous single hard-coded ``Bearer dev`` ingestion token. Each
-key is bound to exactly one tenant; the ingestion endpoint derives the tenant
-from the presented key rather than trusting a client-supplied ``tenant_id`` in
-the event payload. This is the root fix for cross-tenant evidence forgery
-(audit finding C-1).
-
-Keys are high-entropy random tokens. Only a SHA-256 hash of the full token is
-stored; the plaintext token is shown exactly once at creation. Lookup is by
-hash, so a database read never yields a usable key.
+each key is bound to one tenant; the ingestion endpoint derives the tenant from
+the presented key, not from a client-supplied tenant_id in the payload. only a
+sha-256 hash of the token is stored and the plaintext is shown once at creation,
+so a db read never yields a usable key.
 """
 
 from __future__ import annotations
@@ -51,8 +46,8 @@ def hash_token(token: str) -> str:
 
 
 def _public_key_id(token: str) -> str:
-    # A short, non-secret identifier derived from the token prefix for display
-    # and revocation. Never enough to reconstruct the token.
+    # short non-secret id from the token prefix, for display and revocation;
+    # never enough to reconstruct the token
     return token[: len(_TOKEN_PREFIX) + 8]
 
 
@@ -63,10 +58,8 @@ def _row_to_public(row: Any) -> dict[str, Any]:
 
 
 def create_ingestion_key(tenant_id: str, name: str, created_by: str | None) -> tuple[str, dict[str, Any]]:
-    """Create a key for ``tenant_id`` and return ``(plaintext_token, public_record)``.
-
-    The plaintext token is returned only here and never stored.
-    """
+    """create a key and return (plaintext_token, public_record); the plaintext
+    is returned only here and never stored"""
     token = f"{_TOKEN_PREFIX}{secrets.token_urlsafe(32)}"
     key_id = _public_key_id(token)
     with connect() as connection:
@@ -82,12 +75,8 @@ def create_ingestion_key(tenant_id: str, name: str, created_by: str | None) -> t
 
 
 def seed_dev_ingestion_key(tenant_id: str, token: str = "dev") -> None:
-    """Seed a well-known development key so the local quickstart keeps working.
-
-    Only used in development (see services.bootstrap). The key is still bound to
-    a single tenant, so even the dev token cannot forge evidence for another
-    tenant.
-    """
+    """seed a well-known dev key for the local quickstart; still bound to one
+    tenant, so the dev token can't forge evidence for another tenant"""
     with connect() as connection:
         existing = connection.execute(
             "SELECT 1 FROM ingestion_keys WHERE key_hash = ?", (hash_token(token),)
@@ -104,10 +93,7 @@ def seed_dev_ingestion_key(tenant_id: str, token: str = "dev") -> None:
 
 
 def resolve_ingestion_key(token: str | None) -> dict[str, Any] | None:
-    """Return the active key record for ``token``, or ``None`` if invalid.
-
-    Updates ``last_used_at`` on success.
-    """
+    """active key record for token, or None if invalid; updates last_used_at"""
     if not token:
         return None
     with connect() as connection:

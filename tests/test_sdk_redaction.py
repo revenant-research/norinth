@@ -1,9 +1,4 @@
-"""Content capture redacts secrets and never repr's arbitrary objects (H15).
-
-The README promises redaction; this pins it. It also proves that even with
-capture_content enabled, a config/client object passed to a traced function is
-not serialized via repr() (which would leak an API key held on it).
-"""
+"""content capture redacts secrets and never repr's arbitrary objects"""
 
 from __future__ import annotations
 
@@ -43,11 +38,11 @@ class _Config:
 
 
 def test_arbitrary_object_is_never_repr_captured():
-    # Even with capture on, a config object must not be repr'd into content.
+    # even with capture on, a config object must not be repr'd into content
     summary = summarize_value(_Config(), capture_content=True)
     assert "content" not in summary
     assert "sk-super-secret" not in str(summary)
-    # It is still summarized by type + hash for correlation.
+    # still summarized by type + hash for correlation
     assert summary["type"] == "_Config"
     assert summary["hash"].startswith("sha256:")
 

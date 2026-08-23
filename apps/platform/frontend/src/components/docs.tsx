@@ -1,11 +1,8 @@
 import { ButtonLink, Code, Inline, Stack, Table, Text } from "../design";
 import { Section } from "./ui";
 
-/**
- * In-product reference. Short, plain-language explanations of the model the
- * product enforces, so a new administrator or reviewer does not have to leave
- * the app to understand what a role, a gate, or a finding means.
- */
+// in-product reference: plain explanations of roles, gates and findings so a
+// new admin or reviewer doesn't have to leave the app
 
 const ROLES: Array<{ role: string; does: string; cannot: string }> = [
   { role: "org_admin", does: "Manages users, roles, identity, keys and policies for the organization.", cannot: "Approve reviews or release gates, accept risks, or change their own roles." },

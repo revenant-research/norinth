@@ -1,5 +1,4 @@
-"""The buyer path that lives in the product: public lead capture that lands in
-the platform console, and the organization's live getting-started checklist."""
+"""public lead capture into the console and the org getting-started checklist"""
 
 from __future__ import annotations
 
@@ -15,17 +14,17 @@ def test_public_lead_is_captured_validated_rate_limited_and_visible_to_super_adm
     from app.main import app
     from fastapi.testclient import TestClient
 
-    client = TestClient(app)  # anonymous visitor; super_admin_client is a separate signed-in session
+    client = TestClient(app)  # anonymous visitor, super_admin_client is a separate signed-in session
     lead = {"name": "Dr. Test", "email": "Buyer@Example-Health.org", "organization": "Example Health", "interest": "pilot", "message": "ambient scribes"}
     created = client.post("/api/public/leads", json=lead)
     assert created.status_code == 201, created.text
     assert created.json()["lead_id"].startswith("lead_")
 
-    # Validation: email shape and interest enum.
+    # validate email shape and interest enum
     assert client.post("/api/public/leads", json={**lead, "email": "nope"}).status_code == 422
     assert client.post("/api/public/leads", json={**lead, "interest": "spam"}).status_code == 400
 
-    # Only platform administrators see leads; tenant users and the public do not.
+    # only platform admins see leads, tenant users and public do not
     assert client.get("/api/admin/leads").status_code in (401, 403)
     listing = super_admin_client.get("/api/admin/leads").json()
     assert listing["page"]["total"] == 1
@@ -33,14 +32,14 @@ def test_public_lead_is_captured_validated_rate_limited_and_visible_to_super_adm
     assert entry["email"] == "buyer@example-health.org"  # normalised
     assert entry["status"] == "new"
 
-    # Status moves through the funnel and is audit-logged.
+    # status moves through the funnel and is audit-logged
     moved = super_admin_client.post(f"/api/admin/leads/{entry['lead_id']}/status", json={"status": "contacted"})
     assert moved.status_code == 200 and moved.json()["lead"]["status"] == "contacted"
     assert super_admin_client.post(f"/api/admin/leads/{entry['lead_id']}/status", json={"status": "bogus"}).status_code == 400
     logs = super_admin_client.get("/api/audit-logs", params={"action": "lead.status"}).json()
     assert logs["page"]["total"] == 1
 
-    # Rate limit: one source address cannot flood the inbox.
+    # rate limit, one source address cannot flood the inbox
     for _ in range(9):
         client.post("/api/public/leads", json=lead)
     assert client.post("/api/public/leads", json=lead).status_code == 429

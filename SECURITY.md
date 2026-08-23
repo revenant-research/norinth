@@ -16,14 +16,13 @@ for security reports.
   crash host application code, or (b) transmit raw prompt/response content when
   `NORINTH_CAPTURE_CONTENT` is not enabled.
 
-## Hardening program
+## Security model
 
-This repository is undergoing a structured security-hardening program tracked in
-[`AUDIT_AND_ROADMAP_2026.md`](./AUDIT_AND_ROADMAP_2026.md). Known issues being
-remediated (in priority order) include ingestion authentication and tenant
-binding, deployment-gate integrity, separation of duties, transactional
-ingestion, and SDK transport resilience. Do not deploy to production until the
-Phase 0 items in that roadmap are complete.
+Norinth is multi-tenant and permission-based: every record is bound to its
+tenant, administration roles are mutually exclusive from decision roles, and
+governance decisions enforce maker-checker. The audit trail is hash-chained and
+HMAC-keyed. See [`docs/threat-model.md`](./docs/threat-model.md) for the data
+flow, adversaries, controls, and residual risk.
 
 ## Defaults you must change before any non-local deployment
 
@@ -32,6 +31,7 @@ Phase 0 items in that roadmap are complete.
   use only.
 - `NORINTH_SIGNING_SECRET` — required to authenticate SDK ingestion batches.
 - `NORINTH_SECRET_KEY` — 32-byte base64 master key used to encrypt stored
-  secrets (SSO client secrets) with AES-256-GCM. Without it, secrets are stored
-  in plaintext (development only).
+  secrets (SSO client secrets, webhook secrets) with AES-256-GCM. Secret storage
+  fails closed without it, so set it; `NORINTH_ALLOW_PLAINTEXT_SECRETS=1` is a
+  local-development-only opt-out.
 - `NORINTH_COOKIE_SECURE=1` — set behind TLS so session cookies are `Secure`.

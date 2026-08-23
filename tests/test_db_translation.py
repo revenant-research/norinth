@@ -1,4 +1,4 @@
-"""Unit tests for the SQLite -> PostgreSQL SQL translation layer (storage/db.py)."""
+"""sqlite to postgres sql translation"""
 
 from __future__ import annotations
 

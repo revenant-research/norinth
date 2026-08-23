@@ -184,8 +184,8 @@ def upsert_deployment_event(connection, event: dict[str, Any]) -> None:
 
 
 def refresh_deployment_gates(scopes: list[dict[str, Any]] | None = None) -> None:
-    """Recompute gate evidence. ``scopes`` limits the work to the applications
-    an ingest batch touched; None recomputes every version."""
+    """recompute gate evidence; scopes limits to the apps an ingest touched,
+    None does every version"""
     wanted = None if scopes is None else {(s.get("tenant_id"), s["project"], s["environment"], s["application_name"]) for s in scopes}
     with connect() as connection:
         versions = connection.execute("SELECT * FROM deployment_versions ORDER BY observed_at DESC").fetchall()
@@ -201,12 +201,11 @@ def upsert_deployment_gate(connection, version: dict[str, Any]) -> None:
     gate_id = entity_id("deployment-gate", version["version_id"])
     existing = connection.execute("SELECT * FROM deployment_approval_gates WHERE gate_id = ?", (gate_id,)).fetchone()
     current_status = existing["gate_status"] if existing else None
-    # A gate is NEVER auto-approved (audit C-2). Undecided gates stay
-    # pending_review until a human approves or rejects them through the guarded
-    # /approve|/reject endpoints; an existing human decision is preserved. Whether
-    # a gate is approvable (has linked prompt + passing eval and no open blockers)
-    # is enforced at approval time by set_deployment_gate_status, and the blocking
-    # reasons below tell the reviewer what is still outstanding.
+    # never auto-approve: undecided gates stay pending_review until a human
+    # approves or rejects via the guarded /approve|/reject endpoints; an existing
+    # human decision is preserved. approvability (linked prompt + passing eval, no
+    # open blockers) is enforced at approval time by set_deployment_gate_status;
+    # the reasons below tell the reviewer what is still outstanding.
     gate_status = current_status if current_status in {"approved", "rejected"} else "pending_review"
     reason_parts = []
     if evidence["risk_count"]:
@@ -325,10 +324,8 @@ def count_passing_eval_evidence(connection, params: dict[str, Any]) -> int:
         """,
         params,
     ).fetchall()
-    # Once an organization has registered an attestation key, only evals whose
-    # Ed25519 signature verified at ingestion count as gate evidence; a
-    # self-reported ``passed: true`` no longer satisfies the gate (C-2
-    # hardening, roadmap #20).
+    # once a tenant has an attestation key, only evals whose signature verified
+    # at ingestion count; a self-reported passed: true no longer satisfies
     require_attested = tenant_requires_attestation(params.get("tenant_id"), connection)
     version_artifact = params.get("artifact_ref")
     version_prompt = params.get("prompt_version")
@@ -342,10 +339,9 @@ def count_passing_eval_evidence(connection, params: dict[str, Any]) -> int:
             continue
         if require_attested and attrs.get("attested") is not True:
             continue
-        # The eval must be about THIS release. Prefer the artifact_ref (which the
-        # attestation signs); fall back to the prompt_version when the eval
-        # carries no artifact. An eval with neither, or with a mismatch, does not
-        # count -- so an earlier version's evals cannot pass an untested build.
+        # the eval must be about this release: prefer artifact_ref (what the
+        # attestation signs), fall back to prompt_version. neither or a mismatch
+        # doesn't count, so an earlier version's evals can't pass an untested build.
         eval_artifact = attrs.get("artifact_ref")
         eval_prompt = attrs.get("prompt_version")
         if eval_artifact is not None:
@@ -355,7 +351,7 @@ def count_passing_eval_evidence(connection, params: dict[str, Any]) -> int:
             if version_prompt is None or eval_prompt != version_prompt:
                 continue
         else:
-            continue  # eval names neither artifact nor prompt version -> not bindable
+            continue  # names neither artifact nor prompt version, not bindable
         count += 1
     return count
 
@@ -403,8 +399,7 @@ def set_deployment_gate_status(gate_id: str, status: str, actor_ref: str, ration
 
 
 def gate_deployer(version_id: str) -> str | None:
-    """The user who deployed the version a gate is for (maker-checker: they must
-    not also approve it)."""
+    """user who deployed the gated version; maker-checker: they can't approve it"""
     with connect() as connection:
         row = connection.execute("SELECT deployed_by FROM deployment_versions WHERE version_id = ?", (version_id,)).fetchone()
     return None if row is None else row["deployed_by"]
@@ -445,8 +440,8 @@ def list_deployment_versions(*, tenant_id: str | None = None, project: str | Non
 
 
 def list_deployment_gates(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
-    # Enrich each gate with the human version and artifact it gates, so callers
-    # (and the UI) can see which build a decision applies to.
+    # enrich each gate with the version and artifact it gates, so callers can
+    # see which build a decision applies to
     clauses, params = ["1=1"], {}
     if tenant_id:
         clauses.append("g.tenant_id = :tenant_id")
@@ -472,9 +467,8 @@ def list_deployment_gates(*, tenant_id: str | None = None, project: str | None =
 
 
 def find_gate_for_release(tenant_id: str, deployment_id: str, version: str) -> dict[str, Any] | None:
-    """Gate for a (deployment, version) pair, tenant-bound. Used by CI's
-    ``norinth gate check`` with an ingestion key, so the lookup never crosses
-    the key's organization."""
+    """gate for a (deployment, version) pair, tenant-bound so the CI lookup
+    never crosses the key's org"""
     with connect() as connection:
         row = connection.execute(
             """

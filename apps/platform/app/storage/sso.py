@@ -1,10 +1,8 @@
-"""Per-tenant OpenID Connect (SSO) configuration and login-flow state.
+"""per-tenant openid connect (sso) configuration and login-flow state.
 
-Enterprise buyers require SSO (SAML/OIDC) as table-stakes; password-only
-authentication blocks procurement. This module stores each organization's OIDC
-provider settings and the short-lived state for in-flight authorization-code
-logins (state + nonce + PKCE verifier), which protects the flow against CSRF,
-replay, and code interception.
+stores each org's oidc provider settings and the short-lived state for in-flight
+authorization-code logins (state + nonce + pkce verifier), protecting the flow
+against csrf, replay, and code interception.
 """
 
 from __future__ import annotations
@@ -92,8 +90,8 @@ def upsert_sso_configuration(
                 tenant_id,
                 issuer,
                 client_id,
-                # Encrypted at rest, bound to the tenant so a row cannot be
-                # transplanted to another organization.
+                # encrypted at rest, bound to the tenant so a row can't be
+                # transplanted to another org
                 encrypt(client_secret, associated_data=tenant_id),
                 authorization_endpoint,
                 token_endpoint,
@@ -124,7 +122,7 @@ def load_sso_configuration(tenant_id: str, connection=None) -> dict[str, Any] | 
 
 
 def public_sso_configuration(config: dict[str, Any] | None) -> dict[str, Any] | None:
-    """Strip the client secret for API responses."""
+    """strip the client secret for api responses"""
     if config is None:
         return None
     return {key: value for key, value in config.items() if key != "client_secret"}
@@ -139,7 +137,7 @@ def disable_sso_configuration(tenant_id: str) -> None:
 
 
 def create_login_state(tenant_id: str) -> dict[str, str]:
-    """Create and persist state/nonce/PKCE for one authorization-code login."""
+    """create and persist state/nonce/pkce for one authorization-code login"""
     now = datetime.now(UTC)
     record = {
         "state": secrets.token_urlsafe(32),
@@ -169,7 +167,7 @@ def create_login_state(tenant_id: str) -> dict[str, str]:
 
 
 def consume_login_state(state: str) -> dict[str, Any] | None:
-    """Fetch and delete a login state (single use). Returns None if unknown or expired."""
+    """fetch and delete a login state, single use; None if unknown or expired"""
     now = datetime.now(UTC).isoformat()
     with connect() as connection:
         row = connection.execute(

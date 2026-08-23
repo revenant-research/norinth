@@ -1,15 +1,13 @@
-"""Eval-evidence attestation: canonical statement + Ed25519 verification.
+"""eval-evidence attestation: canonical statement + ed25519 verification
 
-The statement format is the contract between the signer (CI, via the SDK's
-``norinth_logger.attest``) and the platform. It is deliberately duplicated on
-both sides rather than imported across the SDK/platform boundary, exactly like
-the wire schema; ``tests/test_evidence_attestation.py`` pins both to the same
-bytes.
+the statement format is the contract between the signer (CI via the SDK's
+``norinth_logger.attest``) and the platform. duplicated on both sides rather than
+imported across the SDK/platform boundary, like the wire schema;
+``tests/test_evidence_attestation.py`` pins both to the same bytes.
 
-Statement v1 = canonical JSON (sorted keys, no whitespace, ASCII) of the fields
-that make a passing eval meaningful as gate evidence. Tenant, application,
-workflow, trace and span are included so a signature cannot be replayed onto a
-different organization, application, or run.
+statement v1 = canonical json (sorted keys, no whitespace, ascii). tenant,
+application, workflow, trace and span are included so a signature can't be
+replayed onto a different org, application, or run
 """
 
 from __future__ import annotations
@@ -74,8 +72,7 @@ def public_key_fingerprint(pem: str) -> str:
 
 
 def verify_eval_attestation(event: dict[str, Any], public_key_pem: str, signature_b64: str) -> None:
-    """Raise AttestationError unless ``signature_b64`` is a valid Ed25519
-    signature over the canonical statement for ``event`` under the key."""
+    """verify ed25519 signature over the canonical statement for event"""
     try:
         signature = base64.b64decode(signature_b64, validate=True)
     except (ValueError, TypeError) as error:

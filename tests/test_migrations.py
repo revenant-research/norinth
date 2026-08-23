@@ -1,4 +1,4 @@
-"""Tests for the versioned schema-migration runner (audit M1)."""
+"""versioned schema-migration runner"""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ def test_new_migration_applies_exactly_once(fresh_db, monkeypatch):
         [*migrations.MIGRATIONS, migrations.Migration(999, "probe", _0999)],
     )
     assert migrations.run_migrations() == [999]
-    assert migrations.run_migrations() == []  # recorded; not re-applied
+    assert migrations.run_migrations() == []  # recorded, not re-applied
     assert calls == [1]
 
     from app.storage.raw_events import connect

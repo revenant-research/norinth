@@ -2,10 +2,8 @@ import { useEffect, useRef } from "react";
 
 export type RouteItem = { id: string; label: string; description?: string; group?: string };
 
-/**
- * Application sidebar: a labelled navigation landmark with `aria-current` on
- * the active route so screen readers announce where the user is.
- */
+// app sidebar: labelled nav landmark with `aria-current` on the active route so
+// screen readers announce where the user is
 export function Sidebar({ tagline, routes, active }: { tagline: string; routes: RouteItem[]; active: string }) {
   return (
     <aside className="sidebar">
@@ -35,7 +33,7 @@ export function Sidebar({ tagline, routes, active }: { tagline: string; routes: 
   );
 }
 
-/** Preserve first-seen group order; ungrouped items come first. */
+/** preserve first-seen group order; ungrouped items come first */
 function groupRoutes(routes: RouteItem[]): Array<[string, RouteItem[]]> {
   const order: string[] = [];
   const by = new Map<string, RouteItem[]>();
@@ -50,7 +48,7 @@ function groupRoutes(routes: RouteItem[]): Array<[string, RouteItem[]]> {
   return order.map((key) => [key, by.get(key)!]);
 }
 
-/** Keyboard users can jump past the sidebar straight to the page content. */
+/** lets keyboard users jump past the sidebar to page content */
 export function SkipLink() {
   return (
     <a className="skip-link" href="#main-content">
@@ -59,11 +57,9 @@ export function SkipLink() {
   );
 }
 
-/**
- * Hash routing does not reload the document, so browsers never move focus or
- * update the title on navigation. This hook announces route changes by
- * updating `document.title` and moving focus to the page heading.
- */
+// hash routing doesn't reload the document, so the browser never moves focus or
+// updates the title on nav. this hook sets `document.title` and moves focus to
+// the page heading on route change
 export function useRouteAnnouncement(title: string) {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const previous = useRef<string | null>(null);

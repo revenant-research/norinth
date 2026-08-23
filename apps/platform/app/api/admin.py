@@ -66,13 +66,10 @@ def _scrub(user: dict[str, Any]) -> dict[str, Any]:
 
 
 def _temp_password() -> str:
-    """A readable one-time password the admin can hand to the user. The user is
-    forced to change it on first sign in. token_hex(4) was only 32 bits of
-    entropy (audit finding L111); 12 bytes gives 96 bits."""
+    """one-time password, user must reset on first sign in"""
     return f"Norinth-{secrets.token_hex(12)}"
 
-# Roles an org admin is allowed to grant within their organization. The platform
-# role plane (super_admin) is intentionally excluded.
+# roles an org admin may grant; super_admin excluded (platform plane)
 ASSIGNABLE_ORG_ROLES = [
     ORG_ADMIN,
     "governance_admin",
@@ -82,9 +79,7 @@ ASSIGNABLE_ORG_ROLES = [
     "governance_viewer",
 ]
 
-# Roles a healthy governance program must keep staffed. The org admin overview
-# flags any of these with no active assignee so accountability never silently
-# lapses. Segregation of duties requires distinct people for owning vs reviewing.
+# governance roles that must stay staffed; overview flags any with no active assignee
 REQUIRED_GOVERNANCE_ROLES = [
     "governance_admin",
     "risk_owner",
@@ -98,8 +93,7 @@ class CreateOrganizationRequest(BaseModel):
     name: str = Field(min_length=1)
     admin_email: str = Field(min_length=1)
     admin_display_name: str = Field(min_length=1)
-    # Optional: when omitted the platform generates a one-time password and
-    # returns it once so the super admin never has to invent or relay one.
+    # when omitted a one-time password is generated and returned once
     admin_password: str | None = Field(default=None, min_length=8)
 
 
@@ -110,8 +104,7 @@ class OrganizationStatusRequest(BaseModel):
 class CreateUserRequest(BaseModel):
     email: str = Field(min_length=1)
     display_name: str = Field(min_length=1)
-    # Optional: when omitted the platform generates a one-time password and
-    # returns it once so the org admin never has to invent or relay one.
+    # when omitted a one-time password is generated and returned once
     password: str | None = Field(default=None, min_length=8)
     status: str = Field(default="active", min_length=1)
 
@@ -148,11 +141,7 @@ def _guard_super_admin(actor: ActorContext) -> None:
 
 @router.get("/api/admin/overview")
 def platform_overview(actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
-    """Platform-wide operational health for the super admin landing page.
-
-    This is deliberately metadata only (counts, status, ingestion volume). It
-    never reaches into any tenant's governance content, which lives on the
-    tenant plane and is unreachable from the super admin."""
+    """super admin health overview; metadata only, no tenant content"""
     _guard_super_admin(actor)
     orgs = list_organizations()
     active = sum(1 for org in orgs if org.get("status") == "active")
@@ -237,8 +226,7 @@ def provision_organization(payload: CreateOrganizationRequest, actor: ActorConte
         "organization": organization,
         "org_admin": {key: value for key, value in admin_user.items() if key != "password_hash"},
         "role_assignment": assignment,
-        # Only returned when the platform generated the password, so the super
-        # admin can relay it once. Never returned when a password was supplied.
+        # only returned when we generated the password
         "temporary_password": None if payload.admin_password else generated_password,
     }
 
@@ -264,8 +252,7 @@ def update_organization_status(tenant_id: str, payload: OrganizationStatusReques
 
 
 class TenantPurgeRequest(BaseModel):
-    # Must echo the tenant_id exactly, as a type-to-confirm safeguard against an
-    # accidental irreversible deletion.
+    # must echo tenant_id exactly; type-to-confirm guard against accidental delete
     confirm_tenant_id: str = Field(min_length=1)
 
 
@@ -275,7 +262,7 @@ class RetentionPurgeRequest(BaseModel):
 
 @router.get("/api/admin/organizations/{tenant_id}/data")
 def tenant_data_preview(tenant_id: str, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
-    """Preview a tenant's data footprint before an irreversible erasure."""
+    """preview a tenant's data footprint before erasure"""
     _guard_super_admin(actor)
     return tenant_data_summary(tenant_id)
 
@@ -284,9 +271,7 @@ def tenant_data_preview(tenant_id: str, actor: ActorContext = Depends(current_ac
 def purge_organization(
     tenant_id: str, payload: TenantPurgeRequest, actor: ActorContext = Depends(current_actor)
 ) -> dict[str, Any]:
-    """Permanently erase all of a tenant's data (GDPR Art 17 / CCPA / BAA
-    return-or-destroy). Irreversible; super admin only; requires typing the
-    tenant id to confirm. The tamper-evident audit log is retained (audit H-10)."""
+    """permanently erase all tenant data; irreversible; audit log retained"""
     _guard_super_admin(actor)
     if payload.confirm_tenant_id != tenant_id:
         raise HTTPException(status_code=400, detail="confirm_tenant_id must match the tenant being purged")
@@ -306,7 +291,7 @@ def purge_organization(
 
 @router.post("/api/admin/retention/purge-events")
 def purge_old_events(payload: RetentionPurgeRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
-    """Age out raw SDK events older than the retention window (super admin)."""
+    """age out raw events older than retention window"""
     _guard_super_admin(actor)
     deleted = purge_events_older_than(payload.retention_days)
     record_audit(
@@ -321,7 +306,7 @@ def purge_old_events(payload: RetentionPurgeRequest, actor: ActorContext = Depen
 
 @router.get("/api/admin/schema")
 def schema(actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
-    """Database backend and applied/pending schema migrations (super admin)."""
+    """db backend and migration status"""
     _guard_super_admin(actor)
     return schema_status()
 
@@ -344,8 +329,7 @@ def all_users(actor: ActorContext = Depends(current_actor)) -> dict[str, list[di
 
 @router.post("/api/admin/users/{user_ref}/status")
 def update_account_status(user_ref: str, payload: AccountStatusRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
-    """Suspend or reactivate any platform account. The super admin cannot
-    deactivate itself or the last remaining super admin, to avoid lockout."""
+    """suspend or reactivate an account; cannot lock out the last super admin"""
     _guard_super_admin(actor)
     if payload.status not in {"active", "suspended"}:
         raise HTTPException(status_code=400, detail="status must be 'active' or 'suspended'")
@@ -372,8 +356,7 @@ def update_account_status(user_ref: str, payload: AccountStatusRequest, actor: A
 
 @router.post("/api/admin/users/{user_ref}/reset-password")
 def reset_account_password(user_ref: str, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
-    """Issue a one-time temporary password. The user must change it at next sign
-    in. The temporary value is returned once for the admin to deliver securely."""
+    """issue a one-time password, returned once"""
     _guard_super_admin(actor)
     target = load_platform_user(user_ref)
     if target is None:
@@ -392,7 +375,7 @@ def reset_account_password(user_ref: str, actor: ActorContext = Depends(current_
 
 @router.get("/api/admin/role-permissions")
 def role_permission_matrix(actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
-    """The platform-global role -> permission matrix, for the RBAC editor."""
+    """role -> permission matrix for the rbac editor"""
     _guard_super_admin(actor)
     return {
         "roles": ASSIGNABLE_ORG_ROLES,
@@ -403,8 +386,7 @@ def role_permission_matrix(actor: ActorContext = Depends(current_actor)) -> dict
 
 @router.post("/api/admin/role-permissions")
 def update_role_permission(payload: RolePermissionChange, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
-    # The role -> permission matrix is a platform-global default, so only the
-    # super admin may edit it. Org admins assign roles, not redefine them.
+    # matrix is a platform-global default; only super admin edits it
     _guard_super_admin(actor)
     set_role_permission(payload.role, payload.permission, payload.granted)
     record_audit(
@@ -421,9 +403,7 @@ def update_role_permission(payload: RolePermissionChange, actor: ActorContext = 
 
 
 def _require_tenant(actor: ActorContext) -> str:
-    # The org admin plane is tenant scoped. The platform super admin is a separate
-    # plane with no tenant membership, so it is denied here just as it is denied on
-    # every governance data route.
+    # org admin plane is tenant-scoped; super admin has no tenant, denied here
     if actor.is_super_admin:
         raise HTTPException(status_code=403, detail="Platform super admins do not operate on tenant data")
     if not actor.tenant_id:
@@ -439,9 +419,7 @@ def audit_logs(
     action: str | None = None,
     page: PageParams = Depends(),
 ) -> dict[str, Any]:
-    # Super admins see the full platform trail and may filter across tenants;
-    # everyone else is restricted to their own organization's entries and cannot
-    # widen the scope by passing a tenant_id.
+    # super admins see all tenants; everyone else pinned to own org
     effective_tenant = tenant_id if actor.is_super_admin else _require_tenant(actor)
     filters = {"tenant_id": effective_tenant, "actor_ref": actor_ref, "action": action}
     entries = list_audit_logs(**filters, limit=page.limit, offset=page.offset)
@@ -459,11 +437,7 @@ def audit_logs(
 
 @router.get("/api/admin/audit-logs/verify")
 def verify_audit_logs(actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
-    """Verify the integrity of the append-only audit chain (super admin only).
-
-    Recomputes the hash chain and reports whether any entry was deleted,
-    reordered, or modified (audit H-9).
-    """
+    """verify the append-only audit hash chain"""
     _guard_super_admin(actor)
     return verify_audit_chain()
 
@@ -517,9 +491,7 @@ def create_org_user(payload: CreateUserRequest, actor: ActorContext = Depends(cu
         target_type="user",
         target_id=payload.email,
     )
-    # Invite link: the user sets their own password through it (no password in
-    # transit). Emailed when SMTP is configured; always returned so the admin
-    # can send it through their own channel when it is not.
+    # invite link: user sets own password; emailed if smtp, else returned to admin
     token = create_invite(payload.email, tenant_id, actor.user_ref)
     invite_url = f"{public_base_url()}/#invite/{token}"
     organization = load_organization(tenant_id) or {}
@@ -539,7 +511,7 @@ def create_org_user(payload: CreateUserRequest, actor: ActorContext = Depends(cu
         )
     return {
         "user": {key: value for key, value in user.items() if key != "password_hash"},
-        # Only returned when the platform generated the password.
+        # only returned when we generated the password
         "temporary_password": None if payload.password else generated_password,
         "invite_url": invite_url,
         "invite_emailed": smtp_configured(),
@@ -548,7 +520,7 @@ def create_org_user(payload: CreateUserRequest, actor: ActorContext = Depends(cu
 
 @router.post("/api/org/users/{user_ref}/status")
 def update_org_user_status(user_ref: str, payload: AccountStatusRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
-    """Deactivate or reactivate a user inside the admin's own organization."""
+    """deactivate or reactivate a user in the admin's org"""
     tenant_id = _require_tenant(actor)
     try:
         require_permission(actor, PERM_USER_MANAGE, {"tenant_id": tenant_id})
@@ -575,7 +547,7 @@ def update_org_user_status(user_ref: str, payload: AccountStatusRequest, actor: 
 
 @router.post("/api/org/users/{user_ref}/reset-password")
 def reset_org_user_password(user_ref: str, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
-    """Issue a one-time temporary password for a user in the admin's organization."""
+    """issue a one-time password for a user in the admin's org"""
     tenant_id = _require_tenant(actor)
     try:
         require_permission(actor, PERM_USER_MANAGE, {"tenant_id": tenant_id})
@@ -598,11 +570,7 @@ def reset_org_user_password(user_ref: str, actor: ActorContext = Depends(current
 
 @router.get("/api/org/overview")
 def org_overview(actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
-    """Tenant posture and accountability staffing for the org admin landing page.
-
-    Posture metrics come from the same governance services the workspace uses, so
-    the org admin sees the real program state, not a separate copy. Staffing flags
-    any required governance role with no active assignee."""
+    """org overview: program metrics plus governance role staffing"""
     tenant_id = _require_tenant(actor)
     try:
         require_permission(actor, PERM_USER_MANAGE, {"tenant_id": tenant_id})
@@ -622,8 +590,7 @@ def org_overview(actor: ActorContext = Depends(current_actor)) -> dict[str, Any]
         }
         for role in REQUIRED_GOVERNANCE_ROLES
     ]
-    # Segregation of duties signal: the same person owning and reviewing risk
-    # collapses the maker-checker boundary, so surface that overlap explicitly.
+    # flag when the same person owns and reviews risk (maker-checker overlap)
     risk_owners = holders_by_role.get("risk_owner", set())
     reviewers = holders_by_role.get("governance_reviewer", set())
     sod_conflicts = sorted(risk_owners & reviewers)
@@ -662,8 +629,7 @@ def change_org_role_assignment(payload: RoleAssignmentChange, actor: ActorContex
         raise HTTPException(status_code=400, detail=f"role must be one of {ASSIGNABLE_ORG_ROLES}")
     if payload.status not in {"active", "revoked"}:
         raise HTTPException(status_code=400, detail="status must be 'active' or 'revoked'")
-    # Separation of duties: an administrator must not grant or revoke their own
-    # roles (no unilateral self-escalation to governance-decision authority).
+    # separation of duties: admin can't change own role assignments
     if payload.user_ref == actor.user_ref:
         raise HTTPException(
             status_code=403,
@@ -673,8 +639,7 @@ def change_org_role_assignment(payload: RoleAssignmentChange, actor: ActorContex
     target_user = load_platform_user(payload.user_ref)
     if target_user is None or target_user.get("tenant_id") != tenant_id:
         raise HTTPException(status_code=404, detail="User not found in this organization")
-    # A single user must not hold both an administration role and a
-    # governance-decision role (audit C-4).
+    # a user must not hold both an admin role and a governance-decision role
     existing_roles = {
         assignment["role"]
         for assignment in list_role_assignments(tenant_id=tenant_id)

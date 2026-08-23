@@ -1,23 +1,18 @@
-"""Application-layer encryption for stored secrets (envelope-ready).
+"""application-layer encryption for stored secrets (envelope-ready)
 
-Secrets the platform must keep in recoverable form (today: each tenant's OIDC
-client secret) are encrypted at rest with AES-256-GCM under a master key
-supplied by the environment, so a database dump or backup does not yield
-usable credentials. Enterprise buyers expect this ("encryption at rest / KMS /
-BYOK", GTM §6).
+secrets the platform must keep recoverable (today: each tenant's oidc client
+secret) are encrypted at rest with aes-256-gcm under a master key from the env,
+so a db dump or backup does not yield usable credentials.
 
-Key material:
-  NORINTH_SECRET_KEY   base64 (urlsafe) 32-byte key. Generate with
+key material:
+  NORINTH_SECRET_KEY   base64 (urlsafe) 32-byte key. generate with
                        `python -c "import os,base64;print(base64.urlsafe_b64encode(os.urandom(32)).decode())"`.
-                       In production this should be injected from a KMS/secret
-                       manager (AWS KMS / Vault / Azure Key Vault) -- the design
-                       is envelope-ready: swap `master_key()` for a KMS data key.
+                       in production inject from a kms/secret manager; envelope-
+                       ready: swap `master_key()` for a kms data key.
 
-Format of stored values: ``enc:v1:<base64 nonce>:<base64 ciphertext+tag>``.
-Values without the prefix are treated as legacy plaintext and transparently
-re-encrypted the next time they are written. When no key is configured in
-development, values are stored as-is (with a warning) so the quickstart works;
-production deployments must set the key (see SECURITY.md).
+stored value format: ``enc:v1:<base64 nonce>:<base64 ciphertext+tag>``. values
+without the prefix are legacy plaintext, re-encrypted next write. with no key in
+dev, values are stored as-is (with a warning); production must set the key
 """
 
 from __future__ import annotations
@@ -59,12 +54,10 @@ def _plaintext_allowed() -> bool:
 
 
 def encrypt(value: str, *, associated_data: str = "") -> str:
-    """Encrypt a secret for storage.
+    """encrypt a secret for storage
 
-    Fails closed (audit finding M101): without a configured NORINTH_SECRET_KEY it
-    raises rather than silently storing the secret in plaintext. A developer who
-    genuinely wants plaintext storage must opt in with
-    NORINTH_ALLOW_PLAINTEXT_SECRETS=1.
+    fails closed: without NORINTH_SECRET_KEY it raises rather than storing
+    plaintext; opt into plaintext with NORINTH_ALLOW_PLAINTEXT_SECRETS=1
     """
     key = master_key()
     if key is None:
@@ -84,7 +77,7 @@ def encrypt(value: str, *, associated_data: str = "") -> str:
 
 
 def decrypt(stored: str, *, associated_data: str = "") -> str:
-    """Decrypt a stored secret. Legacy plaintext values pass through."""
+    """decrypt a stored secret; legacy plaintext passes through"""
     if not stored.startswith(_PREFIX):
         return stored
     key = master_key()

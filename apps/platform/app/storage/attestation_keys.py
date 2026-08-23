@@ -1,14 +1,10 @@
-"""Per-tenant evidence attestation keys (audit roadmap #20, C-2 hardening).
+"""per-tenant evidence attestation keys.
 
-A deployment gate is only as trustworthy as the eval evidence behind it. An
-``eval.result`` event is client-authored: whoever holds an ingestion key can
-send ``passed: true``. Attestation binds passing evals to a *CI identity*: the
-organization registers the public half of an Ed25519 key that its CI pipeline
-uses to sign eval results, and the platform verifies the signature at
-ingestion. Once an organization has an active attestation key, unattested
-evals no longer satisfy its deployment gates.
-
-Only public keys are stored; the private key never leaves the CI system.
+an eval.result is client-authored: whoever holds an ingestion key can send
+passed: true. attestation binds passing evals to a CI identity: the org
+registers an Ed25519 public key its CI uses to sign eval results, verified at
+ingestion. once a tenant has an active key, unattested evals no longer satisfy
+its gates. only public keys are stored.
 """
 
 from __future__ import annotations
@@ -20,7 +16,7 @@ from .raw_events import connect
 
 
 def ensure_attestation_tables(connection) -> None:
-    """Schema for migration 5 (idempotent)."""
+    """attestation_keys schema, idempotent"""
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS attestation_keys (
@@ -68,8 +64,7 @@ def list_attestation_keys(tenant_id: str) -> list[dict[str, Any]]:
 
 
 def load_active_attestation_key(tenant_id: str, key_id: str) -> dict[str, Any] | None:
-    """Tenant-bound lookup: a key registered by another organization can never
-    verify this organization's evidence."""
+    """tenant-bound lookup: another org's key can't verify this org's evidence"""
     with connect() as connection:
         row = connection.execute(
             "SELECT * FROM attestation_keys WHERE key_id = ? AND tenant_id = ? AND status = 'active'",
@@ -79,8 +74,8 @@ def load_active_attestation_key(tenant_id: str, key_id: str) -> dict[str, Any] |
 
 
 def tenant_requires_attestation(tenant_id: str | None, connection=None) -> bool:
-    """Registering a key is the opt-in: from then on only attested evals count.
-    Accepts an open connection so gate recomputation stays in one transaction."""
+    """registering a key is the opt-in: from then on only attested evals count;
+    accepts an open connection so gate recompute stays in one transaction"""
     if not tenant_id:
         return False
     query = "SELECT COUNT(*) AS count FROM attestation_keys WHERE tenant_id = ? AND status = 'active'"
@@ -113,8 +108,7 @@ def touch_attestation_key(key_id: str) -> None:
 
 
 def _public(row: dict[str, Any]) -> dict[str, Any]:
-    # The public key is not secret, but it is long; expose a fingerprint for
-    # listing and keep the PEM available for verification tooling.
+    # expose a fingerprint for listing, keep the PEM for verification tooling
     from app.services.attestation import public_key_fingerprint
 
     return {**row, "fingerprint": public_key_fingerprint(row["public_key_pem"])}

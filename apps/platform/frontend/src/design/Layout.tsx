@@ -8,7 +8,7 @@ function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
 }
 
-/** Vertical rhythm. */
+/** vertical stack with gap */
 export function Stack({ gap = 4, as: Tag = "div", children, className, ...rest }: { gap?: Gap; as?: ElementType; children: ReactNode } & HTMLAttributes<HTMLElement>) {
   return (
     <Tag className={cx(styles.stack, styles[`gap_${gap}`], className)} {...rest}>
@@ -17,7 +17,7 @@ export function Stack({ gap = 4, as: Tag = "div", children, className, ...rest }
   );
 }
 
-/** Horizontal row that wraps. */
+/** horizontal row that wraps */
 export function Inline({ gap = 2, align = "center", justify = "start", as: Tag = "div", children, className, ...rest }: { gap?: Gap; align?: "start" | "center" | "end" | "baseline"; justify?: "start" | "between" | "end"; as?: ElementType; children: ReactNode } & HTMLAttributes<HTMLElement>) {
   return (
     <Tag className={cx(styles.inline, styles[`gap_${gap}`], styles[`align_${align}`], styles[`justify_${justify}`], className)} {...rest}>
@@ -26,7 +26,7 @@ export function Inline({ gap = 2, align = "center", justify = "start", as: Tag =
   );
 }
 
-/** Responsive grid: `min` is the minimum column width. */
+/** responsive grid; `min` is the minimum column width */
 export function Grid({ min = "260px", gap = 4, columns, children, className, ...rest }: { min?: string; gap?: Gap; columns?: number; children: ReactNode } & HTMLAttributes<HTMLDivElement>) {
   const style: CSSProperties = columns
     ? { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }
@@ -38,7 +38,7 @@ export function Grid({ min = "260px", gap = 4, columns, children, className, ...
   );
 }
 
-/** Centred content column with the site's horizontal padding. */
+/** centred content column with the site's horizontal padding */
 export function Container({ children, className, wide = false, ...rest }: { children: ReactNode; wide?: boolean } & HTMLAttributes<HTMLDivElement>) {
   return (
     <div className={cx(styles.container, wide && styles.wide, className)} {...rest}>

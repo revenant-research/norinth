@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import styles from "./Stat.module.css";
 
-/** Label-over-number block: "JOBS / 32". Replaces the old MetricCard. */
+/** label-over-number block, e.g. "JOBS / 32" */
 export function Stat({ label, value, note, tone = "ink" }: { label: string; value: ReactNode; note?: ReactNode; tone?: "ink" | "signal" | "warning" | "danger" }) {
   return (
     <div className={styles.stat}>
@@ -13,7 +13,7 @@ export function Stat({ label, value, note, tone = "ink" }: { label: string; valu
   );
 }
 
-/** A row of Stats; renders a definition list so label/value pairs are semantic. */
+/** row of Stats; renders a definition list so label/value pairs are semantic */
 export function StatGroup({ children, columns }: { children: ReactNode; columns?: number }) {
   return (
     <dl className={styles.group} style={columns ? { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` } : undefined}>

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 
 class RecordNotFound(ValueError):
-    """A record addressed by id does not exist.
+    """a record addressed by id does not exist.
 
-    Subclasses ValueError so existing ``except ValueError`` sites keep working,
-    while a dedicated type lets the API map "not found" to HTTP 404 instead of an
-    unhandled 500 (audit finding M104).
+    subclasses ValueError so existing except-ValueError sites keep working, while
+    a dedicated type lets the api map not-found to 404 instead of a 500.
     """

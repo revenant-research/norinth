@@ -1,17 +1,16 @@
-"""OpenID Connect authorization-code login with PKCE and JIT provisioning.
+"""openid connect authorization-code login with pkce and jit provisioning
 
-Flow:
-  1. start_login(tenant)  -> authorization URL (state + nonce + PKCE stored)
-  2. IdP redirects back with ?code&state
+flow:
+  1. start_login(tenant)  -> authorization url (state + nonce + pkce stored)
+  2. idp redirects back with ?code&state
   3. complete_login(code, state) -> exchange code at the token endpoint, verify
-     the id_token signature (RS256 against the provider's JWKS) and claims
-     (iss, aud, exp, nonce), then find-or-create the user inside the tenant and
-     grant the tenant's configured default role (just-in-time provisioning).
+     the id_token signature (rs256 against the provider's jwks) and claims
+     (iss, aud, exp, nonce), then find-or-create the user in the tenant and grant
+     the configured default role
 
-SSO-provisioned users have no password (an empty hash), so password login is
-impossible for them; the IdP is the sole authority. The outbound HTTP calls are
-isolated in `http_get_json` / `http_post_form` so tests can substitute a fake
-identity provider without a network.
+sso-provisioned users have an empty password hash so password login is
+impossible; the idp is the sole authority. outbound http is isolated in
+`http_get_json` / `http_post_form` so tests can substitute a fake idp
 """
 
 from __future__ import annotations
@@ -34,7 +33,7 @@ class SsoError(Exception):
     pass
 
 
-# --- outbound HTTP (monkeypatched in tests) -------------------------------------
+# --- outbound http (monkeypatched in tests) -------------------------------------
 
 
 def http_get_json(url: str, timeout: float = 10.0) -> dict[str, Any]:
@@ -55,7 +54,7 @@ def http_post_form(url: str, data: dict[str, str], timeout: float = 10.0) -> dic
 
 
 def discover(issuer: str) -> dict[str, str]:
-    """Fetch the provider's OpenID configuration and return the endpoints we need."""
+    """fetch the provider's openid configuration and return the endpoints we need"""
     url = issuer.rstrip("/") + "/.well-known/openid-configuration"
     doc = http_get_json(url)
     try:
@@ -78,10 +77,9 @@ def _pkce_challenge(verifier: str) -> str:
 
 
 def start_login(tenant_id: str, redirect_uri: str) -> tuple[str, str]:
-    """Return (authorization URL, state). The state is also set as a browser
-    cookie by the caller and re-checked at the callback, binding the flow to the
-    browser that started it so a victim cannot be signed into an attacker's
-    account via a planted callback (audit finding M97)."""
+    """return (authorization url, state); the caller also sets state as a browser
+    cookie and rechecks it at the callback, binding the flow to the browser that
+    started it so a planted callback can't sign a victim into an attacker's account"""
     config = load_sso_configuration(tenant_id)
     if config is None or not config.get("enabled"):
         raise SsoError("SSO is not configured for this organization")
@@ -129,7 +127,7 @@ def _verify_id_token(id_token: str, config: dict[str, Any], nonce: str) -> dict[
 
 
 def complete_login(code: str, state: str, redirect_uri: str) -> dict[str, Any]:
-    """Exchange the code, verify the identity, and return the provisioned user."""
+    """exchange the code, verify the identity, return the provisioned user"""
     login_state = consume_login_state(state)
     if login_state is None:
         raise SsoError("login state is unknown or expired")
@@ -168,8 +166,8 @@ def _provision_user(tenant_id: str, email: str, claims: dict[str, Any], config: 
     existing = get_user_by_email(email)
     if existing is not None:
         if existing.get("tenant_id") != tenant_id:
-            # A federated identity may never be attached to a different tenant's
-            # account by signing in through another org's IdP.
+            # a federated identity can't attach to another tenant's account by
+            # signing in through a different org's idp
             raise SsoError("this account belongs to a different organization")
         if existing.get("status") != "active":
             raise SsoError("account is not active")
@@ -180,16 +178,16 @@ def _provision_user(tenant_id: str, email: str, claims: dict[str, Any], config: 
         user_ref=email,
         display_name=display_name,
         email=email,
-        password_hash="",  # SSO-only: password login impossible
+        password_hash="",  # sso-only: password login impossible
         status="active",
         platform_role=None,
         tenant_id=tenant_id,
         must_change_password=False,
     )
-    # Least privilege: an unconfigured default provisions a read-only viewer, not
-    # a reviewer with review.decide, so authenticating at the IdP never grants
-    # decision rights on its own (audit finding M100). An org admin sets
-    # default_role deliberately to grant more, and can never auto-grant admin.
+    # least privilege: an unconfigured default gives a read-only viewer, not a
+    # reviewer with review.decide, so authenticating at the idp never grants
+    # decision rights; an org admin sets default_role to grant more and can never
+    # auto-grant admin
     default_role = config.get("default_role") or "governance_viewer"
     if default_role in ADMINISTRATION_ROLES:
         default_role = "governance_viewer"

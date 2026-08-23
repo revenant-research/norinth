@@ -23,11 +23,9 @@ const EVENT_LABELS: Record<string, string> = {
   test: "Test",
 };
 
-/**
- * Outbound notifications: signed webhooks (JSON for SIEM/ticketing, Slack
- * format for incoming webhooks) and the delivery log for both webhooks and
- * email, so an administrator can see what was sent, skipped or failed.
- */
+// outbound notifications: signed webhooks (json for siem/ticketing, slack format
+// for incoming webhooks) plus the delivery log for webhooks and email, so an
+// admin can see what was sent, skipped or failed
 export function WebhookSettings() {
   const hooks = useResource(() => getJson<{ webhooks: Webhook[]; events: string[]; smtp_configured: boolean }>("/api/org/webhooks"));
   const log = useResource(() => getJson<{ notifications: Delivery[]; smtp_configured: boolean }>("/api/org/notifications"));

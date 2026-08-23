@@ -1,12 +1,4 @@
-"""SDK delivery durability and tenant inference (audit findings H12, H13).
-
-H12: the SDK must not stamp the platform routing tenant from an application's
-request body — that caused the platform to 403 and discard the whole batch. The
-app's own tenant is recorded under subject_tenant instead.
-
-H13: a transient delivery failure must be retried and, if a spool is configured,
-persisted to disk and redelivered rather than silently dropped.
-"""
+"""sdk delivery durability and tenant inference"""
 
 from __future__ import annotations
 
@@ -22,14 +14,14 @@ from norinth_logger.config import NorinthConfig  # noqa: E402
 from norinth_logger.privacy import infer_governance_context  # noqa: E402
 from norinth_logger.transport import EventTransport  # noqa: E402
 
-# -- H12 -----------------------------------------------------------------------
+# app tenant vs platform routing tenant
 
 
 def test_app_tenant_is_not_stamped_as_platform_tenant():
     ctx = infer_governance_context(({"tenant_id": "customer-acme", "user_id": "u1"},), {})
-    # The routing key must be absent so the server stamps it from the key.
+    # routing key must be absent so the server stamps it from the key
     assert "tenant_id" not in ctx
-    # The app's tenant survives under a non-colliding key.
+    # app's tenant survives under a non-colliding key
     assert ctx["subject_tenant"] == "customer-acme"
     assert ctx["user_id"] == "u1"
 
@@ -41,7 +33,7 @@ def test_alternate_app_tenant_field_names_map_to_subject_tenant():
         assert "tenant_id" not in ctx
 
 
-# -- H13 -----------------------------------------------------------------------
+# spool durability
 
 
 def _spooling_transport(tmp_path, endpoint="http://127.0.0.1:9"):
@@ -85,12 +77,12 @@ def test_spool_drains_on_next_flush(tmp_path):
     server = http.server.HTTPServer(("127.0.0.1", 0), _RecordingHandler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
-        # First, spool against a dead endpoint.
+        # spool against a dead endpoint
         transport = _spooling_transport(tmp_path)
         transport.send_batch([{"type": "model.call", "trace_id": "spooled"}])
         assert transport.stats.spooled == 1
 
-        # Now point a working transport (same spool dir) and flush.
+        # now point a working transport (same spool dir) and flush
         port = server.server_address[1]
         transport.config = NorinthConfig(
             api_key="test",
@@ -137,8 +129,8 @@ def test_permanent_4xx_is_dropped_not_spooled(tmp_path):
     finally:
         server.shutdown()
 
-    # A 400 will never succeed on retry, so it is dropped without retrying or
-    # filling the spool with poison.
+    # a 400 will never succeed on retry, so it is dropped without retrying or
+    # filling the spool with poison
     assert transport.stats.dropped == 1
     assert transport.stats.spooled == 0
     assert transport.stats.retried == 0

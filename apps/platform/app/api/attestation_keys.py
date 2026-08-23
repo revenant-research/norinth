@@ -1,12 +1,4 @@
-"""Org-plane management of evidence attestation keys (roadmap #20).
-
-An organization admin registers the Ed25519 *public* key its CI pipeline uses
-to sign eval results. From the first active key onward, deployment gates in
-that organization only count attested passing evals. Revocation is immediate:
-evidence signed by a revoked key is rejected at ingestion, and already-stored
-evidence keeps its ``attested`` flag as a historical fact (the audit log shows
-when the key was revoked).
-"""
+"""org management of eval attestation public keys"""
 
 from __future__ import annotations
 

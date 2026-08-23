@@ -1,4 +1,4 @@
-"""Tests for SCIM 2.0 provisioning — the sequence Okta / Entra ID actually run."""
+"""scim 2.0 provisioning lifecycle"""
 
 from __future__ import annotations
 
@@ -61,12 +61,12 @@ def test_service_provider_config(super_admin_client):
 def test_provisioning_lifecycle(super_admin_client):
     org, token = _org_with_scim(super_admin_client)
     with _scim(token) as scim:
-        # 1. Reconcile: IdP checks whether the user exists (userName eq filter).
+        # reconcile: idp checks whether the user exists (userName eq filter)
         listing = scim.get('/scim/v2/Users?filter=userName eq "jane@acme.test"')
         assert listing.status_code == 200
         assert listing.json()["totalResults"] == 0
 
-        # 2. Create.
+        # create
         created = scim.post(
             "/scim/v2/Users",
             json={
@@ -86,19 +86,19 @@ def test_provisioning_lifecycle(super_admin_client):
         assert body["externalId"] == "okta-00u123"
         assert body["active"] is True
 
-        # Duplicate create is a 409 uniqueness conflict.
+        # duplicate create is a 409 uniqueness conflict
         dup = scim.post("/scim/v2/Users", json={"userName": "jane@acme.test"})
         assert dup.status_code == 409
         assert dup.json()["scimType"] == "uniqueness"
 
-        # 3. Reconcile again finds her.
+        # reconcile again finds her
         listing = scim.get('/scim/v2/Users?filter=userName eq "jane@acme.test"')
         assert listing.json()["totalResults"] == 1
 
-        # 4. GET by id.
+        # get by id
         assert scim.get("/scim/v2/Users/jane@acme.test").status_code == 200
 
-        # 5. PATCH deactivate (Entra-style: path-less value object).
+        # patch deactivate (entra-style: path-less value object)
         patched = scim.patch(
             "/scim/v2/Users/jane@acme.test",
             json={
@@ -109,14 +109,14 @@ def test_provisioning_lifecycle(super_admin_client):
         assert patched.status_code == 200, patched.text
         assert patched.json()["active"] is False
 
-        # 6. PATCH reactivate (Okta-style: explicit path).
+        # patch reactivate (okta-style: explicit path)
         patched = scim.patch(
             "/scim/v2/Users/jane@acme.test",
             json={"Operations": [{"op": "replace", "path": "active", "value": True}]},
         )
         assert patched.json()["active"] is True
 
-        # 7. PUT replace display name.
+        # put replace display name
         replaced = scim.put(
             "/scim/v2/Users/jane@acme.test",
             json={"userName": "jane@acme.test", "displayName": "Jane D.", "active": True},
@@ -124,16 +124,16 @@ def test_provisioning_lifecycle(super_admin_client):
         assert replaced.status_code == 200
         assert replaced.json()["displayName"] == "Jane D."
 
-        # 8. DELETE deprovisions (deactivates, keeps the record for the audit trail).
+        # delete deprovisions (deactivates, keeps the record for the audit trail)
         assert scim.delete("/scim/v2/Users/jane@acme.test").status_code == 204
         assert scim.get("/scim/v2/Users/jane@acme.test").json()["active"] is False
 
-    # Provisioned user got the tenant's default (non-admin) role and is tenant-bound.
+    # provisioned user got the tenant's default (non-admin) role and is tenant-bound
     users = org.get("/api/org/users").json()["users"]
     jane = next(u for u in users if u["user_ref"] == "jane@acme.test")
     assert jane["tenant_id"] == "acme"
-    # Least-privilege default: read-only viewer, never a decision or admin role
-    # merely for existing in the IdP directory (audit finding M100).
+    # least-privilege default: read-only viewer, never a decision or admin role
+    # merely for existing in the idp directory
     assert "governance_viewer" in jane["roles"]
     assert "governance_reviewer" not in jane["roles"]
     assert "org_admin" not in jane["roles"]
@@ -142,7 +142,7 @@ def test_provisioning_lifecycle(super_admin_client):
 
 def test_deactivation_revokes_live_sessions(super_admin_client):
     org, token = _org_with_scim(super_admin_client)
-    # Create a normal password user, log them in, then deprovision via SCIM.
+    # create a normal password user, log them in, then deprovision via scim
     org.post("/api/org/users", json={"email": "bob@acme.test", "display_name": "Bob", "password": "bob-password-1"})
     from app.main import app
     from fastapi.testclient import TestClient
@@ -157,7 +157,7 @@ def test_deactivation_revokes_live_sessions(super_admin_client):
             json={"Operations": [{"op": "replace", "path": "active", "value": False}]},
         ).status_code == 200
 
-    # Bob's existing session is dead immediately (deprovisioning is effective).
+    # bob's existing session is dead immediately
     assert bob.get("/api/auth/me").status_code in (401, 403)
     bob.close()
     org.close()
@@ -165,7 +165,7 @@ def test_deactivation_revokes_live_sessions(super_admin_client):
 
 def test_scim_is_tenant_isolated(super_admin_client):
     org, token = _org_with_scim(super_admin_client)
-    # A second org's admin user must be invisible and untouchable via acme's token.
+    # a second org's admin user must be invisible and untouchable via acme's token
     super_admin_client.post(
         "/api/admin/organizations",
         json={
@@ -179,7 +179,7 @@ def test_scim_is_tenant_isolated(super_admin_client):
     with _scim(token) as scim:
         assert scim.get("/scim/v2/Users/a@beta.test").status_code == 404
         assert scim.delete("/scim/v2/Users/a@beta.test").status_code == 404
-        # Creating a userName that exists in another tenant is a conflict, not a takeover.
+        # creating a userName that exists in another tenant is a conflict, not a takeover
         assert scim.post("/scim/v2/Users", json={"userName": "a@beta.test"}).status_code == 409
         names = {u["userName"] for u in scim.get("/scim/v2/Users").json()["Resources"]}
         assert "a@beta.test" not in names

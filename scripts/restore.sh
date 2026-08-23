@@ -7,8 +7,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 DUMP="$1"
 
-# Validate the dump BEFORE dropping anything: a missing, empty, or truncated
-# archive must never cost the current database (audit finding H16).
+# validate the dump before dropping anything: a missing, empty, or truncated
+# archive must never cost the current database
 [ -f "$DUMP" ] || { echo "error: backup file not found: $DUMP" >&2; exit 1; }
 [ -s "$DUMP" ] || { echo "error: backup file is empty: $DUMP" >&2; exit 1; }
 gunzip -t "$DUMP" || { echo "error: backup file is not a valid gzip archive: $DUMP" >&2; exit 1; }

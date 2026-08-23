@@ -2,11 +2,10 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, field_validator
 
-# Values that carry no reviewer judgement. The dashboard's decision panels build
-# a scaffolded packet ("Evidence reviewed: no ... Reviewer rationale: not
-# provided"); on its own that scaffold satisfied the old min_length=1 guard, so a
-# gate could be approved or an incident closed with nothing actually typed
-# (audit finding H4). We strip the scaffold and require substantive content.
+# tokens that carry no reviewer judgement. the dashboard builds a scaffolded
+# packet ("Evidence reviewed: no ... Reviewer rationale: not provided"); that
+# scaffold alone would pass a min_length=1 guard, so strip it and require
+# substantive content before a gate is approved or an incident closed
 _RATIONALE_PLACEHOLDERS = {
     "",
     "yes",
@@ -23,10 +22,9 @@ _RATIONALE_PLACEHOLDERS = {
 }
 _MIN_RATIONALE_CHARS = 12
 
-# The fixed labels the dashboard's decision panels prepend to each packet line.
-# Only these are stripped off before checking for content, so a colon inside a
-# reviewer's own prose (e.g. "evidence bound to sha256:abc") is never mistaken
-# for a scaffold label.
+# fixed labels the dashboard prepends to each packet line; only these are
+# stripped before the content check, so a colon in a reviewer's own prose (e.g.
+# "evidence bound to sha256:abc") isn't mistaken for a scaffold label
 _SCAFFOLD_LABELS = {
     "evidence reviewed",
     "policy basis checked",
@@ -44,14 +42,13 @@ _SCAFFOLD_LABELS = {
 
 
 def substantive_rationale(value: str) -> str:
-    """Reduce a decision rationale to its reviewer-authored content and require it.
+    """reduce a decision rationale to its reviewer-authored content and require it
 
-    Accepts either a raw free-text rationale or the dashboard's ``Label: value``
-    packet. A line that begins with a known scaffold label is reduced to the text
-    after that label; every other line is kept whole. Placeholder tokens are
-    dropped, and what remains must be at least ``_MIN_RATIONALE_CHARS`` characters
-    — so an untouched packet (all "no"/"not provided") is rejected while ordinary
-    prose that happens to contain a colon is not.
+    accepts a raw rationale or the dashboard's ``Label: value`` packet. a line
+    starting with a known scaffold label is reduced to the text after it, others
+    kept whole. placeholders dropped, and the remainder must be at least
+    ``_MIN_RATIONALE_CHARS`` chars, so an untouched packet is rejected while prose
+    with a colon is not
     """
     substance: list[str] = []
     for line in value.splitlines() or [value]:

@@ -89,8 +89,8 @@ def init_lifecycle() -> None:
 
 
 def refresh_lifecycle_state(scopes: list[dict[str, Any]] | None = None) -> None:
-    """Recompute change fingerprints. ``scopes`` limits the work to the
-    applications an ingest batch touched; None recomputes everything."""
+    """recompute change fingerprints; scopes limits to the apps an ingest
+    touched, None does everything"""
     with connect() as connection:
         applications = _applications_in_scope(connection, scopes)
         for application in applications:

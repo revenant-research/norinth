@@ -1,8 +1,4 @@
-"""Raw event bodies can be encrypted at rest (audit finding M102).
-
-With NORINTH_ENCRYPT_RAW_EVENTS=1 the raw_event column is ciphertext, while the
-extracted governance columns stay queryable; reads decrypt transparently.
-"""
+"""raw event bodies encrypted at rest while governance columns stay queryable"""
 
 from __future__ import annotations
 
@@ -39,16 +35,16 @@ def test_raw_event_is_ciphertext_but_columns_are_queryable(client, monkeypatch):
     secret_text = "PATIENT-SSN-123-45-6789"
     assert insert_events([_event(secret_text)]) == 1
 
-    # On disk the raw_event is ciphertext; the plaintext never appears.
+    # on disk the raw_event is ciphertext; the plaintext never appears
     with connect() as connection:
         row = connection.execute("SELECT raw_event, application_name, provider FROM sdk_events").fetchone()
     assert secret_text not in row["raw_event"]
-    assert row["raw_event"].startswith("enc:v1:")  # AES-GCM ciphertext, not JSON
-    # Extracted governance columns stay in plaintext for querying.
+    assert row["raw_event"].startswith("enc:v1:")  # aes-gcm ciphertext, not json
+    # extracted governance columns stay in plaintext for querying
     assert row["application_name"] == "Claims"
     assert row["provider"] == "openai"
 
-    # Reads decrypt transparently.
+    # reads decrypt transparently
     events = list_events(tenant_id=None, project="p1", environment="prod")
     assert events[0]["attributes"]["prompt"]["content"] == secret_text
 

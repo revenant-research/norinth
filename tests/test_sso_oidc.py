@@ -1,10 +1,4 @@
-"""End-to-end tests for OpenID Connect SSO with JIT provisioning.
-
-A fake identity provider is substituted for the outbound HTTP calls. It serves a
-real JWKS and issues genuinely RS256-signed id_tokens, so the full verification
-path (signature against JWKS, iss/aud/exp, nonce binding, PKCE verifier) is
-exercised exactly as it would be against Okta/Entra/Auth0 — with no network.
-"""
+"""oidc sso with jit provisioning against a fake idp"""
 
 from __future__ import annotations
 
@@ -27,8 +21,8 @@ CLIENT_ID = "norinth-client"
 
 
 class FakeIdP:
-    """Minimal OIDC provider: discovery, JWKS, and a token endpoint that checks
-    the PKCE verifier and mints a signed id_token bound to the login nonce."""
+    """minimal oidc provider: discovery, jwks, and a token endpoint that checks
+    the pkce verifier and mints a signed id_token bound to the login nonce"""
 
     def __init__(self):
         self.private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
@@ -67,7 +61,7 @@ class FakeIdP:
         }
         return jwt.encode(claims, self.private_key, algorithm="RS256", headers={"kid": self.kid})
 
-    # --- HTTP substitutes
+    # http substitutes
     def get_json(self, url: str, timeout: float = 10.0) -> dict:
         if url.endswith("/.well-known/openid-configuration"):
             return self.discovery()
@@ -78,7 +72,7 @@ class FakeIdP:
     def post_form(self, url: str, data: dict, timeout: float = 10.0) -> dict:
         assert url == f"{ISSUER}/token"
         self.token_requests.append(data)
-        # PKCE: the verifier must match the challenge sent at /authorize.
+        # pkce: the verifier must match the challenge sent at /authorize
         import base64
         import hashlib
 
@@ -146,8 +140,8 @@ def test_callback_without_matching_state_cookie_is_rejected(super_admin_client, 
     org = _org_admin(super_admin_client)
     _configure(org)
 
-    # A different browser (fresh cookie jar) that never started the flow cannot
-    # complete it, even with a valid state value — login-CSRF defense (M97).
+    # a different browser (fresh cookie jar) that never started the flow can't
+    # complete it even with a valid state value; login-csrf
     with TestClient(app) as starter, TestClient(app) as victim:
         state = _start_and_capture(starter, idp)
         resp = victim.get(
@@ -175,11 +169,11 @@ def test_full_sso_login_with_jit_provisioning(super_admin_client, idp):
         assert user["email"] == "jane@acme.test"
         assert user["tenant_id"] == "acme"
         assert user["must_change_password"] is False
-        # JIT default is the read-only viewer: authenticate and view, but no
-        # decision rights until an admin elevates the user (audit finding M100).
+        # jit default is the read-only viewer: authenticate and view, but no
+        # decision rights until an admin elevates the user
         assert "review.decide" not in user["permissions"]
 
-        # The PKCE verifier and client secret went to the token endpoint.
+        # pkce verifier and client secret went to the token endpoint
         assert idp.token_requests[0]["client_secret"] == "s3cret"
 
     org.close()
@@ -195,7 +189,7 @@ def test_sso_user_cannot_password_login(super_admin_client, idp):
         state = _start_and_capture(browser, idp)
         browser.get(f"/api/auth/sso/callback?code=good-code&state={state}", follow_redirects=False)
 
-    # The JIT-provisioned account has no password; any password must fail.
+    # jit-provisioned account has no password; any password must fail
     from fastapi.testclient import TestClient as TC
 
     with TC(app) as other:
@@ -213,7 +207,7 @@ def test_state_is_single_use_and_unknown_state_rejected(super_admin_client, idp)
     with TestClient(app) as browser:
         state = _start_and_capture(browser, idp)
         assert browser.get(f"/api/auth/sso/callback?code=good-code&state={state}", follow_redirects=False).status_code == 302
-        # Replaying the same state must fail (consumed).
+        # replaying the same state must fail (consumed)
         assert browser.get(f"/api/auth/sso/callback?code=good-code&state={state}", follow_redirects=False).status_code == 401
         assert browser.get("/api/auth/sso/callback?code=good-code&state=forged", follow_redirects=False).status_code == 401
     org.close()
@@ -260,8 +254,8 @@ def test_jit_never_grants_admin_role(super_admin_client, idp):
     from fastapi.testclient import TestClient
 
     org = _org_admin(super_admin_client)
-    # Even if an admin sets the default JIT role to org_admin, provisioning
-    # downgrades it (separation of duties).
+    # even if an admin sets the default jit role to org_admin, provisioning
+    # downgrades it (separation of duties)
     _configure(org, default_role="org_admin")
     with TestClient(app) as browser:
         state = _start_and_capture(browser, idp)
@@ -277,8 +271,8 @@ def test_admin_can_configure_a_decision_default(super_admin_client, idp):
     from fastapi.testclient import TestClient
 
     org = _org_admin(super_admin_client)
-    # An admin who deliberately configures governance_reviewer as the JIT default
-    # owns that choice; the fix only changes the *unconfigured* fallback (M100).
+    # an admin who deliberately configures governance_reviewer as the jit default
+    # owns that choice; only the unconfigured fallback changed
     _configure(org, default_role="governance_reviewer")
     with TestClient(app) as browser:
         state = _start_and_capture(browser, idp)
@@ -289,7 +283,7 @@ def test_admin_can_configure_a_decision_default(super_admin_client, idp):
 
 
 def test_sso_config_requires_org_admin(super_admin_client, idp):
-    # Super admin has no tenant and cannot configure tenant SSO.
+    # super admin has no tenant and can't configure tenant sso
     resp = super_admin_client.put(
         "/api/org/sso", json={"issuer": ISSUER, "client_id": CLIENT_ID, "client_secret": "x"}
     )

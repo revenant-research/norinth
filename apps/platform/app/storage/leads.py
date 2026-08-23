@@ -1,9 +1,6 @@
-"""Inbound interest from the public landing page.
+"""inbound interest from the public landing page.
 
-"Start a pilot" / "Book a demo" must land somewhere a human will see: leads
-are stored here and shown to platform administrators in the console. This is
-the first piece of the GTM motion that lives in the product rather than in a
-document.
+pilot/demo requests are stored here and shown to platform admins in the console.
 """
 
 from __future__ import annotations
@@ -17,7 +14,7 @@ INTERESTS = {"pilot", "demo", "pricing", "security"}
 
 
 def ensure_leads_table(connection) -> None:
-    """Schema for migration 6 (idempotent)."""
+    """leads schema, idempotent"""
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS leads (

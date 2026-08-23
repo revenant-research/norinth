@@ -13,7 +13,7 @@ norinth.init(
 )
 client = norinth.get_client()
 
-# Seed Support Copilot Data
+# support copilot
 trace_id_1 = f"trc-{uuid.uuid4().hex[:8]}"
 span_id_1 = f"spn-{uuid.uuid4().hex[:8]}"
 client.record(norinth.schemas.NorinthEvent(
@@ -90,7 +90,7 @@ client.incident(
     metadata={"synthetic": True}
 )
 
-# Seed Agentic Governance Assistant
+# agentic governance assistant
 trace_id_2 = f"trc-{uuid.uuid4().hex[:8]}"
 span_id_2 = f"spn-{uuid.uuid4().hex[:8]}"
 client.record(norinth.schemas.NorinthEvent(
@@ -175,9 +175,7 @@ client.deployment(
 client.shutdown()
 time.sleep(1)
 
-# Report what actually happened rather than claiming success unconditionally.
-# Earlier this script stamped a tenant_id the dev ingestion key does not own, so
-# every batch was rejected 403 while it still printed "seeded successfully".
+# report what actually happened instead of assuming success
 stats = client.transport.stats
 if stats.sent > 0 and stats.dropped == 0 and stats.failed_sends == 0:
     print(f"Seeded {stats.sent} synthetic sandbox events successfully.")

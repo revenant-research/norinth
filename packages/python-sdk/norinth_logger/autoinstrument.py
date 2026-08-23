@@ -56,8 +56,7 @@ def instrument_openai(client) -> None:
         )
     except Exception:
         pass
-    # Chat Completions API — the most widely used OpenAI surface (sync + async).
-    # Previously uninstrumented, so this traffic was invisible (audit A1/H-14).
+    # chat completions api (sync + async)
     try:
         from openai.resources.chat.completions import AsyncCompletions, Completions
 
@@ -171,12 +170,7 @@ def patch_provider_method_async(
     prompt_getter: Callable[[tuple[Any, ...], dict[str, Any]], Any],
     client,
 ) -> None:
-    """Async counterpart to patch_provider_method.
-
-    The wrapper awaits the real coroutine and records the model call only after
-    it resolves, so async provider calls are captured correctly instead of being
-    logged as instant success before they run (audit A2/H-14).
-    """
+    """async counterpart; records the call only after the awaited coroutine resolves"""
     if patch_key in _PATCHED:
         return
 
@@ -227,12 +221,10 @@ class NorinthFastAPIMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # Buffer only enough of the request body to infer governance context, then
-        # replay what we read and DELEGATE the rest of receive() to the real
-        # transport. Returning a synthetic request forever (the old behaviour)
-        # starves Starlette's disconnect listener, which polls receive() while a
-        # StreamingResponse is open -> the worker spins at 100% CPU and never
-        # completes (finding C8). Delegating also bounds memory for large uploads.
+        # buffer only enough body to infer governance context, then replay it and
+        # delegate the rest of receive() to the real transport. a forever-synthetic
+        # receive() starves starlette's disconnect listener during a StreamingResponse
+        # (worker spins at 100% cpu); delegating also bounds memory for large uploads
         body = b""
         buffered: list[dict] = []
         while True:
@@ -251,7 +243,7 @@ class NorinthFastAPIMiddleware:
                 return buffered.pop(0)
             return await receive()
 
-        # Capture the response status so 4xx/5xx are not recorded as success.
+        # capture status so 4xx/5xx aren't recorded as success
         response_status = {"code": None}
 
         async def wrapped_send(event):
@@ -277,7 +269,7 @@ class NorinthFastAPIMiddleware:
             duration_ms = (perf_counter() - started) * 1000
             code = response_status["code"]
             if status != "error" and isinstance(code, int) and code >= 500:
-                status = "error"  # a 5xx response is a failed request, not a success
+                status = "error"  # 5xx is a failed request
             self.client.record(
                 NorinthEvent(
                     type="trace.completed",

@@ -22,8 +22,8 @@ make run              # run the platform on :8001
 
 ## Pull request standards
 
-- **Scope one concern per PR.** Reference the finding it addresses from
-  `AUDIT_AND_ROADMAP_2026.md` (e.g. "C-1", "H-9") in the PR description.
+- **Scope one concern per PR.** Describe what it changes and why in the PR
+  description.
 - **Every behavior change ships with a test.** Security fixes add a regression
   test that fails on `main` and passes on the branch.
 - **CI must be green**: ruff lint, `pytest` (SQLite and PostgreSQL), and the frontend `vitest` + `tsc` build are required checks.

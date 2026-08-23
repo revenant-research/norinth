@@ -1,14 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 
-/**
- * Promise-based confirmation dialog.
- *
- * Consequential actions (suspending a tenant, deactivating a user, revoking a
- * role, resetting a password) should never fire on a single unguarded click.
- * A module-level bus lets any handler `await confirm({...})` and branch on the
- * result without threading modal state through the component tree. A single
- * ConfirmHost, mounted once at the app root, renders the active request.
- */
+// promise-based confirmation dialog for destructive actions. a module-level bus
+// lets any handler `await confirm({...})` and branch on the result without
+// threading modal state through the tree. one ConfirmHost at the app root
+// renders the active request
 export type ConfirmTone = "default" | "danger";
 
 export type ConfirmRequest = {
@@ -38,7 +33,7 @@ function settle(ok: boolean): void {
   resolve(ok);
 }
 
-/** Open a confirmation dialog and resolve true only if the user confirms. */
+/** open a dialog and resolve true only if the user confirms */
 export function confirm(request: ConfirmRequest): Promise<boolean> {
   return new Promise((resolve) => {
     pending = { ...request, id: nextId++, resolve };
@@ -62,8 +57,7 @@ export function ConfirmHost() {
 
   useEffect(() => {
     if (!request) return;
-    // Remember what had focus so we can restore it when the dialog closes, and
-    // move focus into the dialog (onto the confirm button) on open.
+    // remember what had focus to restore on close, then focus the confirm button
     invokerRef.current = document.activeElement;
     confirmRef.current?.focus();
 
@@ -72,10 +66,9 @@ export function ConfirmHost() {
         settle(false);
         return;
       }
-      // Do NOT globally bind Enter to confirm: a keyboard user on the Cancel
-      // button pressing Enter would otherwise trigger the destructive action.
-      // Enter/Space on the focused button is handled natively. Trap Tab so focus
-      // cannot leave the modal (audit a11y).
+      // don't globally bind enter to confirm: a keyboard user on cancel pressing
+      // enter would trigger the destructive action. enter/space on the focused
+      // button is handled natively. trap tab so focus can't leave the modal
       if (event.key === "Tab") {
         const focusables = [cancelRef.current, confirmRef.current].filter(Boolean) as HTMLButtonElement[];
         if (focusables.length === 0) return;
@@ -94,7 +87,7 @@ export function ConfirmHost() {
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
-      // Restore focus to the element that opened the dialog.
+      // restore focus to the element that opened the dialog
       if (invokerRef.current instanceof HTMLElement) invokerRef.current.focus();
     };
   }, [request]);

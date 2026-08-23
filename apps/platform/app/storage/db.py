@@ -1,15 +1,9 @@
-"""Database backend abstraction: SQLite (default) or PostgreSQL.
+"""database backend abstraction: sqlite (default) or postgres.
 
-SQLite is disqualifying for an enterprise evidence store (single writer, no
-replication/HA, no network access — audit C-5 / buyer requirements). This module
-lets the same storage code run on PostgreSQL by setting
-``NORINTH_DATABASE_URL=postgresql://user:pass@host:port/dbname``; with it unset
-the platform keeps the zero-config SQLite behaviour for local development.
-
-The storage layer was written against the sqlite3 DB-API with a handful of
-SQLite idioms. Rather than rewrite ~30 tables of SQL, this layer provides a
-connection/cursor wrapper with the interface the code already uses and, for
-PostgreSQL, translates those idioms at execution time:
+set NORINTH_DATABASE_URL=postgresql://... to run on postgres; unset keeps
+zero-config sqlite for local dev. the storage layer is written against the
+sqlite3 DB-API; on postgres this layer wraps the connection/cursor and
+translates sqlite idioms at execution time:
 
     ?               -> %s            (positional placeholders)
     :name           -> %(name)s      (named placeholders)
@@ -20,7 +14,7 @@ PostgreSQL, translates those idioms at execution time:
     PRAGMA ...      -> no-op
     BEGIN IMMEDIATE -> BEGIN
 
-Rows are dict-like on both backends (``row["col"]``, ``dict(row)``).
+rows are dict-like on both backends (row["col"], dict(row)).
 """
 
 from __future__ import annotations
@@ -44,9 +38,8 @@ def is_postgres() -> bool:
         return False
     if url.lower().startswith(("postgres://", "postgresql://")):
         return True
-    # The variable is set but is not a recognizable PostgreSQL URL. Silently
-    # falling back to SQLite here means each replica quietly runs its own
-    # ephemeral database (finding H19); fail loudly instead.
+    # set but not a recognizable postgres url; falling back to sqlite would let
+    # each replica quietly run its own ephemeral database, so fail loudly
     raise RuntimeError(
         f"NORINTH_DATABASE_URL is set but is not a postgresql:// URL: {url!r}. "
         "Fix it or unset it to use local SQLite."
@@ -57,8 +50,8 @@ def database_path() -> Path:
     return Path(os.getenv("NORINTH_PLATFORM_DB", str(DEFAULT_DB_PATH)))
 
 
-# Exceptions the storage layer catches for idempotent schema migrations
-# (e.g. ALTER TABLE ADD COLUMN on a column that already exists).
+# exceptions caught for idempotent schema migrations (e.g. ALTER TABLE ADD
+# COLUMN on an existing column)
 try:  # pragma: no cover - import guard
     import psycopg  # type: ignore
 
@@ -72,8 +65,8 @@ except Exception:  # pragma: no cover
 
 # --- PostgreSQL SQL translation -------------------------------------------------
 
-# Primary keys for tables written with INSERT OR REPLACE (needed to express the
-# same upsert as ON CONFLICT ... DO UPDATE in PostgreSQL).
+# primary keys for INSERT OR REPLACE tables, to express the upsert as
+# ON CONFLICT ... DO UPDATE on postgres
 _REPLACE_PRIMARY_KEYS = {
     "control_assessments": "assessment_id",
     "governance_decisions": "decision_id",
@@ -102,7 +95,7 @@ def _translate_replace(sql: str) -> str:
 
 
 def translate_sql(sql: str, params: Any = None) -> str:
-    """Translate SQLite-flavoured SQL to PostgreSQL."""
+    """translate sqlite-flavoured sql to postgres"""
     stripped = sql.lstrip()
     upper = stripped.upper()
     if upper.startswith("PRAGMA"):
@@ -123,9 +116,8 @@ def translate_sql(sql: str, params: Any = None) -> str:
         out = _NAMED_PARAM.sub(r"%(\1)s", out)
     else:
         out = out.replace("?", "%s")
-    # PostgreSQL cannot infer the type of a bare parameter tested with IS NULL
-    # ("could not determine data type of parameter"), a pattern the storage layer
-    # uses for optional tenant scoping. Give such parameters an explicit type.
+    # postgres can't infer the type of a bare parameter tested with IS NULL,
+    # which optional tenant scoping uses; give such params an explicit type
     out = re.sub(r"(%\([a-zA-Z_]\w*\)s|%s)(\s+IS\s+(?:NOT\s+)?NULL)", r"\1::text\2", out, flags=re.IGNORECASE)
     return out
 
@@ -152,14 +144,11 @@ class _Cursor:
 
 
 class PostgresConnection:
-    """Wrapper giving a psycopg connection the sqlite3-style interface the
-    storage layer uses, with SQL translation.
+    """psycopg connection with the sqlite3-style interface and sql translation.
 
-    The underlying connection runs in autocommit mode and transactions are
-    driven explicitly: ``with connect() as c:`` issues BEGIN on entry and
-    COMMIT/ROLLBACK on exit (mirroring sqlite3's context manager), and code that
-    runs ``connection.execute("BEGIN IMMEDIATE")`` ... ``COMMIT`` itself works
-    unchanged because those statements pass straight through.
+    the raw connection is autocommit; transactions are explicit. `with connect()
+    as c:` issues BEGIN on entry and COMMIT/ROLLBACK on exit, and code that runs
+    BEGIN IMMEDIATE ... COMMIT itself works since those pass straight through.
     """
 
     def __init__(self, raw):
@@ -181,11 +170,10 @@ class PostgresConnection:
         if is_txn_control or not self._in_transaction():
             cursor.execute(translated, params if params else None)
             return _Cursor(cursor)
-        # SQLite has statement-level atomicity: a failed statement does not abort
-        # the enclosing transaction, and the storage layer relies on that for its
-        # idempotent try/except schema migrations (ALTER TABLE ADD COLUMN on an
-        # existing column). PostgreSQL aborts the whole transaction on any error,
-        # so wrap each statement in a savepoint and roll back to it on failure.
+        # sqlite has statement-level atomicity: a failed statement doesn't abort
+        # the transaction, which the idempotent try/except migrations rely on.
+        # postgres aborts the whole transaction on any error, so wrap each
+        # statement in a savepoint and roll back to it on failure.
         self._raw.execute("SAVEPOINT norinth_stmt")
         try:
             cursor.execute(translated, params if params else None)
@@ -193,7 +181,7 @@ class PostgresConnection:
             self._raw.execute("ROLLBACK TO SAVEPOINT norinth_stmt")
             raise
         finally:
-            # Release only if the transaction is still healthy.
+            # release only if the transaction is still healthy
             from psycopg.pq import TransactionStatus
 
             if self._raw.info.transaction_status == TransactionStatus.INTRANS:
@@ -236,7 +224,7 @@ class PostgresConnection:
 
 
 class SqliteConnection:
-    """Thin wrapper so the two backends expose the same object shape."""
+    """thin wrapper so both backends expose the same object shape"""
 
     def __init__(self, raw: sqlite3.Connection):
         self._raw = raw
@@ -268,8 +256,8 @@ class SqliteConnection:
         return self
 
     def __exit__(self, exc_type, exc, tb):
-        # Mirror sqlite3's context manager (commit/rollback), then close so we
-        # do not leak file handles under load.
+        # commit/rollback like sqlite3's context manager, then close so we don't
+        # leak file handles under load
         try:
             if exc_type is None:
                 self._raw.commit()
@@ -280,25 +268,24 @@ class SqliteConnection:
         return False
 
 
-# Fixed 64-bit key for the audit-chain advisory lock (arbitrary constant).
+# fixed 64-bit key for the audit-chain advisory lock (arbitrary constant)
 _AUDIT_LOCK_KEY = 4242000042420001
 
 
 def serialize_writer(connection) -> None:
-    """Serialize concurrent writers of an append-only chain across replicas.
+    """serialize concurrent writers of an append-only chain across replicas.
 
-    On PostgreSQL, SQLite's ``BEGIN IMMEDIATE`` write lock does not survive the
-    translation to ``BEGIN`` (no lock under READ COMMITTED), so two workers can
-    read the same tail and fork the chain. A transaction-scoped advisory lock
-    restores single-writer ordering; it is released automatically at COMMIT.
-    On SQLite the caller's ``BEGIN IMMEDIATE`` already holds the write lock.
+    on postgres, BEGIN IMMEDIATE's write lock is lost in translation to BEGIN,
+    so two workers could read the same tail and fork the chain; a txn-scoped
+    advisory lock restores single-writer ordering, released at COMMIT. on sqlite
+    the caller's BEGIN IMMEDIATE already holds the write lock.
     """
     if is_postgres():
         connection.execute(f"SELECT pg_advisory_xact_lock({_AUDIT_LOCK_KEY})")
 
 
 def connect():
-    """Open a connection to the configured backend."""
+    """open a connection to the configured backend"""
     if is_postgres():
         if psycopg is None:  # pragma: no cover
             raise RuntimeError("NORINTH_DATABASE_URL is set to PostgreSQL but psycopg is not installed")

@@ -22,9 +22,8 @@ class Event(BaseModel):
     attributes: dict[str, Any] = Field(default_factory=dict)
 
 
-# A single ingestion request is capped so a malformed or hostile client cannot
-# pin the recompute path with an unbounded batch (audit finding H10). Clients
-# that need to send more split across requests.
+# cap one ingestion request so a hostile client can't pin the recompute path
+# with an unbounded batch; larger senders split across requests
 MAX_BATCH_EVENTS = 5000
 
 

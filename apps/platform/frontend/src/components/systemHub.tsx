@@ -11,11 +11,8 @@ const STAGE_COPY: Record<string, string> = {
   retired: "Retired. Telemetry from it is a finding.",
 };
 
-/**
- * The AI System hub header: one place that answers "what is this, what stage
- * is it in, who is accountable, and what is blocking it". Sits above the
- * existing detail sections.
- */
+// ai system hub header: what it is, what stage, who's accountable, what's
+// blocking it. sits above the detail sections
 export function SystemHubHeader({ detail }: { detail: Row }) {
   const app: Row = detail.application || {};
   const owners: Row[] = (detail.owners || []).filter((o: Row) => o.status === "assigned");

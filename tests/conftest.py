@@ -1,11 +1,4 @@
-"""Shared pytest fixtures for the Norinth platform.
-
-Every test runs against its own throwaway SQLite database so tests are
-isolated and idempotent (unlike scripts/verify_live.py, which requires a
-fresh DB per run). The storage layer resolves ``NORINTH_PLATFORM_DB`` at
-call time, so pointing the env var at a fresh file and re-running the
-idempotent ``init_*`` functions gives each test a clean database.
-"""
+"""shared pytest fixtures and per-test db setup"""
 
 from __future__ import annotations
 
@@ -18,26 +11,22 @@ import pytest
 
 os.environ.setdefault("NORINTH_NOTIFICATIONS_WORKER", "0")  # deliver synchronously in tests
 os.environ.setdefault("NORINTH_ALLOW_PRIVATE_EGRESS", "1")  # test webhook receivers run on 127.0.0.1
-# Secret storage fails closed without a key (M101); give the suite a real key so
-# SSO/webhook secrets are actually encrypted at rest, as in production.
+# secret storage fails closed without a key; give the suite a real key so secrets are encrypted at rest
 os.environ.setdefault("NORINTH_SECRET_KEY", "bm9yaW50aC10ZXN0LW9ubHktbWFzdGVyLWtleS0zMmI")
-# Keep password hashing fast in tests; production uses the 600k default (M101).
+# keep password hashing fast in tests; prod uses the 600k default
 os.environ.setdefault("NORINTH_PBKDF2_ITERATIONS", "20000")
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 PLATFORM_DIR = REPO_ROOT / "apps" / "platform"
 sys.path.insert(0, str(PLATFORM_DIR))
 
-# Backend selection. By default tests run on a throwaway SQLite file. Setting
-# NORINTH_TEST_DATABASE_URL=postgresql://... runs the same suite against
-# PostgreSQL (the schema is dropped and recreated for every test).
+# backend selection; default sqlite file, NORINTH_TEST_DATABASE_URL runs against postgres (schema dropped/recreated per test)
 POSTGRES_TEST_URL = os.getenv("NORINTH_TEST_DATABASE_URL")
 if POSTGRES_TEST_URL:
     os.environ["NORINTH_DATABASE_URL"] = POSTGRES_TEST_URL
 else:
     os.environ.pop("NORINTH_DATABASE_URL", None)
-    # Point at a throwaway DB before importing the app, so its import-time
-    # initialization never touches a real database.
+    # point at a throwaway db before importing the app so import-time init never touches a real db
     _bootstrap_db = pathlib.Path(tempfile.mkdtemp(prefix="norinth-boot-")) / "boot.sqlite3"
     os.environ["NORINTH_PLATFORM_DB"] = str(_bootstrap_db)
 
@@ -64,7 +53,7 @@ def _reset_postgres_schema() -> None:
 
 @pytest.fixture
 def fresh_db(tmp_path, monkeypatch):
-    """Point the platform at a fresh, fully-initialized database."""
+    """point the platform at a fresh initialized db"""
     if POSTGRES_TEST_URL:
         _reset_postgres_schema()
         _reinitialize_database()
@@ -77,7 +66,7 @@ def fresh_db(tmp_path, monkeypatch):
 
 @pytest.fixture
 def client(fresh_db):
-    """A FastAPI TestClient bound to a fresh per-test database."""
+    """fastapi testclient bound to a fresh per-test db"""
     from app.main import app
     from fastapi.testclient import TestClient
 
@@ -90,12 +79,7 @@ ROTATED_ADMIN_PASSWORD = "rotated-admin-pw-123456"
 
 @pytest.fixture
 def super_admin_client(client):
-    """A super-admin client that has completed first-login password rotation.
-
-    The bootstrap admin is created with must_change_password=True, so the real
-    flow is: log in, change the password, then operate. This fixture performs
-    that rotation and returns an operational client.
-    """
+    """super-admin client that has completed first-login password rotation"""
     login = client.post(
         "/api/auth/login",
         json={"email": DEFAULT_ADMIN_EMAIL, "password": DEFAULT_ADMIN_PASSWORD},

@@ -1,13 +1,8 @@
 import { useEffect, useState } from "react";
 
-/**
- * Lightweight toast notifications.
- *
- * A module-level pub/sub bus lets any component raise a transient notification
- * without threading callbacks through the tree. A single ToastHost, mounted once
- * at the app root, subscribes and renders the stack. Toasts auto-dismiss; errors
- * linger a little longer so they are not missed.
- */
+// toast notifications. a module-level pub/sub bus lets any component raise one
+// without threading callbacks through the tree. one ToastHost at the app root
+// subscribes and renders the stack. toasts auto-dismiss; errors linger longer
 export type ToastTone = "success" | "error" | "info";
 
 type Toast = { id: number; tone: ToastTone; message: string };

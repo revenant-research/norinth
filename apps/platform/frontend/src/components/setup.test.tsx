@@ -49,7 +49,7 @@ describe("SetupWizard", () => {
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Instrument one application");
     expect(screen.getByRole("status")).toHaveTextContent("Waiting for the first event");
 
-    // The first event arrives; the poll notices and advances.
+    // first event arrives; the poll notices and advances
     eventsSeen = true;
     await vi.advanceTimersByTimeAsync(3500);
     await waitFor(() => expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("You are set up"));

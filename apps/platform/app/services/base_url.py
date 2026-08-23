@@ -1,12 +1,11 @@
-"""Trusted external base URL for identity flows.
+"""trusted external base url for identity flows
 
-The SAML Audience/Recipient and the OIDC redirect_uri must not be derived from an
-attacker-controlled Host header (audit finding M98). This is validated ONLY where
-those URLs are built — never globally — so health/liveness probes and ordinary
-requests, which legitimately arrive with a localhost or pod-IP Host, are never
-rejected. Set NORINTH_PUBLIC_BASE_URL in production and the Host is ignored
-entirely; otherwise the Host is accepted only when it is in NORINTH_ALLOWED_HOSTS
-(and, with neither configured, anything is accepted for local development).
+the saml audience/recipient and the oidc redirect_uri must not come from an
+attacker-controlled host header. checked only where those urls are built, not
+globally, so health probes and ordinary requests arriving with a localhost or
+pod-ip host are never rejected. set NORINTH_PUBLIC_BASE_URL in production and the
+host is ignored; otherwise the host must be in NORINTH_ALLOWED_HOSTS (with
+neither configured, anything is accepted for local dev)
 """
 
 from __future__ import annotations
@@ -18,7 +17,7 @@ from fastapi import HTTPException, Request
 
 
 def allowed_hosts() -> list[str] | None:
-    """Configured host allowlist, or None when unrestricted (local dev)."""
+    """configured host allowlist, or None when unrestricted (local dev)"""
     hosts: list[str] = []
     raw = os.getenv("NORINTH_ALLOWED_HOSTS")
     if raw:
@@ -32,11 +31,11 @@ def allowed_hosts() -> list[str] | None:
 
 
 def external_base_url(request: Request) -> str:
-    """Return the trusted external base URL (scheme://host, no trailing slash).
+    """trusted external base url (scheme://host, no trailing slash)
 
-    Prefers NORINTH_PUBLIC_BASE_URL. Otherwise falls back to the request base URL,
-    but only after checking the Host against the allowlist so an identity flow
-    cannot be pointed at an attacker's domain.
+    prefers NORINTH_PUBLIC_BASE_URL, else the request base url but only after
+    checking the host against the allowlist so an identity flow can't be pointed
+    at an attacker's domain
     """
     public = os.getenv("NORINTH_PUBLIC_BASE_URL")
     if public:
@@ -44,7 +43,7 @@ def external_base_url(request: Request) -> str:
     allowed = allowed_hosts()
     if allowed is not None:
         host = (request.headers.get("host") or "").split(",")[0].strip()
-        # Match host with or without an explicit port.
+        # match with or without an explicit port
         hostname = host.rsplit(":", 1)[0] if ":" in host else host
         if host not in allowed and hostname not in allowed:
             raise HTTPException(status_code=400, detail="Request Host is not in NORINTH_ALLOWED_HOSTS")

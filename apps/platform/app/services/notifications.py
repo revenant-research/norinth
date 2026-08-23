@@ -1,18 +1,17 @@
-"""Notification service: compose events, resolve recipients, deliver.
+"""notification service: compose events, resolve recipients, deliver
 
-``emit`` is called from request handlers and storage routines (with the
-caller's connection) and only writes outbox rows. ``deliver_pending`` is run by
-the background worker (``start_worker``) and by tests; it sends email over
-SMTP and POSTs signed webhooks.
+``emit`` is called from request handlers and storage routines with the caller's
+connection and only writes outbox rows. ``deliver_pending`` runs in the
+background worker (``start_worker``) and in tests; it sends email over smtp and
+posts signed webhooks.
 
-Configuration (environment):
+env config:
   NORINTH_SMTP_HOST, NORINTH_SMTP_PORT (587), NORINTH_SMTP_USER,
   NORINTH_SMTP_PASSWORD, NORINTH_SMTP_FROM, NORINTH_SMTP_STARTTLS (1)
-  NORINTH_PUBLIC_BASE_URL -- used to build links in emails
+  NORINTH_PUBLIC_BASE_URL -- builds links in emails
   NORINTH_NOTIFICATIONS_WORKER=0 disables the worker thread (tests).
-When SMTP is not configured, email rows are recorded with status
-``skipped_no_smtp`` so nothing disappears silently and the administrator can
-see what would have been sent.
+without smtp configured, email rows are recorded with status
+``skipped_no_smtp`` so an admin can see what would have been sent
 """
 
 from __future__ import annotations
@@ -78,7 +77,7 @@ def emit(
     to_roles: list[str] | None = None,
     link: str | None = None,
 ) -> int:
-    """Write outbox rows for an event. Returns the number of rows written."""
+    """write outbox rows for an event, returns rows written"""
     recipients: set[str] = set()
     for user_ref in to_users or []:
         email = _user_email(connection, user_ref)
@@ -129,11 +128,9 @@ def _send_email(to: str, subject: str, payload: dict[str, Any]) -> None:
     msg.set_content(text)
     with smtplib.SMTP(host, port, timeout=20) as smtp:
         if starttls:
-            # starttls() with no context uses ssl._create_stdlib_context(), which
-            # sets CERT_NONE and check_hostname=False — the STARTTLS channel is
-            # unauthenticated and MITM-able (audit finding M109). Verify by
-            # default; NORINTH_SMTP_INSECURE=1 opts out for a self-signed internal
-            # relay.
+            # starttls with no context skips cert verification (mitm-able); pass a
+            # verifying context. NORINTH_SMTP_INSECURE=1 opts out for a self-signed
+            # internal relay
             if os.getenv("NORINTH_SMTP_INSECURE", "0").lower() in {"1", "true", "yes"}:
                 context = ssl._create_unverified_context()
             else:
@@ -155,10 +152,9 @@ def _post_webhook(hook: dict[str, Any], payload: dict[str, Any]) -> None:
     body_obj = _slack_payload(payload) if hook.get("format") == "slack" else payload
     body = json.dumps(body_obj, sort_keys=True).encode("utf-8")
     secret = store.webhook_secret(hook)
-    # Sign timestamp + body (Stripe-style) so a captured request cannot be
-    # replayed: the receiver rejects an old X-Norinth-Timestamp and recomputes
-    # HMAC(secret, "<timestamp>." + body). A unique per-delivery id lets the
-    # receiver dedupe even identical payloads (audit finding M106).
+    # sign timestamp + body (stripe-style) so a captured request can't be
+    # replayed: receiver rejects an old X-Norinth-Timestamp and recomputes
+    # HMAC(secret, "<timestamp>." + body). the per-delivery id lets it dedupe
     timestamp = str(int(datetime.now(UTC).timestamp()))
     signed = f"{timestamp}.".encode() + body
     signature = hmac.new(secret.encode("utf-8"), signed, hashlib.sha256).hexdigest()
@@ -231,7 +227,7 @@ _worker_started = False
 
 
 def start_worker(interval_seconds: float = 5.0) -> None:
-    """Background delivery loop. Idempotent; disabled with NORINTH_NOTIFICATIONS_WORKER=0."""
+    """background delivery loop, idempotent; disabled with NORINTH_NOTIFICATIONS_WORKER=0"""
     global _worker_started
     if _worker_started or os.getenv("NORINTH_NOTIFICATIONS_WORKER", "1").lower() in {"0", "false", "no"}:
         return

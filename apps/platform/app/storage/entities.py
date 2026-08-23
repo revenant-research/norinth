@@ -8,12 +8,8 @@ from .raw_events import connect
 
 
 def as_object(value: Any) -> dict[str, Any]:
-    """Return value if it is a dict, else {}. Event attributes are typed
-    dict[str, Any] on the wire, so a client can send a string where an object
-    is expected (e.g. ``"prompt": "text"``); the consumers must not crash on
-    it. Ingestion validation rejects such events, but a row stored before that
-    check existed must also be survivable.
-    """
+    """value if it's a dict, else {}; a client can send a string where an object
+    is expected and consumers must not crash on it"""
     return value if isinstance(value, dict) else {}
 
 
@@ -184,14 +180,11 @@ def init_entities() -> None:
 
 
 def process_events(events: list[dict[str, Any]]) -> None:
-    # Entity upserts are read-modify-write on JSON set columns (fetch_one +
-    # merge_sets + ON CONFLICT). Under concurrent ingest, two batches could each
-    # read the old set and the second write would clobber the first, dropping a
-    # provider/model from the inventory (audit H-11). Run the whole batch inside
-    # an IMMEDIATE transaction so a second concurrent ingest waits for the write
-    # lock (up to busy_timeout) and then reads the committed state — making the
-    # merge safe. SQLite is single-writer regardless, so this adds no throughput
-    # cost beyond what the engine already imposes.
+    # entity upserts are read-modify-write on json set columns; under concurrent
+    # ingest two batches could each read the old set and the second write clobber
+    # the first, dropping a provider/model. run the batch in one IMMEDIATE
+    # transaction so a concurrent ingest waits for the write lock, then reads the
+    # committed state, making the merge safe.
     connection = connect()
     connection.isolation_level = None
     try:
@@ -660,10 +653,9 @@ STAGE_ORDER = ["retired", "rejected", "approved", "recertified", "in_review", "d
 
 
 def _lifecycle_by_application(tenant_id: str | None, project: str | None, environment: str | None) -> dict[str, dict[str, Any]]:
-    """Governance stage per application, derived from its intake record(s):
-    none -> discovered (seen in telemetry, never registered); submitted ->
-    in_review; approved/recertified/rejected/retired as decided. Also the
-    highest risk tier declared for it."""
+    """governance stage per application from its intake records: none ->
+    discovered, submitted -> in_review, else the decided status; also its
+    highest declared risk tier"""
     rows = scoped_rows("ai_use_cases", tenant_id=tenant_id, project=project, environment=environment, order_by="updated_at")
     out: dict[str, dict[str, Any]] = {}
     tier_rank = {"low": 0, "medium": 1, "high": 2, "critical": 3}
@@ -679,7 +671,7 @@ def _lifecycle_by_application(tenant_id: str | None, project: str | None, enviro
             out[name] = {"stage": stage, "risk_tier": tier, "intake_ids": [row["intake_id"]]}
             continue
         current["intake_ids"].append(row["intake_id"])
-        # An in-review or approved record outranks retired/rejected for the headline stage.
+        # in-review or approved outranks retired/rejected for the headline stage
         if STAGE_ORDER.index(stage) > STAGE_ORDER.index(current["stage"]):
             current["stage"] = stage
         if tier_rank.get(str(tier), -1) > tier_rank.get(str(current["risk_tier"]), -1):
@@ -759,9 +751,8 @@ def list_controls(*, tenant_id: str | None = None, project: str | None = None, e
 
 
 def tenant_application_stats() -> dict[str, dict[str, Any]]:
-    """Per-tenant application count and most recent activity, for the platform
-    tenant overview. This is operational metadata (counts and timestamps), not
-    governance content."""
+    """per-tenant application count and most recent activity, for the tenant
+    overview"""
     with connect() as connection:
         rows = connection.execute(
             """

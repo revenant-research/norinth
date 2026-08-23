@@ -10,11 +10,8 @@ import {
   Text,
 } from "../design";
 
-/**
- * Shared view primitives. These are thin adapters over the design system so
- * that every existing view (which imports from here) renders with the Revenant
- * identity; new views should import from "../design" directly.
- */
+// shared view primitives: thin adapters over the design system. existing views
+// import from here; new views should import from "../design" directly
 
 export function Badge({ value }: { value: ReactNode }) {
   return <DsBadge value={value} />;
@@ -28,7 +25,7 @@ export function EmptyState({ children }: { children: ReactNode }) {
   return <DsEmptyState>{children}</DsEmptyState>;
 }
 
-/** Metric tile: delegates to the design system Stat inside a definition list. */
+/** metric tile: design-system Stat inside a definition list */
 export function MetricCard({ label, value, note }: { label: string; value: ReactNode; note?: string }) {
   return (
     <dl className="metric-card">
@@ -51,12 +48,10 @@ export function Section({ title, description, children }: { title: string; descr
 
 export const RECORD_LIST_PAGE_SIZE = 25;
 
-/**
- * Renders a bounded window of records with a "Show more" control instead of
- * mounting every card at once (the audit flagged unbounded lists melting the
- * DOM on large tenants). `total` is the server-side total when the caller only
- * holds the first page, so the footer can say how many records exist overall.
- */
+// renders a bounded window of records with a "show more" control instead of
+// mounting every card at once, so large tenants don't blow up the dom. `total`
+// is the server-side total when the caller holds only the first page, so the
+// footer can say how many records exist overall
 export function RecordList({
   children,
   empty,
@@ -71,7 +66,7 @@ export function RecordList({
   label?: string;
 }) {
   const [visible, setVisible] = useState(pageSize);
-  // A new result set (filter change, refresh) resets the window.
+  // new result set (filter change, refresh) resets the window
   useEffect(() => setVisible(pageSize), [children.length, pageSize]);
   if (!children.length) return <EmptyState>{empty}</EmptyState>;
   const shown = children.slice(0, visible);

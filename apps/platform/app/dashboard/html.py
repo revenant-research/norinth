@@ -1,10 +1,4 @@
-"""Fallback page served when the dashboard bundle has not been built.
-
-The compiled React bundle (``app/dashboard/static``) is a build artifact: it is
-produced by ``npm run build`` in CI and in the Docker image and is not
-committed. If the platform starts without it, say so plainly instead of serving
-a stale or alternative UI.
-"""
+"""fallback page when the dashboard bundle isn't built"""
 
 from __future__ import annotations
 

@@ -153,9 +153,9 @@ case "$MODE" in
   uninstall)
     [ -d "$DIR" ] || die "Nothing to uninstall at $DIR."
     say "This stops Norinth and DELETES its database volume at $DIR."
-    # --yes deliberately does NOT authorize data deletion. Non-interactively,
+    # --yes deliberately does NOT authorize data deletion; non-interactively,
     # deleting the database requires the explicit NORINTH_DELETE_DATA=1, so a
-    # stray --yes in a script can never destroy a database (audit finding H16).
+    # stray --yes in a script can never destroy a database
     confirmed=0
     if [ -t 0 ]; then
       read -r -p "  Type 'delete' to confirm: " a && [ "$a" = delete ] && confirmed=1

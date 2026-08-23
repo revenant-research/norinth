@@ -3,15 +3,14 @@ import type { ReactNode } from "react";
 import styles from "./Showcase.module.css";
 
 /**
- * Visual chrome for the landing page. Backgrounds come from the brand streak
- * images in /assets/brand (dropped in by hand; see README in that folder) and
- * fall back to CSS gradients in the same palettes when a file is missing.
- * Text over chrome is always white on a dark scrim (≥ 7:1), never ink on image.
+ * landing-page chrome. backgrounds come from the streak images in
+ * /assets/brand and fall back to css gradients in the same palettes when a
+ * file is missing. text over chrome is always white on a dark scrim (>= 7:1)
  */
 
 export type Streak = 1 | 2 | 3 | 4;
 
-/** Full-bleed band with an image backdrop and white text. */
+/** full-bleed band with an image backdrop and white text */
 export function ChromeBand({ streak = 2, children, className }: { streak?: Streak; children: ReactNode; className?: string }) {
   return (
     <section className={[styles.band, styles[`streak${streak}`], className].filter(Boolean).join(" ")}>
@@ -21,7 +20,7 @@ export function ChromeBand({ streak = 2, children, className }: { streak?: Strea
   );
 }
 
-/** Thin image strip on top of a paper card, with an optional white label on it. */
+/** thin image strip on a paper card, with an optional white label */
 export function ChromeStrip({ streak = 1, label }: { streak?: Streak; label?: ReactNode }) {
   return (
     <div className={[styles.strip, styles[`streak${streak}`]].join(" ")} aria-hidden={label ? undefined : true}>
@@ -30,7 +29,7 @@ export function ChromeStrip({ streak = 1, label }: { streak?: Streak; label?: Re
   );
 }
 
-/** A product screenshot in a paper frame with an ink rule. */
+/** product screenshot in a paper frame with an ink rule */
 export function Screenshot({ src, alt, caption, priority = false }: { src: string; alt: string; caption?: string; priority?: boolean }) {
   return (
     <figure className={styles.shot}>

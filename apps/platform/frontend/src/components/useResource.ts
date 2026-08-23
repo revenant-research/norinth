@@ -1,21 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-/**
- * Load a resource and expose a stable `reload`.
- *
- * Always calls the LATEST loader: a previous version captured the first loader
- * closure permanently (useCallback with []), so filter changes never took
- * effect. Guards against setState-after-unmount and out-of-order responses.
- */
+// load a resource and expose a stable `reload`. always calls the latest loader
+// so filter changes take effect. guards against setState-after-unmount and
+// out-of-order responses
 export function useResource<T>(loader: () => Promise<T>): { value: T | null; error: string; reload: () => void } {
   const [value, setValue] = useState<T | null>(null);
   const [error, setError] = useState("");
-  // Always call the LATEST loader. Previously `reload` captured the first
-  // loader closure permanently (useCallback with []), so filter changes never
-  // took effect — "Apply filters" was a silent no-op (audit frontend bug).
+  // keep a ref to the latest loader so `reload` always calls the current one
   const loaderRef = useRef(loader);
   loaderRef.current = loader;
-  // Guards against setState-after-unmount and out-of-order responses.
+  // guards against setState-after-unmount and out-of-order responses
   const mountedRef = useRef(true);
   const requestIdRef = useRef(0);
   useEffect(() => {

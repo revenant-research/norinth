@@ -1,20 +1,14 @@
-"""Versioned schema migrations.
+"""versioned schema migrations.
 
-Replaces "run every CREATE/ALTER on every boot and swallow the errors" (audit
-M1) with an ordered, recorded migration history:
+* schema_migrations records every applied version with a timestamp
+* each migration runs once, in its own transaction, in version order
+* migration 1 is the baseline: it calls the storage modules' idempotent init_*
+  functions, so fresh and existing databases converge on the same schema
+* every schema change after that is a new numbered migration below, running
+  identically on sqlite and postgres
 
-* ``schema_migrations`` records every applied version with a timestamp.
-* Each migration runs once, in its own transaction, in version order.
-* Migration 0001 is the baseline: it calls the storage modules' idempotent
-  ``init_*`` functions (CREATE TABLE IF NOT EXISTS ...). Existing databases
-  and fresh ones converge on the same schema, and the version is recorded.
-* Every schema change from here on is a new numbered migration below, so an
-  operator can see exactly what a deployment will change (``norinth-migrate``
-  or ``GET /api/admin/schema``) and the same migration runs identically on
-  SQLite and PostgreSQL.
-
-Keep migrations additive and backward-compatible with the running code
-(expand/contract): add columns/tables in one release, remove in a later one.
+keep migrations additive and backward-compatible (expand/contract): add
+columns/tables in one release, remove in a later one.
 """
 
 from __future__ import annotations
@@ -27,11 +21,9 @@ from typing import Any
 from . import db
 from .raw_events import connect
 
-# Session-scoped advisory lock so only one replica migrates at a time. Migrations
-# run at process start; without this, two replicas booting against an empty
-# PostgreSQL both try to CREATE TABLE and one crashes on a duplicate-object
-# error, CrashLoopBackOff-ing until a later boot finds the migration recorded
-# (audit finding H11). SQLite runs a single process, so the lock is a no-op.
+# session-scoped advisory lock so only one replica migrates at a time; without
+# it, two replicas booting against an empty postgres both CREATE TABLE and one
+# crashes on a duplicate-object error. sqlite is single-process, so it's a no-op.
 _MIGRATION_LOCK_KEY = 4242000042420002
 
 
@@ -62,17 +54,15 @@ class Migration:
 
 
 def _baseline(connection) -> None:
-    """Baseline schema: every storage module's idempotent initializer.
+    """baseline schema: every storage module's idempotent initializer.
 
-    Runs outside the passed connection because the init functions open their
-    own; they are all CREATE IF NOT EXISTS / guarded ALTERs, so this is safe on
-    both fresh and pre-existing databases.
+    runs outside the passed connection since the init functions open their own;
+    all CREATE IF NOT EXISTS / guarded ALTERs, safe on fresh and existing dbs.
 
-    WARNING (audit finding M107): this baseline is recorded once per database.
-    Adding a new column or table by editing an ``init_*`` function will NOT reach
-    databases that already recorded migration 1 — the change would silently apply
-    only to fresh installs. Every schema change AFTER the baseline must be a new
-    ``Migration(...)`` entry appended to MIGRATIONS, never an edit to an init_*.
+    warning: the baseline is recorded once per db, so editing an init_* to add a
+    column or table won't reach dbs that already recorded migration 1 - it would
+    apply only to fresh installs. every schema change after the baseline must be
+    a new Migration(...) appended to MIGRATIONS, never an edit to an init_*.
     """
     from app.storage.agents import init_agents
     from app.storage.audit import init_audit
@@ -113,7 +103,7 @@ def _baseline(connection) -> None:
 
 
 def _0002_event_ingest_indexes(connection) -> None:
-    """Indexes for the agent-posture and audit queries added in 2026-08."""
+    """indexes for the agent-posture and audit queries"""
     connection.execute(
         "CREATE INDEX IF NOT EXISTS idx_observed_events_type_tenant "
         "ON governance_observed_events(entity_type, tenant_id)"
@@ -130,7 +120,7 @@ def _0003_saml(connection) -> None:
 
 
 def _0004_login_throttle(connection) -> None:
-    """Per-IP + per-account login throttling table (replaces login_attempts)."""
+    """per-ip + per-account login throttling table"""
     from app.storage.login_attempts import ensure_login_throttle_table
 
     ensure_login_throttle_table(connection)
@@ -166,11 +156,8 @@ def _0008_outbox_claims(connection) -> None:
 
 
 def _0009_config_table_tenancy(connection) -> None:
-    """Add tenant_id to the config tables (control_library, risk_rules,
-    review_queue_policies, owner_assignment_policies) and rebuild them with a
-    composite primary key. Existing rows become platform defaults (tenant_id
-    ''). A tenant's customizations are stored under its own tenant_id and never
-    touch another tenant's."""
+    """add tenant_id to the config tables and rebuild with a composite primary
+    key; existing rows become platform defaults (tenant_id '')"""
     rebuilds = {
         "control_library": (
             "tenant_id TEXT NOT NULL DEFAULT '', control_id TEXT NOT NULL, name TEXT NOT NULL, "
@@ -208,11 +195,10 @@ def _0009_config_table_tenancy(connection) -> None:
 
 
 def _0010_cross_tenant_keys(connection) -> None:
-    """Make record identity tenant-scoped so one tenant's ingestion key cannot
-    overwrite another's records. governance_deployments, governance_incidents
-    and prompt_templates move from a client-id primary key to a composite
-    (tenant_id, project, environment, id); the sdk_events dedup index gains
-    tenant_id. Existing rows keep their data (tenant '' where it was NULL)."""
+    """make record identity tenant-scoped so one tenant's key can't overwrite
+    another's records: deployments, incidents and prompt_templates move to a
+    composite (tenant_id, project, environment, id) key and the sdk_events dedup
+    index gains tenant_id"""
     rebuilds = {
         "governance_deployments": (
             "deployment_id TEXT NOT NULL, tenant_id TEXT NOT NULL DEFAULT '', project TEXT NOT NULL, "
@@ -254,13 +240,13 @@ def _0010_cross_tenant_keys(connection) -> None:
             f"INSERT INTO {table} (tenant_id, {columns}) SELECT COALESCE(tenant_id, ''), {columns} FROM {table}_old10"
         )
         connection.execute(f"DROP TABLE {table}_old10")
-    # Rebuild the events dedup index to include tenant.
+    # rebuild the events dedup index to include tenant
     connection.execute("DROP INDEX IF EXISTS idx_sdk_events_span")
     connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_sdk_events_span_tenant ON sdk_events(tenant_id, trace_id, span_id)")
 
 
 def _0011_audit_hmac(connection) -> None:
-    """Add the audit-chain HMAC column (keyed by NORINTH_SECRET_KEY)."""
+    """add the audit-chain hmac column (keyed by NORINTH_SECRET_KEY)"""
     try:
         connection.execute("ALTER TABLE audit_logs ADD COLUMN row_hmac TEXT")
     except Exception:  # noqa: BLE001 - column already exists
@@ -311,11 +297,10 @@ def pending_migrations() -> list[Migration]:
 
 
 def run_migrations() -> list[int]:
-    """Apply all pending migrations in order. Returns the versions applied.
+    """apply all pending migrations in order, returning the versions applied.
 
-    The whole run is guarded by a cross-replica advisory lock: a replica that
-    loses the race waits, then re-reads schema_migrations and finds nothing
-    pending, so concurrent boots never fight over CREATE TABLE (H11).
+    guarded by a cross-replica advisory lock: a replica that loses the race
+    waits, then re-reads schema_migrations and finds nothing pending.
     """
     with _migration_lock():
         return _apply_pending()
@@ -323,11 +308,11 @@ def run_migrations() -> list[int]:
 
 def _apply_pending() -> list[int]:
     applied: list[int] = []
-    # Re-check inside the lock: another replica may have applied everything while
-    # we waited for the lock.
+    # re-check inside the lock: another replica may have applied everything while
+    # we waited
     for migration in pending_migrations():
         if migration.version == 1:
-            # The baseline initializers manage their own connections.
+            # the baseline initializers manage their own connections
             migration.apply(None)
             with connect() as connection:
                 connection.execute(

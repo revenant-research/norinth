@@ -1,9 +1,4 @@
-"""Host header is validated only where identity URLs are built (audit M98).
-
-Validation is scoped to the SAML/OIDC base-URL derivation, never global, so the
-health probe and ordinary requests (which arrive with a localhost or pod-IP Host)
-are never rejected.
-"""
+"""host header validated only where identity urls are built, not globally"""
 
 from __future__ import annotations
 
@@ -25,7 +20,7 @@ def test_public_base_url_takes_precedence(monkeypatch):
     from app.services.base_url import external_base_url
 
     monkeypatch.setenv("NORINTH_PUBLIC_BASE_URL", "https://norinth.acme.com")
-    # Even a hostile Host is ignored when a public base URL is configured.
+    # hostile host is ignored when a public base url is configured
     assert external_base_url(_Req("evil.example")) == "https://norinth.acme.com"
 
 
@@ -47,7 +42,7 @@ def test_unconfigured_allows_any_host_for_dev(monkeypatch):
 
     monkeypatch.delenv("NORINTH_PUBLIC_BASE_URL", raising=False)
     monkeypatch.delenv("NORINTH_ALLOWED_HOSTS", raising=False)
-    # No allowlist configured -> dev mode -> any Host is accepted.
+    # no allowlist means dev mode so any host is accepted
     assert external_base_url(_Req("anything.local")) == "http://testserver"
 
 
@@ -64,8 +59,7 @@ def test_allowed_hosts_helper(monkeypatch):
 
 
 def test_health_is_never_host_restricted(client):
-    # Regression: a global TrustedHostMiddleware returned 400 for /health when a
-    # public base URL was set, so the container never became healthy.
+    # /health must not be host-restricted or the container never goes healthy
     resp = client.get("/health", headers={"host": "some-other-host.example"})
     assert resp.status_code == 200
     assert resp.json()["ok"] is True

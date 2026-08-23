@@ -1,8 +1,4 @@
-"""Regression tests for constrained decision/status enums (audit M-2).
-
-Free-form status strings previously let a reviewer or admin write arbitrary
-state, escaping the governance workflow and RBAC status model.
-"""
+"""constrained decision/status enums reject free-form values"""
 
 from __future__ import annotations
 

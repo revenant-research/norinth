@@ -1,6 +1,4 @@
-"""The egress guard blocks SSRF to loopback, private and cloud-metadata
-addresses from admin-configured webhook and OIDC URLs (finding H1).
-"""
+"""egress guard blocks ssrf to loopback, private and cloud-metadata addresses"""
 
 from __future__ import annotations
 
@@ -24,7 +22,7 @@ def _enforce(monkeypatch):
     "http://[::1]:22/x",
     "http://10.0.0.5/internal",
     "http://192.168.1.1/",
-    "http://metadata.google.internal/",  # resolves to link-local in GCP; here to a private/absent addr
+    "http://metadata.google.internal/",  # resolves to link-local in gcp; here to a private/absent addr
     "ftp://example.com/x",
 ])
 def test_blocked_urls(url):
@@ -37,5 +35,5 @@ def test_blocked_urls(url):
 def test_public_url_is_allowed(monkeypatch):
     from app.services.net_guard import validate_external_url
 
-    # A public IP literal is allowed (no DNS needed).
-    validate_external_url("https://93.184.216.34/ok")  # example.com's historical IP range (public)
+    # a public ip literal is allowed (no dns needed)
+    validate_external_url("https://93.184.216.34/ok")  # public ip literal

@@ -1,10 +1,9 @@
-"""Notification outbox, webhooks and invites (roadmap: self-contained operations).
+"""notification outbox, webhooks and invites.
 
-Nothing in a request path talks to SMTP or a webhook URL. Events are written
-to ``notification_outbox`` inside the caller's transaction and a background
-worker delivers them with retries, so a slow mail server can never slow or
-fail governance actions, and nothing is lost if delivery fails: every row keeps
-its status and last error, visible to organization administrators.
+no request path talks to smtp or a webhook url: events are written to
+notification_outbox in the caller's transaction and a background worker delivers
+them with retries, so a slow mail server can't slow governance actions and
+nothing is lost on failure. every row keeps its status and last error.
 """
 
 from __future__ import annotations
@@ -36,7 +35,7 @@ INVITE_TTL_DAYS = 7
 
 
 def ensure_notification_tables(connection) -> None:
-    """Schema for migration 7 (idempotent)."""
+    """outbox, webhooks, invites schema, idempotent"""
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS notification_outbox (
@@ -120,7 +119,7 @@ STALE_CLAIM_MINUTES = 10
 
 
 def ensure_claim_columns(connection) -> None:
-    """Schema for migration 8 (idempotent)."""
+    """delivery claim columns, idempotent"""
     for statement in (
         "ALTER TABLE notification_outbox ADD COLUMN claimed_by TEXT",
         "ALTER TABLE notification_outbox ADD COLUMN claimed_at TEXT",
@@ -132,14 +131,12 @@ def ensure_claim_columns(connection) -> None:
 
 
 def claim_pending(limit: int = 50, *, worker_id: str) -> list[dict[str, Any]]:
-    """Atomically claim up to ``limit`` due rows for this worker.
+    """atomically claim up to limit due rows for this worker.
 
-    Multiple platform replicas each run a delivery worker. Claiming is a single
-    UPDATE that flips status to 'delivering' for rows that are still 'pending',
-    so two replicas can never both deliver the same row: on PostgreSQL the
-    second updater blocks on the row lock and then re-evaluates the WHERE
-    (READ COMMITTED), on SQLite writes are serialized. Rows claimed by a worker
-    that died are returned to 'pending' after STALE_CLAIM_MINUTES.
+    each replica runs a delivery worker; the claim is one update flipping status
+    to 'delivering' for still-'pending' rows, so two replicas can't both deliver
+    a row. rows claimed by a dead worker return to 'pending' after
+    STALE_CLAIM_MINUTES.
     """
     now_dt = datetime.now(UTC)
     now = now_dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -150,10 +147,9 @@ def claim_pending(limit: int = 50, *, worker_id: str) -> list[dict[str, Any]]:
             "WHERE status = 'delivering' AND claimed_at <= ?",
             (stale_before,),
         )
-        # On PostgreSQL, FOR UPDATE SKIP LOCKED makes the claim a true work queue:
-        # a second replica's selector skips rows another replica has already
-        # locked, so two workers can never select the same batch (finding H11).
-        # SQLite serializes writers and does not support the clause.
+        # on postgres, FOR UPDATE SKIP LOCKED makes this a work queue: a selector
+        # skips rows another replica locked, so two workers never select the same
+        # batch. sqlite serializes writers and doesn't support the clause.
         skip_locked = " FOR UPDATE SKIP LOCKED" if is_postgres() else ""
         connection.execute(
             f"""
@@ -208,10 +204,8 @@ def list_outbox(tenant_id: str, limit: int = 100) -> list[dict[str, Any]]:
 
 
 def mask_url(url: str) -> str:
-    """Hide the path of a webhook URL. A Slack incoming-webhook URL carries its
-    auth token in the path, so returning it in the list endpoint or writing it to
-    the audit log leaks a bearer secret (audit finding M106). We keep only the
-    scheme and host."""
+    """hide a webhook url's path; a slack incoming-webhook carries its auth
+    token there, so exposing it leaks a bearer secret. keep scheme and host only."""
     try:
         parsed = urllib.parse.urlsplit(url)
     except ValueError:
@@ -224,7 +218,7 @@ def mask_url(url: str) -> str:
 
 def _public_webhook(row: dict[str, Any]) -> dict[str, Any]:
     out = {k: v for k, v in row.items() if k != "secret"}
-    # Never expose the full URL (its path may be a bearer secret); show host only.
+    # never expose the full url (its path may be a bearer secret), host only
     if out.get("url"):
         out["url"] = mask_url(out["url"])
     out["events"] = json.loads(row["events"])
@@ -232,11 +226,11 @@ def _public_webhook(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def create_webhook(tenant_id: str, *, name: str, url: str, events: list[str], fmt: str, created_by: str | None) -> tuple[str, dict[str, Any]]:
-    """Returns (signing secret shown once, public record)."""
+    """returns (signing secret shown once, public record)"""
     webhook_id = "whk_" + secrets.token_urlsafe(9)
     secret = "whs_" + secrets.token_urlsafe(24)
-    # Always encrypt (fail-closed): storing the signing secret in plaintext when
-    # no key is set is exactly the M101 fail-open. encrypt() raises without a key.
+    # always encrypt, fail-closed: encrypt() raises without a key rather than
+    # storing the signing secret in plaintext
     stored = secret_store.encrypt(secret, associated_data=f"webhook:{tenant_id}:{webhook_id}")
     with connect() as connection:
         connection.execute(

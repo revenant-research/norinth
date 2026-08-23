@@ -7,10 +7,9 @@ from . import db
 from .entities import as_object, decode_json, encode_json, entity_id
 from .raw_events import connect, deserialize_raw_event
 
-# Whole-word agentic terms. Substring matching produced false positives — an app
-# named "stool-sample-tracker" matched "tool" (audit finding M103) — so the
-# heuristic now requires word boundaries and is secondary to real tool.call
-# telemetry.
+# whole-word agentic terms; substring matching false-positives (e.g.
+# "stool-sample-tracker" matching "tool"), and this is secondary to real
+# tool.call telemetry
 _AGENTIC_TERMS = re.compile(r"\b(agent|agents|agentic|tool|tools|orchestrat\w+)\b")
 
 SUPPORTED_RISK_SIGNALS = {
@@ -19,8 +18,8 @@ SUPPORTED_RISK_SIGNALS = {
     "missing_eval",
     "missing_agent_run",
     "operational_errors",
-    # Agentic-governance signals, evaluated by storage/agents.py against the
-    # agent registry rather than by the generic event evaluator.
+    # agentic signals, evaluated by storage/agents.py against the registry, not
+    # by the generic event evaluator
     "unregistered_agent",
     "unauthorized_tool",
     "agent_trifecta",
@@ -160,12 +159,10 @@ def _preserve_decided_status(
     computed_status: str,
     computed_statuses: set[str],
 ) -> str:
-    """Return the status to write, preserving a human decision.
+    """status to write, preserving a human decision.
 
-    If the existing row carries a status that is NOT one of the automatically
-    recomputed values, it was set by a reviewer (accepted, waived,
-    mitigation_required, ...) and must be preserved; otherwise use the freshly
-    computed status. ``table``/``id_column`` are internal constants.
+    if the existing status is not one of the recomputed values it was set by a
+    reviewer (accepted, waived, ...) and is kept; otherwise use the computed one.
     """
     existing = connection.execute(
         f"SELECT status FROM {table} WHERE {id_column} = ?", (row_id,)
@@ -255,7 +252,7 @@ def init_governance_policy() -> None:
         connection.execute("CREATE INDEX IF NOT EXISTS idx_control_assessments_scope ON control_assessments(tenant_id, project, environment)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_risk_findings_scope ON risk_findings(tenant_id, project, environment)")
 
-        # Seed default controls
+        # seed default controls
         for ctrl in DEFAULT_CONTROLS:
             connection.execute(
                 """
@@ -273,7 +270,7 @@ def init_governance_policy() -> None:
                 )
             )
 
-        # Seed default risk rules (including the agentic-governance rules)
+        # seed default risk rules, including the agentic ones
         from .agents import AGENT_RISK_RULES
 
         for rule in [*DEFAULT_RISK_RULES, *AGENT_RISK_RULES]:
@@ -313,9 +310,8 @@ def refresh_governance_assessments(scopes: list[dict[str, Any]] | None = None) -
 
 
 def list_control_library(connection, tenant_id: str | None = None) -> list[dict[str, Any]]:
-    """Platform default controls (tenant_id '') overlaid with this tenant's
-    overrides. A tenant only ever sees defaults plus its own customizations;
-    it can never read or affect another tenant's."""
+    """platform default controls (tenant_id '') overlaid with this tenant's
+    overrides; a tenant never sees another tenant's"""
     tid = tenant_id or ""
     rows = connection.execute(
         "SELECT * FROM control_library WHERE tenant_id IN ('', ?) ORDER BY control_id", (tid,)
@@ -377,8 +373,8 @@ def list_application_events(connection, app_context: dict[str, Any]) -> list[dic
 
 
 def dict_event(raw_event: str) -> dict[str, Any]:
-    # Decrypt transparently when raw-event encryption is enabled (M102); falls
-    # back to {} for anything unparseable, as before.
+    # decrypt transparently when raw-event encryption is on; {} for anything
+    # unparseable
     try:
         return deserialize_raw_event(raw_event)
     except Exception:
@@ -403,10 +399,9 @@ def assess_controls(connection, app_context: dict[str, Any], controls: list[dict
             app_context["application_name"],
             control["control_id"],
         )
-        # Preserve a human decision (e.g. "waived" from an exception) across
-        # re-computation. Only the automated passing/missing statuses are
-        # recomputed; a reviewer's terminal decision sticks until a human changes
-        # it, instead of being silently reset on the next ingest (audit B6).
+        # keep a human decision (e.g. "waived") across recompute; only the
+        # passing/missing statuses are recomputed, a reviewer's decision sticks
+        # until a human changes it
         status = _preserve_decided_status(
             connection, "control_assessments", "assessment_id", assessment_id, computed_status, {"passing", "missing"}
         )
@@ -491,8 +486,8 @@ def assess_risk_rules(connection, app_context: dict[str, Any], rules: list[dict[
         if signal == "missing_eval" and by_type.get("model.call") and not by_type.get("eval.result"):
             upsert_rule_finding(connection, app_context, rule, by_type["model.call"], "Model calls observed without evaluation result evidence")
         if signal == "missing_agent_run" and not by_type.get("agent.run"):
-            # Primary signal: actual tool-call telemetry. Secondary: a whole-word
-            # agentic term in the app name/use-case (never a substring match).
+            # primary signal: real tool-call telemetry; secondary: a whole-word
+            # agentic term in the app name/use-case
             has_tool_calls = bool(by_type.get("tool.call"))
             text_is_agentic = bool(_AGENTIC_TERMS.search(app_text))
             if has_tool_calls or text_is_agentic:
@@ -522,8 +517,8 @@ def upsert_rule_finding(
         app_context["application_name"],
         rule["rule_id"],
     )
-    # A reviewer's decision (accepted, mitigation_required, ...) must survive
-    # re-computation instead of being reset to "open" on the next ingest (B6).
+    # a reviewer's decision (accepted, mitigation_required, ...) survives
+    # recompute instead of being reset to "open"
     status = _preserve_decided_status(
         connection, "risk_findings", "finding_id", finding_id, "open", {"open"}
     )
@@ -555,9 +550,8 @@ def upsert_rule_finding(
 
 
 def upsert_control_definition(control: dict[str, Any], tenant_id: str) -> dict[str, Any]:
-    """Create or update a control override for one tenant. Platform defaults
-    (tenant_id '') are immutable through this path; a tenant's write only ever
-    lands under its own tenant_id."""
+    """create or update a control override for one tenant; platform defaults
+    (tenant_id '') are immutable here, writes land under the tenant's own id"""
     if not tenant_id:
         raise ValueError("a tenant_id is required to customize the control library")
     with connect() as connection:

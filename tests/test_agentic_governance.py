@@ -1,4 +1,4 @@
-"""Tests for the agentic-governance module: agent registry + runtime posture."""
+"""agent registry and runtime posture checks"""
 
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ def _ingest(org, token, events):
 def test_shadow_agent_is_detected_and_registered_agent_is_clean(super_admin_client):
     org, token = _org(super_admin_client)
 
-    # Register one agent with a tool allow-list; a second agent is never registered.
+    # one agent registered with a tool allow-list, the other never registered
     reg = org.post(
         "/api/agent-registry",
         json={
@@ -96,7 +96,7 @@ def test_shadow_agent_is_detected_and_registered_agent_is_clean(super_admin_clie
     assert "unregistered_agent" in by_name["rogue-bot"]["issues"]
     assert posture["summary"]["shadow"] == 1
 
-    # The shadow agent produced a risk finding mapped to OWASP Agentic ASI10.
+    # shadow agent maps to owasp agentic asi10
     risks = org.get("/api/risk-register").json()["risks"]
     shadow = [r for r in risks if r.get("rule_id", "").startswith("RISK-AGT-SHADOW")]
     assert shadow, risks
@@ -150,12 +150,12 @@ def test_lethal_trifecta_and_autonomy_without_oversight(super_admin_client):
 
 def test_registry_requires_config_write_and_is_tenant_scoped(super_admin_client):
     org, _token = _org(super_admin_client)
-    # Super admin (no tenant) cannot register.
+    # super admin has no tenant so cannot register
     resp = super_admin_client.post(
         "/api/agent-registry", json={"agent_name": "x", "owner_ref": "o", "autonomy_level": 1}
     )
     assert resp.status_code == 403
-    # Retire works for the org, 404 for unknown.
+    # retire works for the org, 404 for unknown id
     created = org.post("/api/agent-registry", json={"agent_name": "tmp", "owner_ref": "o", "autonomy_level": 1}).json()["agent"]
     assert org.post(f"/api/agent-registry/{created['agent_id']}/retire").status_code == 200
     assert org.post("/api/agent-registry/nope/retire").status_code == 404

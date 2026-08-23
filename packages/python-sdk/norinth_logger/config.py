@@ -12,9 +12,8 @@ class NorinthConfig:
     project: str = "default"
     environment: str = "development"
     service: str = "unknown-service"
-    # Optional governance identity for the host application. Setting these once
-    # at init lets an existing app surface in the inventory without threading
-    # governance fields through its own request models or business logic.
+    # optional governance identity for the host app; set once at init so an existing
+    # app shows in inventory without threading governance fields through its own code
     application_name: str | None = None
     use_case: str | None = None
     mode: str = "observe"
@@ -24,10 +23,9 @@ class NorinthConfig:
     max_queue_size: int = 1000
     flush_interval_seconds: float = 2.0
     timeout_seconds: float = 2.0
-    # Delivery durability (audit finding H13). A transient failure (timeout,
-    # connection error, 5xx, 408, 429) is retried with exponential backoff; if it
-    # still fails and a spool directory is configured, the batch is written to
-    # disk and retried on the next flush instead of being dropped.
+    # delivery durability: transient failures (timeout, conn error, 5xx, 408, 429)
+    # retried with backoff; if still failing and a spool dir is set, the batch is
+    # written to disk and retried next flush instead of dropped
     max_send_retries: int = 3
     retry_backoff_seconds: float = 0.5
     spool_dir: str | None = None

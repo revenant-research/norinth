@@ -1,4 +1,4 @@
-"""``GET /v1/gates/check`` (CI's ``norinth gate check``) and the CLI around it."""
+"""/v1/gates/check endpoint and the norinth gate check cli around it"""
 
 from __future__ import annotations
 
@@ -59,10 +59,10 @@ def test_gate_check_is_tenant_bound_and_reflects_human_approval(super_admin_clie
     pending = acme.get("/v1/gates/check", params={"deployment_id": "dep-1", "version": "v1"}, headers=h).json()
     assert pending["approved"] is False and pending["status"] == "pending_review"
 
-    # Another organization's key cannot see acme's gate.
+    # another org's key cannot see acme's gate
     assert acme.get("/v1/gates/check", params={"deployment_id": "dep-1", "version": "v1"}, headers={"Authorization": f"Bearer {beta_key}"}).status_code == 404
 
-    # A governance admin (not the org admin) approves; CI then sees approved + who decided.
+    # governance admin (not the org admin) approves; ci then sees approved + who decided
     acme.post("/api/org/users", json={"email": "gov@acme.test", "display_name": "Gov", "password": "gov-password-1"})
     acme.post("/api/org/role-assignments", json={"user_ref": "gov@acme.test", "role": "governance_admin"})
     with TestClient(app) as gov:
@@ -75,7 +75,7 @@ def test_gate_check_is_tenant_bound_and_reflects_human_approval(super_admin_clie
 
 
 def test_cli_gate_check_and_doctor_exit_codes(super_admin_client, monkeypatch):
-    """Drive the CLI against the in-process app by routing its HTTP through TestClient."""
+    """drive the cli against the in-process app by routing its http through testclient"""
     from app.main import app
     from fastapi.testclient import TestClient
     from norinth_logger import cli
@@ -126,13 +126,13 @@ def test_cli_init_writes_env_and_scan_compat(tmp_path, monkeypatch):
     env = (tmp_path / ".env").read_text()
     assert "NORINTH_ENDPOINT=https://n.example\n" in env and "NORINTH_API_KEY=nrk_x" in env
     assert "openai" in out.getvalue().lower()
-    # Re-running keeps other lines and replaces NORINTH_* ones.
+    # re-running keeps other lines and replaces NORINTH_* ones
     (tmp_path / ".env").write_text("OTHER=1\n" + env)
     with redirect_stdout(io.StringIO()):
         cli.main(["init", "--endpoint", "https://n2.example", "--api-key", "nrk_y", "--project", "p", "--environment", "prod", "--service", "s"])
     env2 = (tmp_path / ".env").read_text()
     assert env2.startswith("OTHER=1\n") and env2.count("NORINTH_API_KEY=") == 1 and "nrk_y" in env2
-    # Legacy positional form still runs the scanner.
+    # legacy positional form still runs the scanner
     with redirect_stdout(io.StringIO()):
         assert cli.main([str(tmp_path), "-o", str(tmp_path / "m.json")]) == 0
     assert (tmp_path / "m.json").exists()

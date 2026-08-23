@@ -40,18 +40,15 @@ from app.storage.workflow import (
     list_role_assignments,
 )
 
-# Page size used when a builder must aggregate over every matching event, and
-# the safety ceiling on that scan. The old single 10,000-row window silently
-# truncated aggregates (event/error counts, resource graph, per-model rollups)
-# for any tenant past that size and reported "10,000" forever (audit finding H9).
+# page size when a builder aggregates over every matching event, and the ceiling
+# on that scan
 _SCAN_PAGE = 5000
 MAX_QUERY_LIMIT = 500_000
 
 
 def scoped_events(scope: ScopeFilter, *, event_type: str | None = None, limit: int = MAX_QUERY_LIMIT) -> list[Event]:
-    """All matching events (up to ``limit``), paged so aggregation builders are
-    correct beyond a single query window. Prefer the SQL count/aggregate helpers
-    for pure counts; this exists for builders that must parse event attributes."""
+    """all matching events up to limit, paged; use the sql count/aggregate
+    helpers for pure counts, this is for builders that parse event attributes"""
     events: list[Event] = []
     offset = 0
     while offset < limit:
@@ -657,11 +654,9 @@ def build_control_evidence(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]
     return {"controls": list_control_assessments(**scope.model_dump())}
 
 
-# Prefixes used in control framework_refs, mapped to a display family. A control
-# assessment cites specific requirements (e.g. "NIST AI RMF MAP 1.1",
-# "ISO/IEC 42001 A.5.2", "EU AI Act Art 26", "SOC 2 CC7.2"); we roll these up per
-# framework so a buyer/auditor sees coverage by regulation, not a flat list
-# (audit §6.2, GTM: framework crosswalks are table-stakes).
+# framework_ref prefix -> display family. a control assessment cites specific
+# requirements (e.g. "NIST AI RMF MAP 1.1", "SOC 2 CC7.2"); roll these up per
+# framework so coverage reads by regulation, not as a flat list
 _FRAMEWORK_FAMILIES: list[tuple[str, str]] = [
     ("OWASP Agentic", "OWASP Top 10 for Agentic Applications (2026)"),
     ("NIST AI 600", "NIST GenAI Profile (AI 600-1)"),
@@ -683,25 +678,23 @@ def _framework_family(ref: str) -> str:
 
 
 def build_framework_coverage(scope: ScopeFilter) -> dict[str, Any]:
-    """Roll control assessments up into per-framework coverage.
+    """roll control assessments up into per-framework coverage
 
-    The denominator is every requirement the Norinth control library *maps* for a
-    framework, taken from the control definitions — not only the requirements
-    that happen to have produced an assessment. Otherwise a single passing
-    control reported 100% coverage of its whole framework (audit finding H8). A
-    requirement counts as satisfied when a control that cites it has a passing or
-    waived assessment; a mapped requirement with no satisfying assessment is a
-    gap. ``basis`` states plainly that this is coverage of the controls Norinth
-    maps, not of the full regulation.
+    denominator is every requirement the control library maps for a framework
+    (from the control definitions), not only requirements that produced an
+    assessment, else one passing control would read as 100% of its framework. a
+    requirement is satisfied when a citing control has a passing or waived
+    assessment; ``basis`` states this is coverage of mapped controls, not the
+    full regulation
     """
-    # Denominator: every framework requirement the control library defines.
+    # denominator: every framework requirement the control library defines
     by_family: dict[str, dict[str, bool]] = {}
     for control in list_controls_catalog(scope.tenant_id):
         for ref in control.get("framework_refs", []):
             family = _framework_family(ref)
             by_family.setdefault(family, {}).setdefault(ref, False)
 
-    # Numerator: requirements whose citing control has a satisfying assessment.
+    # numerator: requirements whose citing control has a satisfying assessment
     for assessment in list_control_assessments(**scope.model_dump()):
         satisfied = assessment.get("status") in _SATISFIED_STATUSES
         if not satisfied:
@@ -752,8 +745,8 @@ def build_exceptions(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
 
 
 def build_traces_page(scope: ScopeFilter, *, limit: int, offset: int) -> dict[str, Any]:
-    """Trace list paged and counted in SQL (H9): the whole event table is never
-    loaded just to count events per trace and slice the result in Python."""
+    """trace list paged and counted in sql so the whole event table isn't loaded
+    just to count events per trace and slice in python"""
     traces, total = aggregate_traces(**scope.model_dump(), limit=limit, offset=offset)
     return {
         "traces": traces,
@@ -767,8 +760,7 @@ def build_traces_page(scope: ScopeFilter, *, limit: int, offset: int) -> dict[st
 
 
 def build_summary(scope: ScopeFilter) -> dict[str, Any]:
-    # Event counts are computed in SQL, not by materialising a 10,000-row window
-    # and counting in Python, so they stay correct past that size (H9).
+    # counts computed in sql, not by materialising a window and counting in python
     scope_filters = scope.model_dump()
     by_type = count_events_by_type(**scope_filters)
     total_events = sum(by_type.values())

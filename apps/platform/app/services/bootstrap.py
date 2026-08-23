@@ -12,21 +12,19 @@ DEFAULT_DEV_INGEST_TENANT = "tenant-local"
 
 
 def using_development_defaults() -> bool:
-    """True when the platform is running on documented dev defaults.
+    """true when running on documented dev defaults
 
-    Production deployments set NORINTH_SUPER_ADMIN_PASSWORD; when it is unset we
-    are in local development and may seed developer conveniences (the well-known
-    ``dev`` ingestion key), which are never seeded otherwise.
+    production sets NORINTH_SUPER_ADMIN_PASSWORD; unset means local dev where we
+    may seed dev conveniences like the well-known ``dev`` ingestion key
     """
     return os.getenv("NORINTH_SUPER_ADMIN_PASSWORD") is None
 
 
 def seed_dev_ingestion_key_if_dev() -> None:
-    """Seed the well-known ``dev`` ingestion key in development only.
+    """seed the well-known ``dev`` ingestion key in development only
 
-    The key is bound to a single tenant, so even the dev token cannot forge
-    telemetry for another tenant (audit C-1). Production (env-configured) never
-    gets this key.
+    bound to a single tenant so even the dev token can't forge telemetry for
+    another tenant. production never gets this key
     """
     if not using_development_defaults():
         return
@@ -35,12 +33,11 @@ def seed_dev_ingestion_key_if_dev() -> None:
 
 
 def seed_super_admin() -> None:
-    """Ensure a platform super admin exists on boot.
+    """create a platform super admin on boot if none exists
 
-    The super admin is the root of the provisioning chain (super admin ->
-    organizations -> org admins -> users). Credentials come from the environment
-    and fall back to documented development defaults that force a password
-    change on first login.
+    root of the provisioning chain (super admin -> orgs -> org admins -> users).
+    credentials come from the env, falling back to dev defaults that force a
+    password change on first login
     """
     if count_super_admins() > 0:
         return

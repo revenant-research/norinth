@@ -1,4 +1,4 @@
-"""Webhook signatures resist replay and URLs are not leaked (audit finding M106)."""
+"""webhook signatures resist replay and urls are not leaked"""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ def test_mask_url_hides_the_secret_path():
     masked = mask_url("https://hooks.slack.com/services/T000/B000/XXXXsecretXXXX")
     assert "secret" not in masked
     assert masked == "https://hooks.slack.com/…"
-    # A bare host with no path is returned without the ellipsis.
+    # bare host with no path is returned without the ellipsis
     assert mask_url("https://example.test") == "https://example.test"
     assert mask_url("not a url") == "[redacted-url]"
 
@@ -47,10 +47,10 @@ def test_signature_covers_timestamp_and_delivery_id_is_unique(monkeypatch):
 
     assert len(captured) == 2
     h0, h1 = captured[0]["headers"], captured[1]["headers"]
-    # Signature is Stripe-style (t=..,v1=..) and a timestamp header is present.
+    # signature is stripe-style (t=..,v1=..) and a timestamp header is present
     assert h0["X-norinth-timestamp"]
     assert h0["X-norinth-signature"].startswith("t=") and ",v1=" in h0["X-norinth-signature"]
-    # Identical payloads still get distinct delivery ids (dedupe-able).
+    # identical payloads still get distinct delivery ids (dedupe-able)
     assert h0["X-norinth-delivery"] != h1["X-norinth-delivery"]
 
 

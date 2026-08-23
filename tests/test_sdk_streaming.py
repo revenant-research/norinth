@@ -1,7 +1,4 @@
-"""The FastAPI middleware does not livelock the host on a streaming response
-(critical C8), and it records the response status instead of always 'success'.
-Driven through Starlette's real ASGI machinery.
-"""
+"""fastapi middleware doesn't livelock on streaming responses and records real status"""
 
 from __future__ import annotations
 
@@ -64,14 +61,14 @@ def test_streaming_response_completes_and_does_not_block(anyio_backend="asyncio"
         app, client = _app_with_middleware()
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://t") as http:
-            # A streaming response must complete, not hang.
+            # streaming response must complete, not hang
             resp = await asyncio.wait_for(http.get("/stream"), timeout=5)
             assert resp.status_code == 200
             assert resp.text == "chunk-0\nchunk-1\nchunk-2\n"
-            # A concurrent request is served (no CPU-spinning livelock holding the loop).
+            # a concurrent request is served, no livelock holding the loop
             a, b = await asyncio.wait_for(asyncio.gather(http.get("/stream"), http.get("/ok")), timeout=5)
             assert a.status_code == 200 and b.json() == {"ok": True}
-            # 5xx is recorded as an error with the status, not as success.
+            # 5xx recorded as an error with the status, not as success
             r = await asyncio.wait_for(http.get("/boom"), timeout=5)
             assert r.status_code == 500
         statuses = [(e.name, e.status, e.attributes.get("http_status")) for e in client.events if e.type == "trace.completed"]

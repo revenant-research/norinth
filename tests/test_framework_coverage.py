@@ -1,9 +1,4 @@
-"""Framework coverage is measured against mapped controls, not assessed-only (H8).
-
-Previously the denominator was only the requirements that had produced an
-assessment, so a single passing control showed 100% coverage of its framework.
-The denominator is now every requirement the control library maps.
-"""
+"""framework coverage denominator comes from mapped controls, not assessed-only"""
 
 from __future__ import annotations
 
@@ -44,22 +39,22 @@ def test_coverage_denominator_comes_from_the_library(org_client):
     result = org_client.get("/api/compliance/framework-coverage").json()
     assert "basis" in result
     coverage = {row["framework"]: row for row in result["framework_coverage"]}
-    # The library maps these families; each must have a non-zero denominator even
-    # though no events have been ingested (i.e. nothing is satisfied yet).
+    # library maps these families; each has a non-zero denominator even with
+    # nothing ingested yet (nothing satisfied)
     assert coverage, "expected framework rows from the mapped control library"
     for family in ("NIST AI RMF", "SOC 2", "ISO/IEC 42001", "EU AI Act"):
         assert family in coverage, f"{family} missing from coverage"
         row = coverage[family]
         assert row["total_requirements"] >= 1
-        # With no satisfying assessments, coverage cannot be a perfect score.
+        # no satisfying assessments so coverage cannot be perfect
         assert row["coverage_pct"] < 100
-        # Every mapped requirement with no satisfying assessment is a named gap.
+        # every unsatisfied mapped requirement is a named gap
         assert len(row["gaps"]) == row["total_requirements"] - row["satisfied"]
 
 
 def test_unsatisfied_requirements_are_named_as_gaps(org_client):
     result = org_client.get("/api/compliance/framework-coverage").json()
     soc2 = next(row for row in result["framework_coverage"] if row["framework"] == "SOC 2")
-    # SOC 2 maps more than one distinct requirement in the shipped library.
+    # soc 2 maps more than one distinct requirement in the shipped library
     assert soc2["total_requirements"] >= 2
     assert all(ref.startswith("SOC 2") for ref in soc2["gaps"])

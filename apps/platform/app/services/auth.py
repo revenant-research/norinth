@@ -14,17 +14,14 @@ from app.storage.workflow import (
     purge_expired_sessions,
 )
 
-# Password hashing parameters. PBKDF2-HMAC-SHA256 is part of the standard
-# library, which keeps the open/closed dependency boundary clean (no external
-# crypto dependency) while remaining a defensible KDF for an internal app. The
-# iteration count meets OWASP's 2023 guidance for PBKDF2-SHA256 (600k); it is
-# env-tunable so tests can lower it, and hashes weaker than the current setting
-# are transparently upgraded on the next successful login (audit finding M101).
+# pbkdf2-hmac-sha256 is stdlib, no external crypto dep. iteration count meets
+# owasp 2023 guidance (600k), env-tunable so tests can lower it; weaker hashes are
+# upgraded on the next successful login
 _PBKDF2_ALGORITHM = "sha256"
 _PBKDF2_ITERATIONS = int(os.getenv("NORINTH_PBKDF2_ITERATIONS", "600000"))
 _SALT_BYTES = 16
-# A hash string names its own KDF; only these are ever executed, so a tampered
-# DB row cannot make the verifier run a weak or attacker-chosen digest.
+# a hash string names its own kdf; allowlist so a tampered db row can't make the
+# verifier run a weak or attacker-chosen digest
 _ALLOWED_ALGORITHMS = {"sha256", "sha512"}
 
 SESSION_TTL_HOURS = int(os.getenv("NORINTH_SESSION_TTL_HOURS", "12"))
@@ -59,8 +56,7 @@ def verify_password(password: str, stored: str | None) -> bool:
 
 
 def needs_rehash(stored: str | None) -> bool:
-    """True when a stored hash is weaker than the current parameters and should
-    be upgraded (different algorithm or fewer iterations)."""
+    """true when a stored hash is weaker than current params (diff algo or fewer iterations)"""
     if not stored:
         return True
     try:
@@ -77,11 +73,10 @@ def needs_rehash(stored: str | None) -> bool:
 
 
 def _hash_token(token: str) -> str:
-    """Hash a session token for storage.
+    """hash a session token for storage
 
-    Session tokens are high-entropy bearer secrets; storing only their SHA-256
-    means a database read (or backup leak) never yields a usable, replayable
-    token (audit H-7).
+    tokens are bearer secrets; storing only the sha-256 means a db read or backup
+    leak never yields a replayable token
     """
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
@@ -107,5 +102,5 @@ def end_session(token: str | None) -> None:
 
 
 def end_all_sessions(user_ref: str) -> None:
-    """Revoke every active session for a user (e.g. after a password change)."""
+    """revoke every active session for a user, e.g. after a password change"""
     delete_sessions_for_user(user_ref)

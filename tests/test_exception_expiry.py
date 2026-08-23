@@ -1,6 +1,4 @@
-"""A risk exception expires: on/after its expires_at the waived finding reopens
-(finding H6), and expires_at must be a future date.
-"""
+"""expired risk exception reopens its waived finding and expiry must be a future date"""
 
 from __future__ import annotations
 
@@ -28,10 +26,10 @@ def test_expired_exception_reopens_the_finding(fresh_db):
     with connect() as connection:
         finding = connection.execute("SELECT status FROM risk_findings WHERE finding_id = 'f1'").fetchone()
         exc = connection.execute("SELECT status FROM governance_exceptions WHERE exception_id = 'e1'").fetchone()
-    assert finding["status"] == "open"   # reopened
+    assert finding["status"] == "open"   # reopened on expiry
     assert exc["status"] == "expired"
 
-    # A still-active exception (future expiry) is untouched.
+    # still-active exception with future expiry is untouched
     with connect() as connection:
         connection.execute("UPDATE risk_findings SET status = 'waived' WHERE finding_id = 'f1'")
         connection.execute("UPDATE governance_exceptions SET status = 'active', expires_at = '2999-01-01T00:00:00+00:00' WHERE exception_id = 'e1'")

@@ -1,8 +1,4 @@
-"""A schema-valid event whose object-typed attribute is a string is rejected at
-ingestion and never poisons the derived-state recompute for any tenant
-(critical C7). A row that somehow predates the check does not crash the
-recompute either.
-"""
+"""object-typed attribute given as a string is rejected at ingestion and never poisons recompute"""
 
 from __future__ import annotations
 
@@ -33,28 +29,27 @@ def test_poison_event_is_rejected_and_ingestion_keeps_working(super_admin_client
 
     assert org.post("/v1/events/batch", json={"events": [_good("1")]}, headers=h).status_code == 200
 
-    # The exact poison from the report / seed script: prompt as a string.
+    # prompt as a string
     poison = {**BASE, "type": "model.call", "trace_id": "tp", "span_id": "sp", "timestamp": "2026-08-22T00:00:00Z",
               "attributes": {"provider": "openai", "model": "gpt-4o", "prompt": "Summarize this chart", "metadata": META}}
     r = org.post("/v1/events/batch", json={"events": [poison]}, headers=h)
     assert r.status_code == 422 and "prompt must be an object" in r.text
 
-    # Other object-typed attrs are also rejected.
+    # other object-typed attrs are also rejected
     for key in ("metadata", "usage", "template", "attestation"):
         attrs = {"provider": "openai", "model": "gpt-4o", "metadata": dict(META)}
         attrs[key] = "not-an-object"
         bad = {**BASE, "type": "model.call", "trace_id": f"t_{key}", "span_id": f"s_{key}", "timestamp": "2026-08-22T00:00:00Z", "attributes": attrs}
         assert org.post("/v1/events/batch", json={"events": [bad]}, headers=h).status_code in (400, 422), key
 
-    # Ingestion still works for everyone afterwards.
+    # ingestion still works for everyone afterwards
     assert org.post("/v1/events/batch", json={"events": [_good("2")]}, headers=h).status_code == 200
     assert org.get("/api/summary").status_code == 200
     org.close()
 
 
 def test_stored_poison_row_does_not_crash_recompute(fresh_db):
-    """Defense in depth: a bad row written directly to storage (bypassing the
-    ingestion check) is survived by the recompute, not fatal."""
+    """bad row written directly to storage (bypassing ingestion check) survives recompute"""
     import json
 
     from app.storage.governance_policy import refresh_governance_assessments
@@ -66,5 +61,5 @@ def test_stored_poison_row_does_not_crash_recompute(fresh_db):
     with connect() as connection:
         connection.execute("INSERT INTO governance_applications (entity_id, tenant_id, project, environment, application_name, use_cases, model_purposes, providers, models, model_calls, errors, first_seen, last_seen) VALUES ('e', 'acme', 'p1', 'prod', 'A', '[]', '[]', '[]', '[]', 1, 0, 'x', 'x')")
         connection.execute("INSERT INTO sdk_events (event_type, schema_version, trace_id, span_id, timestamp, service, environment, project, status, tenant_id, application_name, workflow_name, raw_event) VALUES ('model.call', '2026-01', 't', 's', 'x', 'svc', 'prod', 'p1', 'success', 'acme', 'A', 'w', ?)", (json.dumps(poison),))
-    # Must not raise.
+    # must not raise
     refresh_governance_assessments([{"tenant_id": "acme", "project": "p1", "environment": "prod", "application_name": "A"}])

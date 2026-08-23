@@ -17,15 +17,13 @@ from urllib.error import HTTPError
 
 from .config import NorinthConfig
 
-# HTTP status codes worth retrying: the server is overloaded or the request
-# timed out, not malformed. A 4xx other than these means the batch will be
-# rejected again no matter how often it is resent, so it is not retried/spooled.
+# statuses worth retrying: server overloaded or timed out, not malformed. other
+# 4xx will be rejected again no matter what, so not retried/spooled
 _RETRIABLE_STATUS = {408, 429, 500, 502, 503, 504}
 
 logger = logging.getLogger("norinth_logger")
-# A library must not configure the root logger. Adding a NullHandler prevents
-# "No handlers could be found" warnings and stops the SDK from spamming stderr in
-# a host app that has not configured logging (audit F5).
+# a library must not configure the root logger; nullhandler avoids "no handlers"
+# warnings and stops spamming stderr in a host app without logging configured
 logger.addHandler(logging.NullHandler())
 
 
@@ -45,14 +43,7 @@ class TransportStats:
 
 
 class EventTransport:
-    """Fail-open, background-batching transport.
-
-    The overriding contract (audit C-8): nothing here may crash, block, or kill
-    the host application, and the background worker must never die silently. A
-    single bad event must not stop telemetry: serialization is defensive, the
-    worker loop is fully guarded, and a dead worker is restarted on the next
-    enqueue.
-    """
+    """fail-open background-batching transport; never crash/block the host, and the worker must not die silently"""
 
     def __init__(self, config: NorinthConfig) -> None:
         self.config = config
@@ -74,8 +65,7 @@ class EventTransport:
         self._worker.start()
 
     def _ensure_worker(self) -> None:
-        """Restart the worker if it has died (e.g. after a fork, or if an
-        unexpected error ever escaped the guarded loop)."""
+        """restart the worker if it died (fork, or an escaped error)"""
         if not self.config.async_transport or self._stop.is_set():
             return
         if self._worker is not None and self._worker.is_alive():
@@ -88,9 +78,8 @@ class EventTransport:
         return bool(self._worker and self._worker.is_alive())
 
     def _register_fork_handler(self) -> None:
-        # Under prefork servers (gunicorn, celery) the child inherits a queue
-        # with no consumer thread. Reset and restart the worker in the child so
-        # telemetry keeps flowing (audit F2).
+        # prefork servers (gunicorn, celery): child inherits a queue with no
+        # consumer thread, so reset and restart the worker in the child
         if hasattr(os, "register_at_fork"):
             os.register_at_fork(after_in_child=self._after_fork)
 
@@ -120,8 +109,7 @@ class EventTransport:
             logger.debug("Norinth failed to enqueue event", exc_info=True)
 
     def flush(self) -> None:
-        # Retry anything left on disk from a previous outage first, so spooled
-        # evidence is delivered in order ahead of the current queue (H13).
+        # drain disk spool first so spooled events go out ahead of the queue
         self._drain_spool()
         batch: list[dict] = []
         while True:
@@ -143,12 +131,11 @@ class EventTransport:
         try:
             self.flush()
         except Exception:
-            # Never raise during interpreter shutdown.
+            # never raise during interpreter shutdown
             pass
 
     def _run(self) -> None:
-        # The entire loop body is guarded so no exception (serialization,
-        # network, or otherwise) can ever terminate the worker thread.
+        # loop body fully guarded so no exception can kill the worker thread
         while not self._stop.is_set():
             try:
                 time.sleep(self.config.flush_interval_seconds)
@@ -160,10 +147,9 @@ class EventTransport:
 
     def send_batch(self, events: list[dict]) -> None:
         try:
-            # default=str tolerates non-JSON-native values; allow_nan=False turns
-            # NaN/Infinity (which are invalid JSON the receiver would reject) into
-            # a caught error instead of a poisoned batch. Serialization happens
-            # inside the guard so a bad event is dropped, not fatal (audit C-8/F6).
+            # default=str tolerates non-json values; allow_nan=False makes NaN/Inf
+            # (invalid json the receiver rejects) raise here so one bad event is
+            # dropped, not fatal
             payload = json.dumps(
                 {"events": events},
                 separators=(",", ":"),
@@ -177,7 +163,7 @@ class EventTransport:
         self._deliver(payload, len(events))
 
     def _post_once(self, payload: bytes) -> None:
-        """Send one payload. Raises on any transport or HTTP failure."""
+        """send one payload; raises on any transport or http failure"""
         headers = {
             "Authorization": f"Bearer {self.config.api_key}",
             "Content-Type": "application/json",
@@ -199,19 +185,11 @@ class EventTransport:
     def _is_retriable(exc: Exception) -> bool:
         if isinstance(exc, HTTPError):
             return exc.code in _RETRIABLE_STATUS
-        # Timeouts and connection errors (URLError, socket.timeout) are transient.
+        # timeouts and connection errors are transient
         return True
 
     def _deliver(self, payload: bytes, count: int) -> None:
-        """Deliver a serialized batch with bounded retry, then spool or drop.
-
-        A transient failure is retried up to ``max_send_retries`` with exponential
-        backoff. A permanent client error (4xx other than 408/429) is dropped
-        immediately — resending cannot succeed. If retries are exhausted and a
-        spool directory is configured the batch is persisted for the next flush;
-        otherwise the events are counted as dropped so the gap is visible in
-        stats rather than silent (audit finding H13).
-        """
+        """deliver a batch with bounded retry, then spool or drop; permanent 4xx dropped immediately"""
         for attempt in range(self.config.max_send_retries + 1):
             try:
                 self._post_once(payload)
@@ -283,7 +261,7 @@ class EventTransport:
             try:
                 self._post_once(payload)
             except Exception:
-                # Still failing; leave it on disk for a later flush.
+                # still failing; leave on disk for a later flush
                 return
             self.stats.sent += self._event_count(payload)
             try:

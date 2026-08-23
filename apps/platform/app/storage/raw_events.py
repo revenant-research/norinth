@@ -9,13 +9,11 @@ from app.services import secrets as secret_store
 
 from . import db
 
-# The raw event body can carry prompt/response content — PHI when the SDK is run
-# with content capture enabled. With NORINTH_ENCRYPT_RAW_EVENTS=1 the raw_event
-# column is encrypted at rest (AES-GCM via the configured NORINTH_SECRET_KEY),
-# while the extracted governance columns (application_name, model, ...) stay
-# queryable in plaintext (audit finding M102). Reads decrypt transparently and
-# legacy plaintext rows pass through, so the flag can be turned on without a
-# migration.
+# the raw event body can carry prompt/response content (phi with content capture
+# on). with NORINTH_ENCRYPT_RAW_EVENTS=1 the raw_event column is encrypted at
+# rest while the extracted governance columns stay queryable in plaintext. reads
+# decrypt transparently and legacy plaintext rows pass through, so the flag can
+# be turned on without a migration.
 _RAW_EVENT_AAD = "sdk_event"
 
 
@@ -31,8 +29,8 @@ def serialize_raw_event(event: dict[str, Any]) -> str:
 
 
 def deserialize_raw_event(stored: str) -> dict[str, Any]:
-    # secret_store.decrypt returns plaintext unchanged, so this handles both
-    # encrypted and legacy-plaintext rows.
+    # decrypt returns plaintext unchanged, so this handles both encrypted and
+    # legacy-plaintext rows
     return json.loads(secret_store.decrypt(stored, associated_data=_RAW_EVENT_AAD))
 
 
@@ -47,8 +45,7 @@ def database_path() -> Path:
 
 
 def connect():
-    """Open a connection to the configured backend (SQLite by default,
-    PostgreSQL when NORINTH_DATABASE_URL is set). See storage/db.py."""
+    """open a connection to the configured backend; see storage/db.py"""
     return db.connect()
 
 
@@ -91,16 +88,15 @@ def init_storage() -> None:
         connection.execute("CREATE INDEX IF NOT EXISTS idx_sdk_events_project_env ON sdk_events(project, environment)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_sdk_events_type ON sdk_events(event_type)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_sdk_events_application ON sdk_events(application_name)")
-        # Composite index for the per-application evidence scans run on every
-        # ingest (governance_policy / lifecycle recompute), audit P3.
+        # composite index for the per-application evidence scans run on every
+        # ingest (governance_policy / lifecycle recompute)
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_sdk_events_app_scope "
             "ON sdk_events(project, environment, application_name, tenant_id)"
         )
-        # Idempotency: a retried batch re-sends the same (trace_id, span_id)
-        # spans; a unique index plus INSERT OR IGNORE prevents double-counting
-        # (audit C-6 / M4). Guarded because a legacy DB may already hold
-        # duplicates from before this constraint existed.
+        # idempotency: a retried batch re-sends the same (trace_id, span_id)
+        # spans; a unique index plus INSERT OR IGNORE prevents double-counting.
+        # guarded because a legacy db may already hold duplicates.
         try:
             connection.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_sdk_events_span_tenant "
@@ -111,11 +107,10 @@ def init_storage() -> None:
 
 
 def insert_events(events: list[dict[str, Any]]) -> int:
-    """Insert events idempotently and return the number newly accepted.
+    """insert events idempotently, returning the number newly accepted.
 
-    Uses INSERT OR IGNORE against the unique (trace_id, span_id) index so a
-    retried batch does not double-count (audit C-6). The return value is the
-    count actually inserted, not the batch size.
+    INSERT OR IGNORE against the unique (trace_id, span_id) index so a retried
+    batch doesn't double-count; the return is the count inserted, not batch size.
     """
     rows = [event_to_row(event) for event in events]
     with connect() as connection:
@@ -233,8 +228,7 @@ def count_events_by_type(
     project: str | None = None,
     environment: str | None = None,
 ) -> dict[str, int]:
-    """Per-event-type counts computed in SQL, so summary metrics are correct for
-    a tenant of any size instead of capping at a 10,000-row window (H9)."""
+    """per-event-type counts computed in sql, correct for a tenant of any size"""
     where, params = _event_filters(tenant_id, project, environment, None)
     with connect() as connection:
         rows = connection.execute(
@@ -264,7 +258,7 @@ def count_distinct(
     project: str | None = None,
     environment: str | None = None,
 ) -> int:
-    # column is a fixed identifier chosen by callers below, never user input.
+    # column is a fixed identifier chosen by callers, never user input
     where, params = _event_filters(tenant_id, project, environment, None)
     with connect() as connection:
         row = connection.execute(
@@ -281,10 +275,10 @@ def aggregate_traces(
     limit: int = 200,
     offset: int = 0,
 ) -> tuple[list[dict[str, Any]], int]:
-    """Trace list with per-trace event counts, grouped and paged in SQL.
+    """trace list with per-trace event counts, grouped and paged in sql.
 
-    Returns (rows, total_distinct_traces) so the route never materialises every
-    event just to count and slice them in Python (H9)."""
+    returns (rows, total_distinct_traces) so the route never materializes every
+    event to count and slice in python."""
     where, params = _event_filters(tenant_id, project, environment, None)
     with connect() as connection:
         total_row = connection.execute(
@@ -310,8 +304,8 @@ def list_events(
     limit: int = 200,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
-    """Newest-first window of events (``offset`` 0 = the most recent), returned
-    in chronological order within the window for display."""
+    """newest-first window of events (offset 0 = most recent), returned in
+    chronological order within the window for display"""
     where, params = _event_filters(tenant_id, project, environment, event_type)
     params.update({"limit": limit, "offset": offset})
     query = f"SELECT raw_event FROM sdk_events {where} ORDER BY id DESC LIMIT :limit OFFSET :offset"

@@ -1,8 +1,4 @@
-"""Unknown record ids return 404, not an unhandled 500 (audit finding M104).
-
-The decision endpoints loaded a gate/incident/owner-assignment by id and let a
-ValueError escape when it did not exist, producing a 500 with no global handler.
-"""
+"""unknown record ids return 404, not an unhandled 500"""
 
 from __future__ import annotations
 
@@ -70,5 +66,5 @@ def test_unsupported_decision_target_type_is_400(org):
         "/api/decisions",
         json={"target_type": "not_a_real_type", "target_id": "x", "decision": "approve", "rationale": _RATIONALE},
     )
-    # Bad input, not a missing record: 400 (and never a 500).
+    # bad input, not a missing record: 400 (never a 500)
     assert resp.status_code == 400, resp.text

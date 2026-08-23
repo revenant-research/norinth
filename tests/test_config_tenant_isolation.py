@@ -1,7 +1,4 @@
-"""One tenant cannot read or change another tenant's control library, risk
-rules, review routing or owner policies. Platform defaults are shared and
-immutable to tenants; each tenant's customizations are its own.
-"""
+"""tenant config customizations stay isolated; platform defaults shared and immutable"""
 
 from __future__ import annotations
 
@@ -30,13 +27,13 @@ def test_config_customizations_are_tenant_isolated(super_admin_client):
     acme = _org(super_admin_client, "acme")
     beta = _org(super_admin_client, "beta")
 
-    # Both see the same platform-default controls to begin with.
+    # both start from the same platform-default controls
     acme_default = {c["control_id"] for c in acme.get("/api/control-catalog").json()["controls"]}
     beta_default = {c["control_id"] for c in beta.get("/api/control-catalog").json()["controls"]}
     assert acme_default and acme_default == beta_default
     sample = sorted(acme_default)[0]
 
-    # acme overrides a control and adds a new one.
+    # acme overrides a control and adds a new one
     assert acme.post("/api/control-catalog", json={"control_id": sample, "name": "ACME override", "evidence_event_types": ["model.call"], "required_fields": ["x"], "rationale": "r"}).status_code == 200
     assert acme.post("/api/control-catalog", json={"control_id": "ACME-ONLY", "name": "Acme only", "evidence_event_types": ["model.call"], "required_fields": [], "rationale": "r"}).status_code == 200
 
@@ -47,18 +44,18 @@ def test_config_customizations_are_tenant_isolated(super_admin_client):
     assert beta_controls[sample]["name"] != "ACME override"       # beta still sees the default
     assert "ACME-ONLY" not in beta_controls                        # beta never sees acme's control
 
-    # Risk rules: acme downgrades a rule; beta is unaffected.
+    # risk rules: acme downgrades a rule, beta unaffected
     beta_rules_before = {r["rule_id"]: r for r in beta.get("/api/risk-rules").json()["risk_rules"]}
     a_rule = sorted(beta_rules_before)[0]
     assert acme.post("/api/risk-rules", json={"rule_id": a_rule, "name": "downgraded", "signal": beta_rules_before[a_rule]["signal"], "severity": "low", "confidence": 0.1, "framework_refs": [], "rationale": "r"}).status_code == 200
     beta_rules_after = {r["rule_id"]: r for r in beta.get("/api/risk-rules").json()["risk_rules"]}
     assert beta_rules_after[a_rule]["severity"] == beta_rules_before[a_rule]["severity"]  # beta unchanged
 
-    # Review routing and owner policies: acme's change does not reach beta.
+    # review routing and owner policies: acme's change stays in acme
     assert acme.post("/api/review-queue-policies", json={"policy_id": "intake", "task_type": "intake_review", "assigned_role": "org_admin", "due_days": 1, "escalation_days": 1}).status_code == 200
     assert acme.post("/api/owner-policies", json={"policy_id": "p1", "subject_type": "application", "owner_role": "business_owner"}).status_code == 200
 
-    # Super admins cannot write config (platform plane).
+    # super admins cannot write config
     assert super_admin_client.post("/api/control-catalog", json={"control_id": "X", "name": "n", "evidence_event_types": ["model.call"], "required_fields": [], "rationale": "r"}).status_code == 403
     acme.close()
     beta.close()
@@ -66,8 +63,7 @@ def test_config_customizations_are_tenant_isolated(super_admin_client):
 
 @pytest.mark.skipif(bool(os.environ.get("NORINTH_TEST_DATABASE_URL")), reason="uses a throwaway SQLite file")
 def test_migration_9_upgrades_populated_config_tables():
-    """A database created before migration 9 (single-column PK, seeded rows)
-    upgrades to the composite-key schema with existing rows as defaults."""
+    """migration 9 upgrades single-column config tables to composite tenant key"""
     import os
     import tempfile
 
@@ -90,7 +86,7 @@ def test_migration_9_upgrades_populated_config_tables():
             _0009_config_table_tenancy(connection)
             row = connection.execute("SELECT tenant_id FROM control_library WHERE control_id = 'C1'").fetchone()
             assert row["tenant_id"] == ""  # legacy row is now a platform default
-            # Composite key allows a same-id override under a tenant.
+            # composite key allows a same-id override under a tenant
             connection.execute("INSERT INTO control_library (tenant_id, control_id, name, framework_refs, evidence_event_types, required_fields, rationale) VALUES ('acme', 'C1', 'override', '[]', '[]', '[]', 'r')")
             assert connection.execute("SELECT COUNT(*) AS c FROM control_library WHERE control_id = 'C1'").fetchone()["c"] == 2
     finally:

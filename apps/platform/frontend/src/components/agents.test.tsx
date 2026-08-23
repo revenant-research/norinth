@@ -77,19 +77,19 @@ describe("AgentsView", () => {
     render(<AgentsView scope={{}} canRegister={false} canRetire={false} />);
     await waitFor(() => expect(screen.getAllByTestId("agent-card")).toHaveLength(3));
 
-    // Shadow agent flagged with its OWASP reference.
+    // shadow agent flagged with its owasp reference
     expect(screen.getByText("Shadow agent (unregistered)")).toBeInTheDocument();
     expect(screen.getByText("ASI10 Rogue agents")).toBeInTheDocument();
 
-    // Unauthorized tool lists the offending tool inside the issue badge; trifecta is shown.
+    // unauthorized tool lists the offending tool in the issue badge; trifecta shown
     const toolIssue = screen.getByText("Tool outside allow-list").closest("li");
     expect(toolIssue).toHaveTextContent("delete_records");
     expect(screen.getByText("Lethal trifecta, no human checkpoint")).toBeInTheDocument();
 
-    // Clean agent says so.
+    // clean agent says so
     expect(screen.getByText("No agentic-governance issues.")).toBeInTheDocument();
 
-    // Registration form hidden without config.write.
+    // registration form hidden without config.write
     expect(screen.queryByRole("form", { name: "Register an agent" })).not.toBeInTheDocument();
   });
 

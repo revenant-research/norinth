@@ -1,9 +1,4 @@
-"""SSO (OpenID Connect) configuration and login endpoints.
-
-- Org admins configure their organization's identity provider
-  (`/api/org/sso`), which runs OpenID discovery against the issuer.
-- Users sign in via `/api/auth/sso/{tenant_id}/start` -> IdP -> callback.
-"""
+"""sso (openid connect) configuration and login endpoints"""
 
 from __future__ import annotations
 
@@ -53,10 +48,7 @@ def _require_tenant_admin(actor: ActorContext) -> str:
 
 
 def _callback_url(request: Request) -> str:
-    # NORINTH_PUBLIC_BASE_URL (behind a proxy/ingress) takes precedence so the
-    # redirect_uri registered with the IdP matches. Otherwise the request base is
-    # used only after the Host is validated against the allowlist, so the
-    # redirect_uri cannot be steered by a spoofed Host (audit finding M98).
+    # public base url wins so redirect_uri matches the idp; else validate Host against allowlist
     return external_base_url(request) + "/api/auth/sso/callback"
 
 
@@ -113,8 +105,7 @@ def remove_sso(actor: ActorContext = Depends(current_actor)) -> dict[str, bool]:
     return {"ok": True}
 
 
-# Transient cookie that binds an OIDC flow to the browser that started it. The
-# callback is a top-level GET navigation, so a SameSite=Lax cookie is returned.
+# binds the oidc flow to the browser; callback is a top-level GET so SameSite=Lax
 _SSO_STATE_COOKIE = "norinth_sso_state"
 
 
@@ -141,8 +132,7 @@ def sso_start(tenant_id: str, request: Request):
 def sso_callback(request: Request, response: Response, code: str | None = None, state: str | None = None):
     if not code or not state:
         raise HTTPException(status_code=400, detail="missing code or state")
-    # Login-CSRF defense: the state returned by the IdP must match the state this
-    # browser was given at /start (audit finding M97).
+    # login-csrf: idp state must match the state issued at /start
     cookie_state = request.cookies.get(_SSO_STATE_COOKIE)
     if not cookie_state or cookie_state != state:
         raise HTTPException(status_code=401, detail="SSO state does not match this browser session")

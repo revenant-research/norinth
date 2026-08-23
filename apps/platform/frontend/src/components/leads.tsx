@@ -20,7 +20,7 @@ type Lead = {
 const STATUSES = ["new", "contacted", "qualified", "won", "lost"];
 const INTEREST_LABEL: Record<string, string> = { pilot: "Start a pilot", demo: "Book a demo", pricing: "Enterprise pricing", security: "Security review" };
 
-/** Inbound pilot/demo requests from the landing page, worked as a simple funnel. */
+/** inbound pilot/demo requests from the landing page */
 export function LeadsView() {
   const [filter, setFilter] = useState("");
   const query = useCallback(() => getJson<{ leads: Lead[]; page: PageMeta }>(`/api/admin/leads${filter ? `?status=${filter}` : ""}`), [filter]);

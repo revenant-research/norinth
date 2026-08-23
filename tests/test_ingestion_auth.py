@@ -1,10 +1,4 @@
-"""Regression tests for ingestion authentication and tenant binding (audit C-1).
-
-Before this fix, ingestion was guarded by a single hard-coded ``Bearer dev``
-token and the tenant was taken from the client-supplied event payload, so anyone
-who could reach the endpoint could forge governance evidence for any tenant.
-Now the tenant is derived from a per-tenant key and enforced on every event.
-"""
+"""ingestion auth and tenant binding: tenant derived from the key, not the payload"""
 
 from __future__ import annotations
 
@@ -54,7 +48,7 @@ def test_dev_key_accepts_its_own_tenant(client):
 
 
 def test_dev_key_cannot_forge_another_tenant(client):
-    # The dev key is bound to tenant-local; claiming another tenant must fail.
+    # dev key is bound to tenant-local; claiming another tenant must fail
     resp = _ingest(client, "dev", _model_call_event("victim-corp"))
     assert resp.status_code == 403, resp.text
 
@@ -63,7 +57,7 @@ def test_ingestion_stamps_authenticated_tenant_when_omitted(client):
     resp = _ingest(client, "dev", _model_call_event(None))
     assert resp.status_code == 200, resp.text
 
-    # The stored event must carry the key's tenant, never NULL.
+    # stored event must carry the key's tenant, never null
     from app.storage.raw_events import connect
 
     with connect() as connection:
@@ -75,7 +69,7 @@ def test_ingestion_stamps_authenticated_tenant_when_omitted(client):
 
 
 def test_ingestion_key_lifecycle(super_admin_client):
-    # Provision an org with an admin.
+    # provision an org with an admin
     super_admin_client.post(
         "/api/admin/organizations",
         json={
@@ -100,20 +94,20 @@ def test_ingestion_key_lifecycle(super_admin_client):
         assert token.startswith("nrk_")
         assert "key_hash" not in body["ingestion_key"]  # secret never leaves storage
 
-        # The new key ingests for the beta tenant...
+        # new key ingests for beta
         ok = _ingest(org, token, _model_call_event("beta"))
         assert ok.status_code == 200, ok.text
-        # ...but cannot forge tenant-local.
+        # but cannot forge tenant-local
         assert _ingest(org, token, _model_call_event("tenant-local")).status_code == 403
 
-        # Revoke, then the key is rejected.
+        # revoked key is rejected
         revoked = org.post(f"/api/ingestion-keys/{key_id}/revoke")
         assert revoked.status_code == 200, revoked.text
         assert _ingest(org, token, _model_call_event("beta")).status_code == 401
 
 
 def test_org_admin_cannot_manage_another_tenants_keys(super_admin_client):
-    # Create two orgs; beta admin must not see gamma's keys (list is tenant-scoped).
+    # beta admin must not see gamma's keys; list is tenant-scoped
     for tid, email in [("beta", "a@beta.test"), ("gamma", "a@gamma.test")]:
         super_admin_client.post(
             "/api/admin/organizations",
@@ -136,5 +130,5 @@ def test_org_admin_cannot_manage_another_tenants_keys(super_admin_client):
         login_and_activate(beta, "a@beta.test", "beta-admin-pw-1")
         listing = beta.get("/api/ingestion-keys")
         assert listing.status_code == 200
-        # beta sees only its own (zero) keys, not gamma's.
+        # beta sees only its own (zero) keys, not gamma's
         assert listing.json()["ingestion_keys"] == []

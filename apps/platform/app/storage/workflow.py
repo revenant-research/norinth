@@ -22,8 +22,8 @@ def init_workflow() -> None:
             )
             """
         )
-        # Credential and tenancy columns are added incrementally so existing
-        # deployments upgrade in place without a destructive migration.
+        # credential and tenancy columns added incrementally so existing
+        # deployments upgrade in place
         for statement in (
             "ALTER TABLE platform_users ADD COLUMN email TEXT",
             "ALTER TABLE platform_users ADD COLUMN password_hash TEXT",
@@ -189,8 +189,7 @@ def init_workflow() -> None:
         seed_review_queue_policies(connection)
 
 
-# Out-of-the-box routing so reviews reach a named person from the first day.
-# Organization administrators can change these under Review Work.
+# default routing so reviews reach a named person; org admins can change these
 DEFAULT_REVIEW_QUEUE_POLICIES: list[dict[str, Any]] = [
     {"policy_id": "default-intake", "task_type": "intake_review", "assigned_role": "governance_reviewer", "due_days": 5, "escalation_days": 3},
     {"policy_id": "default-material-change", "task_type": "material_change_review", "assigned_role": "governance_admin", "due_days": 3, "escalation_days": 2},
@@ -209,8 +208,8 @@ def seed_review_queue_policies(connection) -> None:
         )
 
 
-# Default role-to-permission grants. Platform super admins are not listed here
-# because they bypass the permission model entirely (see authorization.py).
+# default role-to-permission grants; super admins bypass the permission model
+# entirely (see authorization.py) so they're not listed
 DEFAULT_PERMISSIONS: dict[str, str] = {
     "org.manage": "Provision and suspend organizations and their first administrator",
     "user.manage": "Create and update users within an organization",
@@ -240,7 +239,7 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, set[str]] = {
     "risk_owner": {"review.decide", "risk.accept", "owner.assign"},
     "control_owner": {"review.decide", "owner.assign"},
     "governance_reviewer": {"review.decide"},
-    # Read-only: authenticate and view, but no decision or configuration rights.
+    # read-only: authenticate and view, no decision or config rights
     "governance_viewer": set(),
 }
 
@@ -266,8 +265,8 @@ def _in_scopes(row: dict[str, Any], wanted: set[tuple] | None) -> bool:
 
 
 def refresh_workflow_state(scopes: list[dict[str, Any]] | None = None) -> None:
-    """Apply owner policies and refresh the review queue. ``scopes`` limits the
-    work to the applications an ingest batch touched; None refreshes everything."""
+    """apply owner policies and refresh the review queue; scopes limits to the
+    apps an ingest touched, None refreshes everything"""
     wanted = None if scopes is None else {(s.get("tenant_id"), s["project"], s["environment"], s["application_name"]) for s in scopes}
     tenant_filter = None if scopes is None else {s.get("tenant_id") for s in scopes}
     with connect() as connection:
@@ -360,9 +359,8 @@ def find_assignee(connection, task: dict[str, Any], assigned_role: str) -> str |
 
 
 def _parse_ts(value: str) -> datetime:
-    """Parse the timestamp formats the platform writes: SQLite's
-    'YYYY-MM-DD HH:MM:SS' and ISO-8601 ('...T...', optional offset). Naive
-    values are treated as UTC."""
+    """parse the timestamp formats the platform writes: 'YYYY-MM-DD HH:MM:SS' and
+    iso-8601; naive values are treated as utc"""
     text = str(value).strip().replace(" ", "T", 1) if " " in str(value) and "T" not in str(value) else str(value)
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
@@ -377,9 +375,7 @@ def _shift_days(value: str, days: int) -> str:
 
 
 def queue_status(connection, due_at: str, escalation_days: int, assignee: str | None) -> str:
-    # Date arithmetic is done in Python rather than SQL so it is identical on
-    # every database backend (the previous SQLite datetime() calls were not
-    # portable).
+    # date arithmetic in python, not sql, so it's identical on every backend
     if assignee is None:
         return "unassigned"
     now = datetime.now(UTC)
@@ -390,9 +386,9 @@ def queue_status(connection, due_at: str, escalation_days: int, assignee: str | 
 
 
 def _notify_queue_transition(connection, task, assigned_role, assigned_to, due_at, escalation_status) -> None:
-    """Emit notifications only on transitions: newly assigned, newly overdue,
-    newly escalated. Queue refresh runs on every ingest, so comparing with the
-    stored row keeps this from repeating."""
+    """emit notifications only on transitions (newly assigned/overdue/escalated);
+    queue refresh runs on every ingest, so compare with the stored row to avoid
+    repeating"""
     from app.services.notifications import emit, public_base_url
 
     tenant_id = task.get("tenant_id")
@@ -571,7 +567,7 @@ def create_platform_user(
     tenant_id: str | None = None,
     must_change_password: bool = True,
 ) -> dict[str, Any]:
-    """Create or update a credentialed user. Used by super-admin and org-admin provisioning."""
+    """create or update a credentialed user"""
     with connect() as connection:
         connection.execute(
             """
@@ -613,7 +609,7 @@ def set_user_password(user_ref: str, password_hash: str) -> None:
 
 
 def reset_user_password(user_ref: str, password_hash: str) -> None:
-    """Administratively set a temporary password and force a change on next login."""
+    """set a temporary password and force a change on next login"""
     with connect() as connection:
         connection.execute(
             "UPDATE platform_users SET password_hash = ?, must_change_password = 1, updated_at = datetime('now') WHERE user_ref = ?",
@@ -622,8 +618,8 @@ def reset_user_password(user_ref: str, password_hash: str) -> None:
 
 
 def set_user_status(user_ref: str, status: str) -> dict[str, Any]:
-    """Activate or deactivate an account. A deactivated user can no longer
-    authenticate (sessions resolve to an inactive user and are rejected)."""
+    """activate or deactivate an account; a deactivated user can't authenticate
+    (their sessions resolve to an inactive user and are rejected)"""
     with connect() as connection:
         row = connection.execute("SELECT 1 FROM platform_users WHERE user_ref = ?", (user_ref,)).fetchone()
         if row is None:
@@ -856,16 +852,15 @@ def apply_decision_status(connection, target_type: str, target_id: str, decision
         "waive": "waived",
         "close": "closed",
     }
-    # Defense in depth: an unknown decision maps to no status change rather than
-    # being written verbatim as the target's status (audit M-2). The API already
-    # rejects unknown decisions.
+    # an unknown decision maps to no status change rather than being written
+    # verbatim as the target's status; the api already rejects unknown decisions
     status = status_by_decision.get(decision)
     if status is None:
         return
     if target_type == "review_task":
         connection.execute("UPDATE review_tasks SET status = ?, updated_at = datetime('now') WHERE task_id = ?", (status, target_id))
-        # An intake review decides the use case's lifecycle: approve -> approved,
-        # reject -> rejected. Other decisions leave it submitted (awaiting changes).
+        # an intake review decides the use case's lifecycle: approve -> approved,
+        # reject -> rejected; other decisions leave it submitted
         task = connection.execute("SELECT task_type, change_id FROM review_tasks WHERE task_id = ?", (target_id,)).fetchone()
         if task is not None and task["task_type"] == "intake_review" and status in {"approved", "rejected"}:
             connection.execute(
@@ -877,11 +872,10 @@ def apply_decision_status(connection, target_type: str, target_id: str, decision
         connection.execute("UPDATE change_events SET status = ? WHERE change_id = ?", (status, target_id))
     if target_type == "control_assessment":
         connection.execute("UPDATE control_assessments SET status = ?, evaluated_at = datetime('now') WHERE assessment_id = ?", (status, target_id))
-    # Deployment gates and incidents are intentionally NOT transitioned here.
-    # Their status changes must go through the guarded set_deployment_gate_status
-    # (evidence check + attribution) and set_incident_status, invoked by the
-    # dedicated /approve, /reject, and /close endpoints. Allowing a generic
-    # decision to flip a gate to "approved" bypassed the evidence gate (audit C-2).
+    # deployment gates and incidents are not transitioned here: their status
+    # changes go through the guarded set_deployment_gate_status (evidence check +
+    # attribution) and set_incident_status, so a generic decision can't flip a
+    # gate to "approved" and bypass the evidence check
 
 
 def create_exception(
@@ -967,7 +961,7 @@ def list_platform_users(*, tenant_id: str | None = None) -> list[dict[str, Any]]
 
 
 def _public_user(user: dict[str, Any]) -> dict[str, Any]:
-    """Strip credential material before a user record leaves the storage layer."""
+    """strip credential material before a user record leaves the storage layer"""
     return {key: value for key, value in user.items() if key != "password_hash"}
 
 
@@ -1000,7 +994,7 @@ def count_users_pending_password() -> int:
 
 
 def tenant_user_counts() -> dict[str, int]:
-    """Number of accounts per tenant, for the platform tenant overview."""
+    """accounts per tenant, for the tenant overview"""
     with connect() as connection:
         rows = connection.execute(
             "SELECT tenant_id, COUNT(*) AS count FROM platform_users WHERE tenant_id IS NOT NULL GROUP BY tenant_id"
@@ -1047,9 +1041,8 @@ def list_decisions(*, tenant_id: str | None = None, project: str | None = None, 
 
 
 def expire_due_exceptions() -> int:
-    """Mark active exceptions whose expires_at has passed as 'expired' and
-    reopen the finding they waived, so it re-enters the risk register instead
-    of staying waived forever (finding H6). Idempotent; safe to call often."""
+    """mark active exceptions past expires_at as 'expired' and reopen the finding
+    they waived, so it re-enters the risk register; idempotent"""
     now = datetime.now(UTC).isoformat()
     expired = 0
     with connect() as connection:
@@ -1062,7 +1055,7 @@ def expire_due_exceptions() -> int:
                 "UPDATE governance_exceptions SET status = 'expired', updated_at = datetime('now') WHERE exception_id = ?",
                 (row["exception_id"],),
             )
-            # Reopen the waived target so the next recompute re-evaluates it.
+            # reopen the waived target so the next recompute re-evaluates it
             if row["target_type"] == "risk_finding":
                 connection.execute(
                     "UPDATE risk_findings SET status = 'open', evaluated_at = datetime('now') WHERE finding_id = ? AND status = 'waived'",

@@ -6,11 +6,9 @@ import json
 import re
 from typing import Any
 
-# Patterns masked from captured content before it leaves the process. This is
-# the redaction the README refers to: even with content capture enabled, common
-# secrets and direct identifiers are replaced (audit finding H15). It is
-# deliberately conservative — high-signal patterns only — so it does not mangle
-# ordinary prose.
+# patterns masked from captured content before it leaves the process; even with
+# content capture on, common secrets and direct identifiers are replaced. kept
+# conservative (high-signal patterns only) so ordinary prose isn't mangled
 _REDACTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"), "[redacted-email]"),
     (re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), "[redacted-ssn]"),
@@ -19,9 +17,8 @@ _REDACTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"\b[A-Za-z0-9_-]{40,}\b"), "[redacted-token]"),
 )
 
-# Sentinel: this value has no representable content and must be omitted entirely
-# (never repr'd, which would leak object state such as API keys held on a config
-# dataclass or client instance passed to a traced function).
+# sentinel: value has no representable content, omit it entirely. never repr'd,
+# which would leak object state like api keys on a config or client instance
 _OMIT_CONTENT = object()
 
 
@@ -32,12 +29,7 @@ def redact_text(value: str) -> str:
 
 
 def _capture_content(value: Any) -> Any:
-    """Return redacted, JSON-native content, or ``_OMIT_CONTENT``.
-
-    Only JSON-native scalars and containers are ever captured; any other object
-    (a provider client, a config dataclass, an arbitrary instance) is omitted
-    rather than repr'd, closing the API-key-via-repr leak in audit finding H15.
-    """
+    """redacted json-native content, or _OMIT_CONTENT for anything else so objects aren't repr'd"""
     if value is None or isinstance(value, (int, float, bool)):
         return value
     if isinstance(value, str):
@@ -55,30 +47,19 @@ GOVERNANCE_CONTEXT_FIELDS = {
     "model_purpose",
 }
 
-# The Norinth platform tenant is authoritative from the ingestion key and is
-# stamped server-side; the SDK must never infer it from an application's request
-# body. Doing so stamped ``metadata.tenant_id`` with the application's *own*
-# customer identifier, which the platform then rejected (403) because it did not
-# match the ingestion key's tenant — discarding the entire batch (audit finding
-# H12). An app's customer/tenant identifier is still useful governance context,
-# so any of these fields is recorded under a non-colliding key the platform does
-# not use for routing or authorization.
+# platform tenant comes from the ingestion key and is stamped server-side; never
+# infer it from an app's request body (a mismatched tenant_id gets the whole batch
+# rejected). record the app's own tenant under a non-colliding key instead
 _APP_TENANT_FIELDS = ("tenant_id", "org_id", "organization_id", "account_id", "customer_id")
 _APP_TENANT_OUTPUT_KEY = "subject_tenant"
 
-# Governance context values are identifiers/labels, not free-form content; cap
-# their length so a stray large field can't ride out under a governance label.
+# governance context values are identifiers/labels, not free-form content; cap
+# length so a stray large field can't ride out under a governance label
 _MAX_CONTEXT_LEN = 256
 
 
 def _canonical_bytes(value: Any) -> bytes:
-    """Deterministic byte encoding for hashing.
-
-    repr() is not canonical — dict ordering and object memory addresses make it
-    unstable and unsuitable as a content fingerprint (audit H-12). Strings/bytes
-    hash directly; structured values use sorted-key JSON; everything else falls
-    back to repr.
-    """
+    """deterministic byte encoding for hashing; repr isn't stable so use sorted-key json for structured values"""
     if isinstance(value, bytes):
         return value
     if isinstance(value, str):
@@ -90,9 +71,7 @@ def _canonical_bytes(value: Any) -> bytes:
 
 
 def stable_hash(value: Any, hash_key: str | None = None) -> str:
-    """Content fingerprint. When a hash_key is supplied it is an HMAC, so the
-    digest is not a globally-reversible dictionary lookup and cannot be linked
-    across tenants (audit H-12). Configure NORINTH_SIGNING_SECRET to key it."""
+    """content fingerprint; with a hash_key it's an hmac so digests can't be linked across tenants"""
     data = _canonical_bytes(value)
     if hash_key:
         digest = hmac.new(hash_key.encode("utf-8"), data, hashlib.sha256).hexdigest()
@@ -119,14 +98,7 @@ def summarize_value(value: Any, capture_content: bool, hash_key: str | None = No
 
 
 def summarize_error(exc: BaseException, capture_content: bool, hash_key: str | None = None) -> dict[str, Any]:
-    """Summarize an exception for telemetry.
-
-    The message is content-derived: provider 4xx errors echo request inputs, and
-    application exceptions routinely interpolate PII/PHI (e.g. an invalid SSN or
-    patient identifier). It is therefore hashed and length-reported by default,
-    and only included verbatim when capture_content is explicitly enabled
-    (audit H-13). The exception *type* is always safe to record.
-    """
+    """summarize an exception; message is content-derived (may hold pii) so hash it unless capture_content is on. type is always safe"""
     message = str(exc)
     result: dict[str, Any] = {
         "type": type(exc).__name__,
@@ -162,9 +134,8 @@ def object_to_mapping(value: Any) -> dict[str, Any]:
 
 
 def _scalar_label(field_value: Any) -> str | None:
-    # Governance context fields are scalar identifiers/labels. Skip nested
-    # structures so request-body content is never stringified wholesale, and cap
-    # length (audit H-13 / P3).
+    # scalar identifiers/labels only; skip nested structures so request bodies
+    # aren't stringified wholesale, and cap length
     if field_value is None or isinstance(field_value, (dict, list, tuple, set)):
         return None
     text = str(field_value)
@@ -181,8 +152,7 @@ def infer_governance_context(args: tuple[Any, ...], kwargs: dict[str, Any]) -> d
             label = _scalar_label(fields.get(key))
             if label is not None:
                 context[key] = label
-        # Never emit ``tenant_id`` (the platform routing key) from inferred app
-        # data; record the app's own tenant under subject_tenant instead (H12).
+        # never emit tenant_id (platform routing key) from inferred app data; use subject_tenant
         if _APP_TENANT_OUTPUT_KEY not in context:
             for tenant_field in _APP_TENANT_FIELDS:
                 label = _scalar_label(fields.get(tenant_field))

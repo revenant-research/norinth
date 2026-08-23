@@ -1,4 +1,4 @@
-"""Unauthenticated endpoints used by the public landing page."""
+"""unauthenticated endpoints for the public landing page"""
 
 from __future__ import annotations
 
@@ -50,8 +50,5 @@ def submit_lead(payload: LeadRequest, request: Request) -> dict[str, Any]:
         message=(payload.message or "").strip() or None,
         source_ip=ip,
     )
-    # Deliberately NOT written to the compliance audit chain: that chain records
-    # governance actions, and appending an unauthenticated internet submission to
-    # a tamper-evident log both dilutes it and lets anonymous callers grow it
-    # (audit finding L110). The lead is stored in its own table.
+    # not written to the audit chain; anonymous submissions shouldn't grow a tamper-evident log
     return {"ok": True, "lead_id": lead["lead_id"]}

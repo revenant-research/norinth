@@ -2,11 +2,8 @@ import type { AnchorHTMLAttributes, HTMLAttributes, ReactNode } from "react";
 
 import styles from "./Card.module.css";
 
-/**
- * Paper card with an ink rule — the Revenant surface. `tone="lead"` is the
- * featured variant (used for the hero card on the landing page); `interactive`
- * adds hover affordance for clickable cards.
- */
+// paper card with an ink rule. `tone="lead"` is the featured variant (landing
+// hero card); `interactive` adds hover affordance for clickable cards
 export function Card({
   children,
   padding = "md",

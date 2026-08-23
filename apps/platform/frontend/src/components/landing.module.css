@@ -34,8 +34,8 @@
 }
 .hero h1 { max-width: 18ch; color: var(--n-white); }
 .hero p { color: rgba(255, 252, 245, 0.9); }
-/* Hero buttons sit on dark chrome: hover states move toward paper/white, never
-   toward brighter accent colours that fight the streak imagery. */
+/* hero buttons on dark chrome: hover moves toward paper/white, not brighter
+   accents that fight the streak imagery */
 .heroCta { background: var(--n-teal); border-color: var(--n-teal); color: var(--n-ink); font-weight: 600; }
 a.heroCta:hover, a.heroCta.heroCta:hover { background: var(--n-paper); border-color: var(--n-paper); color: var(--n-ink); }
 a.heroGhost.heroGhost { background: transparent; border-color: rgba(255, 252, 245, 0.6); color: var(--n-white); }

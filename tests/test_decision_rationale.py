@@ -1,10 +1,4 @@
-"""Governance decisions require substantive reviewer input (audit finding H4).
-
-The dashboard submits a scaffolded decision packet ("Evidence reviewed: no ...
-Reviewer rationale: not provided"). That scaffold alone used to satisfy the
-server's min_length=1 guard, so a gate could be approved or an incident closed
-with nothing typed. substantive_rationale strips the scaffold and rejects it.
-"""
+"""reviewer rationale must be substantive, scaffold-only packets rejected"""
 
 from __future__ import annotations
 
@@ -78,7 +72,7 @@ def test_gate_approval_with_empty_packet_is_422(super_admin_client):
     )
     with TestClient(app) as org:
         login_and_activate(org, "a@acme.test", "acme-admin-pw-1")
-        # A non-existent gate still exercises schema validation, which runs first.
+        # non-existent gate still exercises schema validation, which runs first
         resp = org.post(
             "/api/deployment-gates/does-not-exist/approve",
             json={"rationale": _EMPTY_PACKET},

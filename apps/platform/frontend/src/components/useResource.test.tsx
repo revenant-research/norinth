@@ -4,10 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { useResource } from "./useResource";
 
-/**
- * Regression test for the stale-closure bug fixed in PR #11: `reload` must
- * invoke the LATEST loader, so changing filters actually re-queries.
- */
+// `reload` must invoke the latest loader so changing filters re-queries
 function Harness() {
   const [filter, setFilter] = useState("a");
   const { value, reload } = useResource(async () => `result:${filter}`);
@@ -35,7 +32,7 @@ describe("useResource", () => {
     await act(async () => {
       screen.getByText("reload").click();
     });
-    // Before the fix this stayed "result:a" forever.
+    // reload must pick up the new loader and yield result:b
     await waitFor(() => expect(screen.getByTestId("value")).toHaveTextContent("result:b"));
   });
 });

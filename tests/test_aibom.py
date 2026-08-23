@@ -1,10 +1,4 @@
-"""The AI-BOM is valid CycloneDX and does not silently truncate (audit H7).
-
-Previously the export stamped bomFormat/specVersion onto a bespoke JSON shape
-with no components[] and read only the last 5000 events per type. This checks
-that the BOM has the CycloneDX envelope, real components and dependency edges
-with no dangling refs, and that models/providers observed in telemetry appear.
-"""
+"""ai-bom is valid cyclonedx with real components and no dangling refs"""
 
 from __future__ import annotations
 

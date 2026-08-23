@@ -7,14 +7,9 @@ import { Badge, EmptyState, RecordList, Section } from "./ui";
 import { useResource } from "./useResource";
 import { WebhookSettings } from "./webhooks";
 
-/**
- * Identity & Integrations — self-serve enterprise setup for an organization
- * administrator: SSO (OpenID Connect), SCIM provisioning tokens, and SDK
- * ingestion keys.
- *
- * Secrets (keys, tokens) are shown exactly once in a dismissable reveal with
- * copy-to-clipboard; they are never rendered persistently and never re-fetchable.
- */
+// identity & integrations: org-admin setup for sso (oidc), scim provisioning
+// tokens and sdk ingestion keys. secrets are shown once in a dismissable reveal
+// with copy-to-clipboard; never persisted in the ui, never re-fetchable
 
 // --- one-time secret reveal -----------------------------------------------------
 
@@ -50,7 +45,7 @@ export function SecretReveal({ label, value, onDismiss }: { label: string; value
   );
 }
 
-// --- SSO --------------------------------------------------------------------------
+// --- sso --------------------------------------------------------------------------
 
 type SsoConfig = {
   issuer: string;
@@ -179,7 +174,7 @@ export function SsoSettings({ tenantId }: { tenantId: string }) {
   );
 }
 
-// --- SAML -------------------------------------------------------------------------
+// --- saml -------------------------------------------------------------------------
 
 type SamlPayload = {
   saml: { idp_entity_id: string; idp_sso_url: string; idp_certificate: string; default_role: string; allowed_email_domain: string | null; enabled: number | boolean } | null;
@@ -299,7 +294,7 @@ export function SamlSettings() {
   );
 }
 
-// --- generic token list (SCIM tokens / ingestion keys) --------------------------
+// --- generic token list (scim tokens / ingestion keys) --------------------------
 
 type TokenRecord = { status: string; name: string; created_at: string; last_used_at?: string | null } & Record<string, any>;
 
@@ -443,7 +438,7 @@ export function IngestionKeySettings() {
   );
 }
 
-// --- Evidence attestation keys -----------------------------------------------------
+// --- evidence attestation keys -----------------------------------------------------
 
 type AttestationKey = {
   key_id: string;
@@ -456,12 +451,9 @@ type AttestationKey = {
   revoked_at?: string | null;
 };
 
-/**
- * Registers the Ed25519 public keys a CI pipeline uses to sign eval results.
- * Registering the first key is the opt-in: from then on, deployment gates in
- * this organization only count *attested* passing evals, so a self-reported
- * `passed: true` from any ingestion-key holder can no longer satisfy a gate.
- */
+// registers the ed25519 public keys ci uses to sign eval results. registering
+// the first key opts the org in: gates then only count attested passing evals,
+// so a self-reported `passed: true` can't satisfy a gate
 export function AttestationKeySettings() {
   const { value, error, reload } = useResource(() =>
     getJson<{ attestation_keys: AttestationKey[]; attestation_required: boolean }>("/api/attestation-keys"),

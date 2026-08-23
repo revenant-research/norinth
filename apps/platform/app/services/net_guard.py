@@ -1,13 +1,13 @@
-"""Egress guard against server-side request forgery.
+"""egress guard against server-side request forgery
 
-Webhook URLs and OIDC endpoints are configured by organization administrators
-and then fetched by the server, so an attacker who is (or compromises) an org
-admin could point them at internal services or the cloud metadata endpoint
-(169.254.169.254). Before any such fetch we resolve the host and refuse
-loopback, private, link-local, reserved and multicast addresses.
+webhook urls and oidc endpoints are configured by org admins and then fetched by
+the server, so a malicious or compromised org admin could point them at internal
+services or the cloud metadata endpoint (169.254.169.254). before any such fetch
+we resolve the host and refuse loopback, private, link-local, reserved and
+multicast addresses.
 
-Set NORINTH_ALLOW_PRIVATE_EGRESS=1 to disable the check (local development,
-where a webhook receiver runs on 127.0.0.1).
+set NORINTH_ALLOW_PRIVATE_EGRESS=1 to disable the check (local dev where a
+webhook receiver runs on 127.0.0.1)
 """
 
 from __future__ import annotations
@@ -35,13 +35,12 @@ def _is_blocked(ip: str) -> bool:
         or addr.is_reserved
         or addr.is_multicast
         or addr.is_unspecified
-        or addr == ipaddress.ip_address("169.254.169.254")  # cloud metadata (also link-local, explicit for clarity)
+        or addr == ipaddress.ip_address("169.254.169.254")  # cloud metadata (also link-local, kept explicit)
     )
 
 
 def validate_external_url(url: str) -> None:
-    """Raise EgressError unless url is an http(s) URL whose host resolves only
-    to public addresses. Call immediately before fetching."""
+    """raise unless url is http(s) and its host resolves only to public addrs; call right before fetching"""
     if _allow_private():
         return
     parsed = urlparse(url)

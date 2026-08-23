@@ -5,16 +5,14 @@ import { Badge, Button, Callout, Card, Code, CodeBlock, Container, Eyebrow, Form
 import { SecretReveal } from "./identity";
 import styles from "./setup.module.css";
 
-/**
- * First-run setup wizard. Shown instead of the landing page until the first
- * organization exists. Six steps, each backed by an existing API:
- *   1 sign in as the platform administrator (credentials from the installer)
- *   2 set a password of your own (required if the bootstrap one is forced)
- *   3 create your organization and its first administrator (you)
- *   4 create the first ingestion key
- *   5 instrument one application and watch the first event arrive (live)
- *   6 done -> Getting started
- */
+// first-run setup wizard, shown instead of the landing page until the first org
+// exists. six steps, each backed by an api:
+//   1 sign in as the platform admin (installer credentials)
+//   2 set your own password (required if the bootstrap one is forced)
+//   3 create your org and its first admin
+//   4 create the first ingestion key
+//   5 instrument one app and watch the first event arrive (live)
+//   6 done
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -80,7 +78,7 @@ export function SetupWizard({ initialUser, onFinished }: { initialUser: User | n
     }
   }
 
-  // Step 5: poll until the organization receives its first event.
+  // step 5: poll until the org receives its first event
   useEffect(() => {
     if (step !== 5) return;
     let cancelled = false;
@@ -179,7 +177,7 @@ export function SetupWizard({ initialUser, onFinished }: { initialUser: User | n
                   void run(async () => {
                     if (org.admin_password.length < 12) throw new Error("Use at least 12 characters for your organization password.");
                     await postJson("/api/setup/organization", org);
-                    // Hand over from the platform administrator to the organization administrator.
+                    // hand off from the platform admin to the new org admin
                     await logout();
                     const user = await login(org.admin_email, org.admin_password);
                     setOrgUser(user);

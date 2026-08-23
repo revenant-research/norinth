@@ -1,4 +1,4 @@
-"""Baseline smoke tests for the open-source SDK."""
+"""smoke tests for the sdk"""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def test_privacy_summary_is_metadata_only_by_default():
     from norinth_logger.privacy import summarize_value
 
     summary = summarize_value("a secret prompt", capture_content=False)
-    # Without capture_content, the raw value must not be present.
+    # without capture_content, the raw value must not be present
     assert "content" not in summary
     assert summary["hash"].startswith("sha256:")
     assert summary["type"] == "str"

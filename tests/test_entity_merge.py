@@ -1,10 +1,4 @@
-"""Regression test for atomic set-merge on inventory entities (audit H-11).
-
-The application/model/provider inventory rows accumulate JSON sets across ingest
-batches via a read-modify-write. This verifies the sets accumulate correctly
-(the transaction change did not break merging) and that a second batch's members
-are not lost.
-"""
+"""inventory entity set-merge accumulates members across ingest batches"""
 
 from __future__ import annotations
 
@@ -41,11 +35,11 @@ def _ingest(client, event):
 def test_merge_sets_unit_accumulates():
     from app.storage.entities import merge_sets
 
-    # First observation.
+    # first observation
     first = merge_sets(None, {"providers": "openai"})
     assert first["providers"] == ["openai"]
 
-    # Second observation on an existing row keeps the old member and adds the new.
+    # existing row keeps old member and adds new
     class _Row(dict):
         def __getitem__(self, key):
             return super().__getitem__(key)
@@ -56,7 +50,7 @@ def test_merge_sets_unit_accumulates():
 
 
 def test_two_batches_accumulate_providers(client):
-    # Two separate ingest batches for the same application, different providers.
+    # two batches, same application, different providers
     assert _ingest(client, _model_call("openai", "a")).status_code == 200
     assert _ingest(client, _model_call("anthropic", "b")).status_code == 200
 
@@ -68,5 +62,5 @@ def test_two_batches_accumulate_providers(client):
             "SELECT providers FROM governance_applications WHERE application_name = 'app'"
         ).fetchone()
     providers = set(decode_json(row["providers"], []))
-    # Neither provider was lost across the two batches.
+    # neither provider lost across the two batches
     assert providers == {"openai", "anthropic"}

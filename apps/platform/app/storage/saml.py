@@ -1,8 +1,7 @@
-"""Per-tenant SAML 2.0 configuration and in-flight request state.
+"""per-tenant saml 2.0 configuration and in-flight request state.
 
-Many large enterprises and health systems still run SAML-only identity
-providers (ADFS, Okta/Entra SAML apps). The platform is the Service Provider;
-the IdP's signing certificate is stored so assertions can be verified.
+the platform is the service provider; the idp's signing certificate is stored
+so assertions can be verified.
 """
 
 from __future__ import annotations
@@ -17,7 +16,7 @@ REQUEST_TTL_MINUTES = 10
 
 
 def ensure_saml_tables(connection) -> None:
-    """Schema for migration 3 (also safe to call idempotently)."""
+    """saml tables schema, idempotent"""
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS saml_configurations (
@@ -94,10 +93,10 @@ def disable_saml_configuration(tenant_id: str) -> None:
 
 
 def create_saml_request(tenant_id: str) -> str:
-    """Persist an AuthnRequest id so the Response's InResponseTo can be checked
-    (prevents unsolicited / replayed responses). Single use."""
+    """persist an authnrequest id so the response's inresponseto can be checked;
+    prevents unsolicited/replayed responses, single use"""
     now = datetime.now(UTC)
-    request_id = "_" + secrets.token_hex(20)  # SAML ids must be valid xs:ID (not start with a digit)
+    request_id = "_" + secrets.token_hex(20)  # saml ids must be valid xs:ID, not start with a digit
     with connect() as connection:
         connection.execute("DELETE FROM saml_requests WHERE expires_at <= ?", (now.isoformat(),))
         connection.execute(

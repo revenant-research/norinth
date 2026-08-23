@@ -6,7 +6,7 @@ function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
 }
 
-/** Uppercase, letter-spaced label in the signal colour: "CORE IP · RELU". */
+/** uppercase, letter-spaced label in the signal colour */
 export function Eyebrow({ children, tone = "signal", className, ...rest }: { children: ReactNode; tone?: "signal" | "dim" | "inverse" } & HTMLAttributes<HTMLSpanElement>) {
   return (
     <span className={cx(styles.eyebrow, tone === "dim" && styles.eyebrowDim, tone === "inverse" && styles.eyebrowInverse, className)} {...rest}>
@@ -46,7 +46,7 @@ export function Text({
   );
 }
 
-/** Lead paragraph under a heading. */
+/** lead paragraph under a heading */
 export function Lede({ children, className, ...rest }: { children: ReactNode } & HTMLAttributes<HTMLParagraphElement>) {
   return (
     <p className={cx(styles.lede, className)} {...rest}>

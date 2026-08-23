@@ -1,10 +1,4 @@
-"""The agentic-workflow risk rule matches whole words, not substrings (M103).
-
-An app named "stool-sample-tracker" used to receive a High-severity "Agentic
-workflow without agent run evidence" finding because "tool" is a substring of
-"stool". Matching now requires a word boundary, and real tool.call telemetry is
-the primary signal.
-"""
+"""agentic-workflow risk rule matches whole words not substrings"""
 
 from __future__ import annotations
 
@@ -77,5 +71,5 @@ def test_real_agentic_app_is_flagged(client):
 
 
 def test_tool_call_telemetry_flags_regardless_of_name(client):
-    # No agentic term in the name, but tool.call telemetry with no agent.run.
+    # no agentic term in name but tool.call telemetry with no agent.run
     assert _run_rule("claims-copilot", [_model_call("claims-copilot"), _tool_call("claims-copilot")]) is True

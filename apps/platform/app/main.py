@@ -33,9 +33,7 @@ from app.storage.errors import RecordNotFound
 from app.storage.migrations import run_migrations
 from app.storage.workflow import load_platform_user
 
-# The application configures logging (previously nothing did, so records below
-# WARNING were dropped and operators had no visibility — audit finding M108).
-# Level is env-tunable; the default is INFO.
+# level via NORINTH_LOG_LEVEL, default INFO
 logging.basicConfig(
     level=os.getenv("NORINTH_LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -47,11 +45,9 @@ INDEX_FILE = STATIC_DIR / "index.html"
 
 app = FastAPI(title="Norinth Platform", description="AI governance platform API: ingestion, inventory, risk, review workflow, release gates, compliance evidence.")
 
-# Host-header trust (audit finding M98) is enforced narrowly, inside the SAML and
-# OIDC endpoints that build callback/audience URLs (see services/base_url.py), NOT
-# with a global TrustedHostMiddleware — a global middleware also rejects the
-# liveness/readiness probe and the installer's health check, which legitimately
-# use a localhost or pod-IP Host.
+# host-header trust is checked only where saml/oidc build callback urls (see
+# services/base_url.py), not globally: a global check would 400 health probes
+# that arrive with a localhost or pod-ip host
 
 run_migrations()
 start_notification_worker()
@@ -76,19 +72,16 @@ app.include_router(notifications_router)
 
 @app.exception_handler(RecordNotFound)
 async def _record_not_found_handler(request: Request, exc: RecordNotFound):
-    # A record addressed by id does not exist. Previously these raised an
-    # unhandled ValueError -> 500 on the decision endpoints (audit finding M104).
     return JSONResponse(status_code=404, content={"detail": str(exc) or "Not found"})
 
 
 @app.exception_handler(ValueError)
 async def _value_error_handler(request: Request, exc: ValueError):
-    # Remaining domain ValueErrors are bad input, not server faults: return 400
-    # rather than leaking a 500/stack trace. (RecordNotFound is handled above.)
+    # domain ValueErrors are bad input, return 400 not a 500/stack trace
     return JSONResponse(status_code=400, content={"detail": str(exc) or "Invalid request"})
 
 
-# Endpoints reachable while a user still owes a password change.
+# reachable while a user still owes a password change
 _PASSWORD_CHANGE_ALLOWLIST = {
     "/api/auth/login",
     "/api/auth/logout",
@@ -103,22 +96,19 @@ _PASSWORD_CHANGE_ALLOWLIST = {
 
 
 _MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
-# The SAML Assertion Consumer Service receives a cross-site form POST from the
-# identity provider by design; it is protected by the assertion signature and
-# InResponseTo binding rather than by Origin matching.
+# saml acs is a cross-site form post from the idp by design; protected by the
+# assertion signature and InResponseTo binding, not by origin matching
 _CSRF_EXEMPT = {"/api/auth/saml/acs"}
 
 
 @app.middleware("http")
 async def csrf_origin_check(request: Request, call_next):
-    """Defense-in-depth CSRF protection for cookie-authenticated mutations.
+    """csrf origin check for cookie-authed mutations
 
-    Browsers send an ``Origin`` header on state-changing requests and forbid
-    scripts from forging it, so requiring Origin to match the request host on
-    mutating /api/* calls blocks cross-site request forgery. Requests without an
-    Origin (non-browser API clients, which don't carry a victim's ambient
-    cookies) are unaffected. Ingestion (/v1/*) uses key auth, not cookies, so it
-    is out of scope. This complements the cookie's SameSite=lax (audit H-8).
+    browsers forbid scripts from forging Origin, so requiring it to match the
+    request host on mutating /api/* calls blocks csrf. requests without an Origin
+    (non-browser clients, no ambient cookies) are unaffected. /v1/* uses key
+    auth, out of scope. complements the cookie's SameSite=lax
     """
     if (
         request.method in _MUTATING_METHODS
@@ -127,10 +117,9 @@ async def csrf_origin_check(request: Request, call_next):
     ):
         origin = request.headers.get("origin")
         if origin:
-            # Behind a TLS-terminating proxy the request scheme is http while the
-            # browser's Origin is https; honour X-Forwarded-Proto/Host when the
-            # deployment declares a trusted proxy, so logins are not all 403'd
-            # (finding H2). Compare only scheme+host+port.
+            # behind a tls-terminating proxy the request scheme is http while the
+            # browser Origin is https; honour x-forwarded-proto/host when a trusted
+            # proxy is declared so logins are not all 403'd. compare scheme+host+port
             trust_proxy = os.getenv("NORINTH_TRUST_PROXY", "0").lower() in {"1", "true", "yes"}
             scheme = request.url.scheme
             host = request.headers.get("host", "")
@@ -138,7 +127,7 @@ async def csrf_origin_check(request: Request, call_next):
                 scheme = (request.headers.get("x-forwarded-proto", scheme).split(",")[0].strip()) or scheme
                 host = (request.headers.get("x-forwarded-host", host).split(",")[0].strip()) or host
             expected = {f"{scheme}://{host}"}
-            # Also accept the explicitly configured public URL, if set.
+            # also accept the configured public url if set
             public = os.getenv("NORINTH_PUBLIC_BASE_URL")
             if public:
                 expected.add(public.rstrip("/"))
@@ -152,12 +141,10 @@ async def csrf_origin_check(request: Request, call_next):
 
 @app.middleware("http")
 async def enforce_password_change(request: Request, call_next):
-    """Server-side gate: a user flagged must_change_password may reach only the
-    auth allowlist until they rotate their credential.
+    """block a must_change_password user from anything but the auth allowlist
 
-    Previously this was enforced only in the frontend, so anyone holding a
-    temporary password could drive the entire API with curl indefinitely
-    (audit C-4). Ingestion (`/v1/...`) uses key auth and is unaffected.
+    frontend-only enforcement would let a temporary password drive the whole api
+    via curl. /v1/... uses key auth and is unaffected
     """
     path = request.url.path
     if path.startswith("/api/") and path not in _PASSWORD_CHANGE_ALLOWLIST:
@@ -172,9 +159,8 @@ async def enforce_password_change(request: Request, call_next):
     return await call_next(request)
 
 
-# Paths that serve interactive API docs from a bundled Swagger/ReDoc CDN; the
-# strict Content-Security-Policy below would block those third-party scripts, so
-# the developer-tooling routes are exempted from CSP (they carry no tenant data).
+# swagger/redoc docs pull third-party scripts the strict csp would block; these
+# routes carry no tenant data so exempt them from csp
 _CSP_EXEMPT_PREFIXES = ("/docs", "/redoc", "/openapi.json")
 
 _CONTENT_SECURITY_POLICY = (
@@ -191,9 +177,8 @@ _CONTENT_SECURITY_POLICY = (
 )
 
 
-# Reject request bodies larger than this before reading them, so a single huge
-# payload cannot exhaust memory (audit finding H10). Override with
-# NORINTH_MAX_BODY_BYTES; 0 disables the check.
+# reject oversized bodies before reading so one huge payload can't exhaust memory
+# override with NORINTH_MAX_BODY_BYTES; 0 disables
 _MAX_BODY_BYTES = int(os.getenv("NORINTH_MAX_BODY_BYTES", str(16 * 1024 * 1024)))
 
 
@@ -212,13 +197,10 @@ async def limit_body_size(request: Request, call_next):
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
-    """Attach hardening response headers absent before audit finding H10.
+    """hardening response headers
 
-    Clickjacking (X-Frame-Options / frame-ancestors), MIME sniffing
-    (X-Content-Type-Options), referrer leakage (Referrer-Policy), and a
-    default-deny CSP that keeps the self-hosted dashboard from loading any
-    third-party origin. HSTS is emitted only when the effective scheme is https
-    (directly or via a trusted proxy) so plain-http dev is not pinned.
+    hsts only when the effective scheme is https (directly or via trusted proxy)
+    so plain-http dev is not pinned
     """
     response = await call_next(request)
     response.headers.setdefault("X-Content-Type-Options", "nosniff")

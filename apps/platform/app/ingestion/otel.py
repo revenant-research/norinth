@@ -1,16 +1,4 @@
-"""Map OpenTelemetry GenAI spans to Norinth events.
-
-Lets Norinth ingest telemetry from ANY OpenTelemetry-instrumented framework or
-LLM gateway (LiteLLM, Portkey, Kong, Microsoft Agent Framework, Pydantic AI,
-Vercel AI SDK, ...), not only the first-party SDK. This is the strategic
-"consume everyone's signals" ingestion path from the GTM/research: build to the
-GenAI semantic conventions so the observability layer feeds the governance
-system of record.
-
-Accepts OTLP/HTTP JSON (`resourceSpans -> scopeSpans -> spans`) and maps the
-`gen_ai.*` attributes to the same event shapes the SDK emits, so the existing
-entity/governance pipeline processes them unchanged.
-"""
+"""map opentelemetry gen_ai spans to norinth events"""
 
 from __future__ import annotations
 
@@ -19,7 +7,7 @@ from typing import Any
 
 SCHEMA_VERSION = "2026-01"
 
-# gen_ai.operation.name -> Norinth event type.
+# gen_ai.operation.name -> event type
 _OPERATION_TO_EVENT = {
     "chat": "model.call",
     "text_completion": "model.call",
@@ -34,7 +22,7 @@ _OPERATION_TO_EVENT = {
 
 
 def _attr_value(value: dict[str, Any]) -> Any:
-    """Extract a scalar from an OTLP AnyValue."""
+    """scalar from an otlp AnyValue"""
     for key in ("stringValue", "boolValue"):
         if key in value:
             return value[key]
@@ -68,7 +56,7 @@ def _nanos_to_iso(nanos: Any) -> str:
 def _event_type(operation: str | None, attrs: dict[str, Any]) -> str | None:
     if operation and operation in _OPERATION_TO_EVENT:
         return _OPERATION_TO_EVENT[operation]
-    # A span carrying a data-source id is a retrieval even without an operation.
+    # a data-source id means retrieval even without an operation
     if attrs.get("gen_ai.data_source.id"):
         return "retrieval.call"
     return None
@@ -79,7 +67,7 @@ def _span_to_event(span: dict[str, Any], resource_attrs: dict[str, Any]) -> dict
     operation = attrs.get("gen_ai.operation.name")
     event_type = _event_type(operation, attrs)
     if event_type is None:
-        return None  # not a GenAI span; skip
+        return None  # not a gen_ai span
 
     provider = attrs.get("gen_ai.provider.name") or attrs.get("gen_ai.system")
     model = attrs.get("gen_ai.request.model") or attrs.get("gen_ai.response.model")
@@ -134,11 +122,7 @@ def _span_to_event(span: dict[str, Any], resource_attrs: dict[str, Any]) -> dict
 
 
 def otel_spans_to_events(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    """Convert an OTLP/HTTP JSON traces payload into Norinth events.
-
-    Non-GenAI spans are silently skipped. The result feeds the same ingestion
-    pipeline as first-party SDK events.
-    """
+    """convert an otlp/http json traces payload into events; non-gen_ai spans skipped"""
     events: list[dict[str, Any]] = []
     for resource_span in payload.get("resourceSpans", []):
         resource_attrs = _attributes_to_dict((resource_span.get("resource") or {}).get("attributes"))

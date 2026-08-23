@@ -10,22 +10,15 @@ from app.schemas.events import ScopeFilter
 from app.storage.audit import list_audit_logs, record_audit, verify_audit_chain
 from app.storage.raw_events import list_events
 
-# The AI-BOM pages through telemetry rather than reading a single fixed window,
-# so an inventory larger than one page is not silently dropped (audit finding
-# H7). If the safety ceiling is reached, the BOM says so via a property instead
-# of quietly under-reporting.
+# ai-bom pages through all telemetry up to a ceiling; discloses truncation instead of dropping
 _AIBOM_PAGE = 1000
 _AIBOM_MAX_EVENTS = 200_000
-# Deterministic namespace so the same portfolio yields a stable serialNumber.
+# deterministic namespace so same portfolio yields a stable serialNumber
 _AIBOM_NAMESPACE = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
 
 
 def _collect_events(event_type: str, tenant_id, project, environment) -> tuple[list[dict[str, Any]], bool]:
-    """Page through all events of a type up to a safety ceiling.
-
-    Returns (events, truncated) so the caller can disclose truncation rather
-    than silently capping at a single page.
-    """
+    """page through all events of a type up to a ceiling; returns (events, truncated)"""
     collected: list[dict[str, Any]] = []
     offset = 0
     while offset < _AIBOM_MAX_EVENTS:
@@ -53,7 +46,7 @@ def aibom(scope: ScopeFilter = Depends(scoped_dependency)) -> dict[str, Any]:
 
 @router.get("/api/compliance/framework-coverage")
 def framework_coverage(scope: ScopeFilter = Depends(scoped_dependency)) -> dict[str, Any]:
-    """Per-framework compliance posture rolled up from control assessments."""
+    """per-framework coverage from control assessments"""
     from app.services.governance import build_framework_coverage
 
     return build_framework_coverage(scope)
@@ -61,18 +54,8 @@ def framework_coverage(scope: ScopeFilter = Depends(scoped_dependency)) -> dict[
 
 @router.get("/api/compliance/audit-packet")
 def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilter = Depends(scoped_dependency)) -> dict[str, Any]:
-    """Assemble an audit-ready evidence packet for the actor's tenant.
-
-    A single, self-contained export of governance posture that an auditor or a
-    certification body (SOC 2, ISO 42001, EU AI Act, healthcare AI assurance programs) can
-    review: inventory, framework-mapped control assessments, risk findings,
-    governance decisions and exceptions, deployment approvals, incidents,
-    material changes, the CycloneDX AI-BOM, and the tamper-evidence status of the
-    audit trail. This was named as a missing capability in the audit and is a
-    table-stakes feature for the evidence-automation market.
-    """
-    # Imported here to avoid a circular import at module load
-    # (services.governance imports nothing from this module).
+    """assemble a self-contained audit evidence packet for the tenant"""
+    # imported here to avoid a circular import at module load
     from app.services.governance import (
         build_applications,
         build_change_events,
@@ -90,8 +73,7 @@ def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilte
     from app.storage.agents import compute_agent_posture, list_registered_agents, public_posture
     from app.storage.entities import list_providers
 
-    # Exporting evidence is itself an auditable act: record who pulled the
-    # packet and for which scope, before assembling it.
+    # exporting evidence is itself auditable; record it before assembling
     record_audit(
         actor_ref=actor.user_ref,
         action="compliance.audit_packet",
@@ -137,7 +119,7 @@ def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilte
 
 
 def generate_aibom(tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> dict[str, Any]:
-    # Fetch events that indicate AI usage, paging through all of them.
+    # events that indicate ai usage
     model_calls, t1 = _collect_events("model.call", tenant_id, project, environment)
     retrievals, t2 = _collect_events("retrieval.call", tenant_id, project, environment)
     guardrails, t3 = _collect_events("guardrail.decision", tenant_id, project, environment)
@@ -210,12 +192,8 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
         if sys_key in systems:
             systems[sys_key]["agents"].add(agent_name)
 
-    # Emit a schema-valid CycloneDX 1.6 BOM (audit finding H7). Each AI system is
-    # an "application" component; each distinct model is a "machine-learning-
-    # model" component with a modelCard; each provider is a "platform" component.
-    # Guardrails, retrievers and agents observed for a system are attached to it
-    # as namespaced properties, and dependency edges link systems to the models
-    # and providers they use, so SBOM tooling accepts and can traverse the BOM.
+    # cyclonedx 1.6: ai system -> application component, model -> machine-learning-model,
+    # provider -> platform; guardrails/retrievers/agents as properties, deps link them
     components: list[dict[str, Any]] = []
     dependencies: list[dict[str, Any]] = []
 
@@ -288,7 +266,7 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
         },
     }
     if truncated:
-        # Never under-report silently: disclose that the ceiling was reached.
+        # disclose that the ceiling was reached
         metadata["properties"] = [
             {"name": "norinth:truncated", "value": "true"},
             {"name": "norinth:max_events_scanned", "value": str(_AIBOM_MAX_EVENTS)},

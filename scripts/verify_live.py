@@ -7,15 +7,11 @@ from http.cookiejar import CookieJar
 from typing import Any
 from urllib import error, request
 
-# Live verification of the identity, multi-tenancy, RBAC, intake, and decision
-# path. It exercises the provisioning chain (super admin -> organization ->
-# org admin -> user -> role) and the governance workflow (intake -> routed
-# review -> decision), and asserts that unauthenticated and unauthorized calls
-# are rejected and that maker-checker separation is enforced.
-#
-# The deployment-gate and incident flows are driven by SDK telemetry; this
-# script focuses on the human identity and governance surface: provisioning,
-# RBAC, routed reviews, and maker-checker decisions.
+# live check of identity, multi-tenancy, rbac, intake, and decision paths.
+# exercises provisioning (super admin -> org -> org admin -> user -> role) and the
+# governance workflow (intake -> routed review -> decision), and asserts that
+# unauthenticated/unauthorized calls are rejected and maker-checker is enforced.
+# deployment-gate and incident flows are telemetry-driven and not covered here.
 
 PLATFORM_URL = os.getenv("NORINTH_PLATFORM_URL", "http://127.0.0.1:8001")
 SUPER_ADMIN_EMAIL = os.getenv("NORINTH_SUPER_ADMIN_EMAIL", "admin@norinth.local")
@@ -40,7 +36,7 @@ def assert_condition(condition: bool, message: str) -> None:
 
 
 class Session:
-    """Minimal cookie-aware HTTP session over urllib."""
+    """minimal cookie-aware http session over urllib"""
 
     def __init__(self, base_url: str) -> None:
         self.base_url = base_url
@@ -75,14 +71,14 @@ class Session:
 
 
 def login_super_admin(session: Session) -> dict[str, Any]:
-    """Log the super admin in, completing first-login rotation if required."""
+    """log the super admin in, rotating the first-login password if required"""
     try:
         login = session.post(
             "/api/auth/login",
             {"email": SUPER_ADMIN_EMAIL, "password": SUPER_ADMIN_PASSWORD},
         )
     except AssertionError:
-        # The default password was already rotated by a previous run.
+        # default password already rotated by a previous run
         return session.post(
             "/api/auth/login",
             {"email": SUPER_ADMIN_EMAIL, "password": ROTATED_SUPER_ADMIN_PASSWORD},
@@ -96,12 +92,7 @@ def login_super_admin(session: Session) -> dict[str, Any]:
 
 
 def login_and_activate(session: Session, email: str, password: str) -> dict[str, Any]:
-    """Log a freshly-provisioned user in, completing first-login rotation.
-
-    Every provisioned user is created with must_change_password=True, which the
-    server enforces (audit C-4); without rotating, the very next API call is
-    403'd. This is why the script failed against a fresh install (H16).
-    """
+    """log a fresh user in and rotate the first-login password; the server 403s every call until it's changed"""
     login = session.post("/api/auth/login", {"email": email, "password": password})
     if login["user"].get("must_change_password"):
         session.post(
@@ -115,17 +106,15 @@ def main() -> int:
     health = Session(PLATFORM_URL).get("/health")
     assert_condition(health["ok"], "platform health check failed")
 
-    # 1. Unauthenticated reads must be rejected.
+    # 1. unauthenticated reads must be rejected
     anon = Session(PLATFORM_URL)
     anon.get("/api/applications", expected_status=401)
     anon.get("/api/admin/organizations", expected_status=401)
 
-    # 2. Super admin signs in and provisions an organization with its admin.
-    #    A super admin seeded from development defaults is created with
-    #    must_change_password=True; the server blocks the rest of the API until
-    #    the password is rotated, so on a fresh install this script must complete
-    #    that first-login step (audit finding H16). On a re-run the default no
-    #    longer works, so it falls back to the rotated password.
+    # 2. super admin signs in and provisions an org with its admin. the seeded
+    #    super admin has must_change_password=True, so the first-login password
+    #    must be rotated before the rest of the api works; a re-run falls back to
+    #    the rotated password.
     superadmin = Session(PLATFORM_URL)
     me = login_super_admin(superadmin)
     assert_condition(me["user"]["is_super_admin"], "seeded user is not a super admin")
@@ -142,7 +131,7 @@ def main() -> int:
     )
     assert_condition(org["organization"]["tenant_id"] == "verify-co", "organization was not provisioned")
 
-    # A second tenant is provisioned to prove cross-tenant isolation later.
+    # second tenant, to prove cross-tenant isolation later
     superadmin.post(
         "/api/admin/organizations",
         {
@@ -156,7 +145,7 @@ def main() -> int:
     organizations = superadmin.get("/api/admin/organizations")["organizations"]
     assert_condition(len(organizations) >= 2, "organizations were not listed for the super admin")
 
-    # 3. Org admin signs in and provisions a reviewer in their organization.
+    # 3. org admin signs in and provisions a reviewer in their org
     orgadmin = Session(PLATFORM_URL)
     login_and_activate(orgadmin, "orgadmin@verify-co.test", "orgadminpass1")
     orgadmin.post(
@@ -164,16 +153,16 @@ def main() -> int:
         {"email": "reviewer@verify-co.test", "display_name": "Verify Reviewer", "password": "reviewerpass1"},
     )
     orgadmin.post("/api/org/role-assignments", {"user_ref": "reviewer@verify-co.test", "role": "governance_admin"})
-    # A no-role user proves that authentication alone does not grant authorization.
+    # no-role user: proves auth alone doesn't grant authorization
     orgadmin.post(
         "/api/org/users",
         {"email": "noroles@verify-co.test", "display_name": "No Roles", "password": "norolespass1"},
     )
 
-    # 4. Configure routing so intake reviews land with the reviewer role.
+    # 4. route intake reviews to the reviewer role
     orgadmin.post("/api/review-queue-policies", REVIEW_QUEUE_POLICY)
 
-    # 5. Org admin submits an AI use case; risk tier is derived automatically.
+    # 5. org admin submits a use case; risk tier is derived automatically
     intake = orgadmin.post(
         "/api/intake",
         {
@@ -193,14 +182,14 @@ def main() -> int:
     assert_condition(intake_task is not None, "intake did not route a review task")
     assert_condition(intake_task["assigned_role"] == "governance_admin", "intake review was not routed to the reviewer role")
 
-    # 6. Segregation of duties: the submitter cannot decide their own intake.
+    # 6. separation of duties: submitter can't decide their own intake
     orgadmin.post(
         "/api/decisions",
         {"target_type": "review_task", "target_id": intake_task["task_id"], "decision": "approve", "rationale": "self-approval"},
         expected_status=403,
     )
 
-    # 7. An authenticated but unauthorized user cannot decide either.
+    # 7. authenticated but unauthorized user can't decide either
     noroles = Session(PLATFORM_URL)
     login_and_activate(noroles, "noroles@verify-co.test", "norolespass1")
     noroles.post(
@@ -209,7 +198,7 @@ def main() -> int:
         expected_status=403,
     )
 
-    # 8. The reviewer (a different user, with the role) records the decision.
+    # 8. reviewer (different user, has the role) records the decision
     reviewer = Session(PLATFORM_URL)
     login_and_activate(reviewer, "reviewer@verify-co.test", "reviewerpass1")
     reviewer.post(
@@ -219,7 +208,7 @@ def main() -> int:
     decisions = reviewer.get("/api/decisions")["decisions"]
     assert_condition(any(d["target_id"] == intake_task["task_id"] for d in decisions), "review decision did not persist")
 
-    # 9. Tenant isolation: the other org's admin cannot see verify-co records.
+    # 9. tenant isolation: other org's admin can't see verify-co records
     other = Session(PLATFORM_URL)
     login_and_activate(other, "orgadmin@other-co.test", "otheradminpass1")
     other_intake = other.get("/api/intake")["intake"]
@@ -227,10 +216,10 @@ def main() -> int:
     other_scopes = other.get("/api/scopes")
     assert_condition(other_scopes["tenants"] == ["other-co"], "tenant scope leaked across organizations")
 
-    # 10. Lifecycle: org admin recertifies the use case.
+    # 10. lifecycle: org admin recertifies the use case
     orgadmin.post(f"/api/intake/{intake['intake']['intake_id']}/recertify", {"rationale": "Annual recertification complete."})
 
-    # 11. Audit trail captured the identity and governance actions.
+    # 11. audit trail captured the identity and governance actions
     audit = superadmin.get("/api/audit-logs")["audit_logs"]
     actions = {entry["action"] for entry in audit}
     for expected in {"auth.login", "org.provision", "user.create", "role.assign", "intake.submit", "review.decide", "lifecycle.recertify"}:
@@ -254,6 +243,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except Exception as exc:  # noqa: BLE001 - surface a clear failure for CI
+    except Exception as exc:  # noqa: BLE001 - print a clear failure for ci
         print(f"verification failed: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc

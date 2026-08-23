@@ -27,8 +27,7 @@ describe("loadDashboardData", () => {
           });
         }
         if (url.startsWith("/api/summary")) return jsonResponse({ applications: 1 });
-        // Generic list: key derived from the path is not needed; return every
-        // plausible key empty with a page block.
+        // generic list: return every plausible key empty with a page block
         return jsonResponse({
           applications: [], workflows: [], models: [], agents: [], retrievals: [], tools: [], guardrails: [],
           evals: [], controls: [], review_tasks: [], prompt_templates: [], deployments: [],
@@ -42,9 +41,9 @@ describe("loadDashboardData", () => {
     expect(data.modelCalls).toEqual([{ model: "gpt" }]);
     expect(data.totals.modelCalls).toBe(9876);
     expect(totalOf(data, "modelCalls", data.modelCalls)).toBe(9876);
-    // Lists without page metadata fall back to the loaded length.
+    // lists without page metadata fall back to the loaded length
     expect(totalOf({ totals: {} }, "risks", [1, 2, 3] as unknown[])).toBe(3);
-    // The failed endpoint is reported, not fatal.
+    // failed endpoint is reported, not fatal
     expect(data.risks).toEqual([]);
     expect(data.partialErrors).toEqual([{ key: "risks", message: "risk engine unavailable" }]);
     expect(data.summary).toEqual({ applications: 1 });

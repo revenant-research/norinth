@@ -1,5 +1,4 @@
-"""An AI system's stage is derived from its intake record and moves with the
-intake review decision; inventory exposes stage and risk tier."""
+"""system stage derived from intake and moves with the review decision"""
 
 from __future__ import annotations
 
@@ -25,17 +24,17 @@ def test_stage_moves_discovered_to_in_review_to_approved(super_admin_client):
             "attributes": {"provider": "openai", "model": "gpt-4o", "usage": {"input_tokens": 1, "output_tokens": 1}, "metadata": META}}
     assert org.post("/v1/events/batch", json={"events": [call]}, headers={"Authorization": f"Bearer {token}"}).status_code == 200
 
-    # Seen in telemetry, never registered: discovered (shadow AI).
+    # seen in telemetry, never registered: discovered (shadow ai)
     app_row = org.get("/api/applications").json()["applications"][0]
     assert app_row["stage"] == "discovered" and app_row["risk_tier"] is None
 
-    # Registered through intake: in review, with a tier.
+    # registered through intake: in review, with a tier
     submitted = org.post("/api/intake", json={"application_name": "Claims", "use_case": "Claims triage", "description": "d", "intended_purpose": "p", "data_sensitivity": "restricted", "autonomy_level": "supervised", "affects_individuals": True, "project": "p1", "environment": "prod"})
     assert submitted.status_code in (200, 201), submitted.text
     app_row = org.get("/api/applications").json()["applications"][0]
     assert app_row["stage"] == "in_review" and app_row["risk_tier"] in {"high", "critical"}
 
-    # A reviewer (not the submitter) approves the intake review -> approved.
+    # a reviewer (not the submitter) approves the intake review -> approved
     org.post("/api/org/users", json={"email": "rev@acme.test", "display_name": "Rev", "password": "rev-password-1"})
     org.post("/api/org/role-assignments", json={"user_ref": "rev@acme.test", "role": "governance_reviewer"})
     task = next(t for t in org.get("/api/review-tasks").json()["review_tasks"] if t["task_type"] == "intake_review")

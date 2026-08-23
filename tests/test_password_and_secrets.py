@@ -1,4 +1,4 @@
-"""Password KDF hardening and fail-closed secret storage (audit finding M101)."""
+"""password kdf hardening and fail-closed secret storage"""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "apps" / "p
 def test_verify_rejects_non_allowlisted_algorithm():
     from app.services.auth import verify_password
 
-    # A tampered DB row naming a weak/unknown KDF must never be executed.
+    # a tampered db row naming a weak/unknown kdf must never be executed
     forged = "pbkdf2_md5$1$00$deadbeef"
     assert verify_password("whatever", forged) is False
 
@@ -38,7 +38,7 @@ def test_hash_roundtrip_uses_current_params():
 
 
 def test_login_upgrades_a_weak_hash(client):
-    # Seed a user whose stored hash uses far fewer iterations than current.
+    # seed a user whose stored hash uses far fewer iterations than current
     import hashlib
 
     from app.services import auth

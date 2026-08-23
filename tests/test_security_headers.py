@@ -1,10 +1,4 @@
-"""Hardening response headers and request-size limits (audit finding H10).
-
-The platform previously returned no CSP, clickjacking, or MIME-sniffing headers,
-and accepted arbitrarily large ingestion batches. Every response now carries the
-hardening headers, oversized bodies are rejected before they are read, and a
-batch is capped at MAX_BATCH_EVENTS.
-"""
+"""response hardening headers and request-size limits"""
 
 from __future__ import annotations
 
@@ -41,7 +35,7 @@ def test_hardening_headers_present_on_dashboard(client):
 
 
 def test_hsts_only_over_https(client):
-    # TestClient speaks http, so HSTS must be absent (never pin plain-http dev).
+    # testclient speaks http, so hsts must be absent
     assert "Strict-Transport-Security" not in client.get("/").headers
 
 

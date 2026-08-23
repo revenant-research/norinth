@@ -1,11 +1,4 @@
-"""norinth.wrap() must instrument model calls without breaking the client (H14).
-
-The wrapper previously turned close(), with_options() and the context-manager
-protocol into un-callable proxy objects, recorded async calls as instant
-successes, mislabelled files.create / batches.create as model calls, and hashed
-un-consumed streams. These tests pin the corrected behaviour against a fake
-provider client (no real SDK or network).
-"""
+"""norinth.wrap() instruments model calls without breaking the client"""
 
 from __future__ import annotations
 
@@ -92,7 +85,7 @@ def test_non_model_create_is_not_recorded():
     client = wrap_client(_FakeOpenAI(), cap)
     out = client.files.create(purpose="fine-tune")
     assert out == {"id": "file-1"}
-    # files.create is not a model completion; it must not emit a model.call.
+    # files.create is not a model completion; it must not emit a model.call
     assert cap.calls == []
 
 
@@ -107,7 +100,7 @@ def test_close_passes_through():
 def test_with_options_returns_usable_client():
     cap = _CapturingClient()
     client = wrap_client(_FakeOpenAI(), cap)
-    # with_options must not raise; it returns a working (raw) client.
+    # with_options must not raise; it returns a working raw client
     other = client.with_options(timeout=5)
     assert isinstance(other, _FakeOpenAI)
 
@@ -146,7 +139,7 @@ def test_async_call_records_after_await():
 
     result = asyncio.run(run())
     assert isinstance(result, _Response)
-    assert order == ["ran"]  # instrumentation did not record before the await
+    assert order == ["ran"]  # not recorded before the await
     assert len(cap.calls) == 1
     assert cap.calls[0]["status"] == "success"
     assert cap.calls[0]["duration_ms"] >= 0
@@ -175,5 +168,5 @@ def test_streaming_call_does_not_fabricate_usage_or_hash_stream():
     assert hasattr(stream, "__iter__")
     call = cap.calls[0]
     assert call["usage"] == {}
-    assert call["response"] is None  # the un-consumed stream is never summarized
+    assert call["response"] is None  # un-consumed stream is never summarized
     assert call["metadata"] == {"streaming": True}

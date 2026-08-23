@@ -1,10 +1,8 @@
 import axe, { type AxeResults } from "axe-core";
 
-/**
- * Run axe-core against a rendered container under jsdom. Colour-contrast needs
- * a real layout engine and is covered by the live-browser sweep instead, so it
- * is disabled here; everything else in WCAG 2.1 A/AA + best-practice runs.
- */
+// run axe-core against a rendered container under jsdom. colour-contrast needs a
+// real layout engine so it's disabled here and checked in the live-browser run;
+// everything else in wcag 2.1 a/aa + best-practice runs
 export async function runAxe(container: Element): Promise<AxeResults> {
   return axe.run(container, {
     runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "best-practice"] },

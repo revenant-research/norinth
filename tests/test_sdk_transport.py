@@ -1,9 +1,4 @@
-"""Regression tests for SDK transport resilience (audit C-8, F5/F6).
-
-The overriding SDK contract is fail-open: a single bad event must never crash
-or permanently kill the background worker, and the transport must not lie about
-being healthy.
-"""
+"""sdk transport fail-open: a bad event never crashes or kills the worker"""
 
 from __future__ import annotations
 
@@ -15,8 +10,8 @@ sys.path.insert(0, str(SDK_DIR))
 
 
 def _offline_transport():
-    # Point at an unroutable endpoint so send always fails fast without a real
-    # server; async_transport=False makes send synchronous for deterministic tests.
+    # unroutable endpoint so send fails fast without a real server;
+    # async_transport=False makes send synchronous for deterministic tests
     from norinth_logger.config import NorinthConfig
     from norinth_logger.transport import EventTransport
 
@@ -32,21 +27,21 @@ def _offline_transport():
 
 
 class _Unserializable:
-    """repr is fine but the object is not JSON-serializable."""
+    """repr is fine but the object is not json-serializable"""
 
 
 def test_non_serializable_event_is_dropped_not_fatal():
     transport = _offline_transport()
-    # A non-JSON-native value used to crash json.dumps in the worker path.
+    # non-json-native value in the worker path
     transport.send_batch([{"bad": _Unserializable(), "nested": {"x": float("nan")}}])
-    # It is counted as dropped, and no exception escaped.
+    # counted as dropped, no exception escaped
     assert transport.stats.dropped >= 1
 
 
 def test_nan_score_does_not_poison_the_batch():
     transport = _offline_transport()
-    # allow_nan=False => NaN can't silently produce invalid JSON; the batch is
-    # dropped defensively rather than sent as a poison payload.
+    # allow_nan=False so nan can't produce invalid json; the batch is
+    # dropped rather than sent as a poison payload
     transport.send_batch([{"guardrail": "x", "score": float("nan")}])
     assert transport.stats.dropped >= 1
 
@@ -59,7 +54,7 @@ def test_worker_survives_and_restarts_after_death():
     transport = EventTransport(config)
     assert transport.thread_alive()
 
-    # Simulate a dead worker; the next enqueue must resurrect it.
+    # simulate a dead worker; the next enqueue must resurrect it
     transport._stop.clear()
     transport._worker = None
     transport.enqueue({"type": "model.call"})

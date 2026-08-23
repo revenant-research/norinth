@@ -1,11 +1,9 @@
-"""Append-only, tamper-evident audit log.
+"""append-only, tamper-evident audit log.
 
-Each entry carries a hash that chains it to the previous entry
-(row_hash = SHA-256(prev_hash || canonical(entry))). Any insertion, deletion,
-reordering, or field modification breaks the chain and is detectable by
-verify_audit_chain(). This gives the audit trail the integrity property that
-SOC 2 CC7.2, HIPAA 45 CFR 164.312(b), and 21 CFR Part 11 auditors expect
-(audit finding H-9).
+each entry carries a hash chaining it to the previous
+(row_hash = SHA-256(prev_hash || canonical(entry))), so any insertion, deletion,
+reordering, or field change breaks the chain and is caught by
+verify_audit_chain().
 """
 
 from __future__ import annotations
@@ -20,7 +18,7 @@ from . import db
 from .entities import encode_json
 from .raw_events import connect
 
-# Chain anchor for the very first entry.
+# chain anchor for the first entry
 GENESIS_HASH = "0" * 64
 
 
@@ -43,7 +41,7 @@ def init_audit() -> None:
             )
             """
         )
-        # Idempotent migration for pre-existing databases.
+        # idempotent migration for pre-existing databases
         for column in ("prev_hash TEXT", "row_hash TEXT", "row_hmac TEXT"):
             try:
                 connection.execute(f"ALTER TABLE audit_logs ADD COLUMN {column}")
@@ -54,9 +52,8 @@ def init_audit() -> None:
 
 
 def _audit_hmac_key() -> bytes | None:
-    """Key the chain to a secret held outside the database (NORINTH_SECRET_KEY),
-    so a party with only database write access cannot recompute a valid chain.
-    Absent in local development, where the chain is hash-only."""
+    """key the chain to a secret outside the db (NORINTH_SECRET_KEY) so db write
+    access alone can't recompute a valid chain; absent in dev, hash-only there"""
     key = os.getenv("NORINTH_SECRET_KEY")
     return key.encode("utf-8") if key else None
 
@@ -71,8 +68,8 @@ def _compute_row_hash(
     target_id: str | None,
     detail_json: str | None,
 ) -> str:
-    # Canonical form is a JSON array: unambiguous even when a field contains the
-    # delimiter, unlike the previous "|".join.
+    # json array canonical form: unambiguous even when a field contains the
+    # delimiter
     payload = json.dumps(
         [prev_hash, created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json],
         separators=(",", ":"),
@@ -97,18 +94,17 @@ def record_audit(
     target_id: str | None = None,
     detail: dict[str, Any] | None = None,
 ) -> None:
-    """Append a tamper-evident audit entry, chained to the prior entry.
+    """append a tamper-evident audit entry, chained to the prior one.
 
-    The read-of-last-hash and the insert run inside a single IMMEDIATE
-    transaction so concurrent audit writes cannot fork the chain. The table is
-    append-only; there is no update path.
+    the last-hash read and the insert run in one IMMEDIATE transaction so
+    concurrent writes can't fork the chain; append-only, no update path.
     """
     detail_json = encode_json(detail) if detail is not None else None
     connection = connect()
     connection.isolation_level = None  # manage the transaction explicitly
     try:
         connection.execute("BEGIN IMMEDIATE")
-        db.serialize_writer(connection)  # single-writer ordering on PostgreSQL too
+        db.serialize_writer(connection)  # single-writer ordering on postgres too
         last = connection.execute("SELECT row_hash FROM audit_logs ORDER BY id DESC LIMIT 1").fetchone()
         prev_hash = last["row_hash"] if last and last["row_hash"] else GENESIS_HASH
         created_at = connection.execute("SELECT datetime('now') AS now").fetchone()["now"]
@@ -130,13 +126,12 @@ def record_audit(
 
 
 def verify_audit_chain(*, tenant_id: str | None = None) -> dict[str, Any]:
-    """Recompute the hash chain and report its integrity.
+    """recompute the hash chain and report integrity.
 
-    Returns {ok, entries, broken_at}. broken_at is the id of the first entry
-    whose stored hash or prev-link does not match a recomputation — evidence of
-    deletion, reordering, or modification. The chain is global (ordered by id);
-    ``tenant_id`` is accepted for API symmetry but verification always covers the
-    whole chain, since a per-tenant view cannot prove nothing was removed.
+    returns {ok, entries, broken_at}; broken_at is the first entry whose hash or
+    prev-link doesn't match a recomputation. the chain is global (ordered by id);
+    tenant_id is accepted for symmetry but a per-tenant view can't prove nothing
+    was removed, so verification always covers the whole chain.
     """
     with connect() as connection:
         rows = connection.execute(
@@ -160,8 +155,8 @@ def verify_audit_chain(*, tenant_id: str | None = None) -> dict[str, Any]:
         )
         if row["prev_hash"] != expected_prev or row["row_hash"] != recomputed:
             return {"ok": False, "entries": len(rows), "broken_at": row["id"], "reason": "hash chain"}
-        # If this row was written with an HMAC, it must verify under the current
-        # key; a DBA rewriting the chain without the key cannot reproduce it.
+        # a row written with an hmac must verify under the current key; without
+        # the key the chain can't be reproduced
         if row["row_hmac"] is not None:
             if key is None or not hmac.compare_digest(row["row_hmac"], _compute_row_hmac(row["row_hash"]) or ""):
                 return {"ok": False, "entries": len(rows), "broken_at": row["id"], "reason": "hmac"}
@@ -202,7 +197,7 @@ def list_audit_logs(
     limit: int = 200,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
-    """Newest-first window of audit entries."""
+    """newest-first window of audit entries"""
     where, params = _audit_filters(tenant_id, actor_ref, action)
     params.update({"limit": limit, "offset": offset})
     query = f"SELECT * FROM audit_logs {where} ORDER BY id DESC LIMIT :limit OFFSET :offset"

@@ -1,10 +1,7 @@
 /*
- * Norinth design tokens — derived from the Revenant Research identity
- * (revenantresearch.com): parchment ground, ink rules, paper cards, IBM Plex
- * Sans, a single teal signal colour with pink/orange as secondary accents.
- *
- * Every component in src/design consumes these; nothing else defines colour,
- * type, spacing or radius values.
+ * design tokens: parchment ground, ink rules, paper cards, ibm plex sans, a
+ * single teal signal colour with pink/orange accents. every component in
+ * src/design reads these; nothing else defines colour, type, spacing or radius
  */
 :root {
   /* ---- colour: ground & ink ------------------------------------------- */

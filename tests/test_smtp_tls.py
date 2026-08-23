@@ -1,4 +1,4 @@
-"""SMTP STARTTLS verifies the server certificate by default (audit finding M109)."""
+"""smtp starttls verifies the server certificate by default"""
 
 from __future__ import annotations
 

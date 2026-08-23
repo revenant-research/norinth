@@ -46,9 +46,8 @@ import { ConfirmHost, confirm } from "./components/confirm";
 
 type RouteDef = { id: string; label: string; description: string; permission?: string; group?: string };
 
-// Detail routes (#gate/<id>, #incident/<id>, ...) previously fell back to the
-// "Overview" heading and title, which misreported the page to screen readers
-// and in the tab strip.
+// detail routes need their own heading and title so screen readers and the
+// tab strip name the right page
 const DETAIL_ROUTE_META: Record<string, RouteDef> = {
   application: { id: "application", label: "AI system", description: "Stage, owners, what is blocking it, and every piece of evidence and work linked to it." },
   workflow: { id: "workflow", label: "Workflow", description: "Workflow record, models, and linked governance work." },
@@ -58,8 +57,7 @@ const DETAIL_ROUTE_META: Record<string, RouteDef> = {
   trace: { id: "trace", label: "Trace", description: "Request trace and the events captured for it." },
 };
 
-// Navigation is grouped by what a person is doing, not by data type. Route ids
-// are stable (links elsewhere keep working); only grouping and labels changed.
+// grouped by task not data type; route ids stay stable so existing links keep working
 const baseRoutes: RouteDef[] = [
   { id: "home", label: "Home", description: "What needs you, and where your organization stands.", group: "" },
   { id: "inventory", label: "AI systems", description: "Every AI system seen in production, including the ones nobody registered. Open one to see its owners, risks, controls, releases and incidents.", group: "Systems" },
@@ -79,15 +77,14 @@ const baseRoutes: RouteDef[] = [
   { id: "identity", label: "Identity & integrations", description: "Connect your identity provider, issue SDK ingestion keys, register the CI key that signs release evidence, and route notifications.", permission: "user.manage", group: "Setup" },
   { id: "guide", label: "Getting started", description: "Set up your organization step by step. Each step is checked against your real state.", permission: "user.manage", group: "Setup" },
   { id: "docs", label: "Docs", description: "Roles, terms and integrations, explained in plain language.", group: "Setup" },
-  // Kept for old links; not shown in navigation.
+  // kept for old links, not shown in nav
   { id: "portfolio", label: "My work", description: "Everything waiting on you: reviews to decide, releases to approve, incidents to close.", group: "hidden" },
 ];
 
 type Mutate = (path: string, payload: unknown, success: string) => Promise<void>;
 
 function currentHash(): string[] {
-  // An empty array lets each surface choose its own role-appropriate landing
-  // route rather than forcing everyone onto the same default.
+  // empty array lets each view pick its own role-appropriate landing route
   return (window.location.hash || "").slice(1).split("/").filter(Boolean);
 }
 
@@ -126,7 +123,7 @@ export function App() {
 
   function content() {
     if (!bootstrapped) return <div className="boot">Loading workspace</div>;
-    // Invite links work regardless of sign-in state: #invite/<token>.
+    // invite links work regardless of sign-in state: #invite/<token>
     const hash = currentHash();
     if (hash[0] === "invite" && hash[1]) {
       return (
@@ -139,8 +136,7 @@ export function App() {
         />
       );
     }
-    // A fresh install: no organizations yet. Guide the operator instead of
-    // showing a landing page to someone who just ran the installer.
+    // fresh install with no orgs yet: show setup instead of the landing page
     if (needsSetup && (!user || user.is_super_admin)) {
       return (
         <SetupWizard
@@ -168,9 +164,8 @@ export function App() {
   );
 }
 
-// The platform plane. A super admin provisions organizations and their first
-// administrator, reviews the platform-wide audit trail, and never touches any
-// tenant's governance data.
+// platform plane: super admin provisions orgs and their first admin, never
+// touches tenant governance data
 const PLATFORM_ROUTES: RouteDef[] = [
   { id: "overview", label: "Overview", description: "Organizations on the platform, accounts, telemetry volume and recent activity." },
   { id: "organizations", label: "Organizations", description: "Create an organization and its first administrator; suspend or reactivate it." },
@@ -235,8 +230,7 @@ function PublicEntry({ onAuthenticated }: { onAuthenticated: (user: User) => voi
   const [mode, setMode] = useState<EntryMode>("landing");
 
   if (mode === "signin") {
-    // One sign-in for everyone on this instance; the account decides what it
-    // can see (organization workspace or platform console).
+    // one sign-in for the whole instance; the account decides what it can see
     return (
       <LoginScreen
         title="Sign in"
@@ -355,8 +349,7 @@ function Workspace({ user, onSignOut }: { user: User; onSignOut: () => void }) {
   const [isLoading, setIsLoading] = useState(false);
 
   const routes = useMemo(() => visibleRoutes(user), [user]);
-  // Org admins land on the organization overview; everyone else lands on their
-  // daily work queue.
+  // default landing route per role
   const active = route[0] || "home";
   const [setupComplete, setSetupComplete] = useState<boolean | null>(null);
   useEffect(() => {
@@ -372,8 +365,8 @@ function Workspace({ user, onSignOut }: { user: User; onSignOut: () => void }) {
     baseRoutes[0];
   const headingRef = useRouteAnnouncement(routeMeta.label);
 
-  // Tenant actors are pinned server-side to their own organization; the scope
-  // here is informational and never widens access.
+  // tenant actors are pinned to their org server-side; this scope is informational
+  // and never widens access
   const scope: Scope = useMemo(
     () => ({ tenantId: user.tenant_id || "", project: "", environment: "" }),
     [user],
@@ -552,11 +545,9 @@ function View({ route, data, scope, user, mutate, setupComplete }: { route: stri
 }
 
 export function DetailRoute({ kind, id, scope, mutate }: { kind: DetailKind; id: string; scope: Scope; mutate: Mutate }) {
-  // The loaded record is tagged with the route it belongs to. When the hash
-  // changes (e.g. gate -> incident) the component re-renders *before* the
-  // effect below starts the next load, so without the tag a stale gate payload
-  // would be handed to IncidentDetail and crash the whole app on
-  // `detail.incident.title`.
+  // tag the loaded record with its route: the component re-renders on hash change
+  // before the load effect runs, so without the tag a stale payload of the wrong
+  // kind gets handed to the detail view
   const [loaded, setLoaded] = useState<{ kind: DetailKind; id: string; detail: Record<string, any> | null }>({ kind, id, detail: null });
   const [graph, setGraph] = useState<Record<string, any> | null>(null);
   const [message, setMessage] = useState("");

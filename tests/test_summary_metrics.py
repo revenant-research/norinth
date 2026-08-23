@@ -1,10 +1,4 @@
-"""Summary metrics and trace lists are computed in SQL, not a capped window (H9).
-
-The dashboard summary used to load a 10,000-row window and count in Python, so
-counts were wrong past that size and reported "10,000" forever; the trace list
-loaded every event and sliced in Python. These verify the counts are exact and
-the trace list pages with a correct total.
-"""
+"""summary metrics and trace lists computed in sql, exact counts and correct paging"""
 
 from __future__ import annotations
 
@@ -52,7 +46,7 @@ def org_with_events(super_admin_client):
     login_and_activate(org, "a@acme.test", "acme-admin-pw-1")
     token = org.post("/api/ingestion-keys", json={"name": "k"}).json()["token"]
     events = []
-    # 6 model.calls (2 errors), 3 guardrail.decisions, across 3 traces.
+    # 6 model.calls (2 errors), 3 guardrail.decisions, across 3 traces
     for i in range(6):
         events.append(_event(i, "model.call", status="error" if i < 2 else "success", trace=f"t{i % 3}"))
     for i in range(3):
@@ -79,7 +73,7 @@ def test_traces_paginate_with_correct_total(org_with_events):
     assert first["page"]["total"] == 3  # three distinct traces
     assert first["page"]["has_more"] is True
     assert len(first["traces"]) == 2
-    # Each trace carries a real event count; the busiest trace comes first.
+    # each trace carries a real event count; the busiest trace comes first
     assert first["traces"][0]["event_count"] >= first["traces"][1]["event_count"]
 
     second = org_with_events.get("/api/traces", params={"offset": 2, "limit": 2}).json()

@@ -1,7 +1,4 @@
-"""Release-gate evidence is bound to the version being gated (critical C5): an
-untested new build cannot pass on an earlier version's evaluation, and approval
-blocks on open risks / missing controls and requires a real rationale.
-"""
+"""release-gate evidence is bound to the gated version so an untested build cannot pass on prior evals"""
 
 from __future__ import annotations
 
@@ -45,27 +42,27 @@ def test_untested_version_does_not_inherit_prior_evals(super_admin_client):
     login_and_activate(org, "a@acme.test", "acme-admin-pw-1")
     h = {"Authorization": f"Bearer {org.post('/api/ingestion-keys', json={'name': 'k'}).json()['token']}"}
 
-    # v1: deployment + prompt + a passing eval bound to v1's artifact.
+    # v1: deployment + prompt + passing eval bound to v1's artifact
     org.post("/v1/events/batch", json={"events": [_prompt("pv1"), _deployment("1.0.0", "sha256:v1", "pv1"), _eval("v1", "sha256:v1", "pv1")]}, headers=h)
     gates = {g["version"]: g for g in org.get("/api/deployment-gates").json()["deployment_gates"]}
     assert gates["1.0.0"]["passing_eval_count"] == 1
 
-    # v2: new artifact, no eval. Must NOT inherit v1's eval.
+    # v2: new artifact, no eval, must not inherit v1's eval
     org.post("/v1/events/batch", json={"events": [_deployment("2.0.0", "sha256:v2-untested", "pv1")]}, headers=h)
     gates = {g["version"]: g for g in org.get("/api/deployment-gates").json()["deployment_gates"]}
     assert gates["2.0.0"]["passing_eval_count"] == 0, "untested v2 inherited v1's eval"
     assert "missing" in (gates["2.0.0"]["required_reason"] or "").lower()
 
-    # A governance admin cannot approve v2 (no bound evidence).
+    # governance admin cannot approve v2, no bound evidence
     org.post("/api/org/users", json={"email": "gov@acme.test", "display_name": "Gov", "password": "gov-password-1"})
     org.post("/api/org/role-assignments", json={"user_ref": "gov@acme.test", "role": "governance_admin"})
     with TestClient(app) as gov:
         login_and_activate(gov, "gov@acme.test", "gov-password-1")
         r = gov.post(f"/api/deployment-gates/{gates['2.0.0']['gate_id']}/approve", json={"rationale": "Evidence for 2.0.0 reviewed and acceptable."})
         assert r.status_code == 400 and "bound to this version" in r.text
-        # Empty rationale is rejected on the v1 gate too (schema validation, 422).
+        # empty rationale rejected on the v1 gate too (schema validation, 422)
         assert gov.post(f"/api/deployment-gates/{gates['1.0.0']['gate_id']}/approve", json={"rationale": "   "}).status_code == 422
-        # v2 gets its own eval -> now approvable (assuming no open risks/controls on this app).
+        # v2 gets its own eval, now approvable if no open risks/controls on this app
         v2 = {g["version"]: g for g in org.get("/api/deployment-gates").json()["deployment_gates"]}["2.0.0"]
         if v2["risk_count"] == 0 and v2["missing_control_count"] == 0:
             org.post("/v1/events/batch", json={"events": [_eval("v2", "sha256:v2-untested", "pv1")]}, headers=h)

@@ -1,6 +1,4 @@
-"""The audit chain does not fork under concurrent writes (critical C4), on
-either backend, and the HMAC anchor detects a chain rewritten without the key.
-"""
+"""audit chain does not fork under concurrent writes and hmac anchor catches key-less rewrites"""
 
 from __future__ import annotations
 
@@ -34,7 +32,7 @@ def test_concurrent_audit_writes_do_not_fork(fresh_db):
     assert result["ok"] is True, result
     assert result["entries"] >= 200
 
-    # No two rows share a prev_hash (a fork would).
+    # no two rows share a prev_hash, a fork would
     from app.storage.raw_events import connect
 
     with connect() as connection:
@@ -51,8 +49,8 @@ def test_hmac_anchor_detects_rewrite_without_the_key(fresh_db, monkeypatch):
         record_audit(actor_ref="admin", action="auth.login", tenant_id="acme", target_type="user", target_id=f"u{i}")
     assert verify_audit_chain()["ok"] is True
 
-    # A DBA rewrites a row and recomputes the plain hash chain from that point,
-    # but cannot recompute the HMAC without the key.
+    # rewrite a row and recompute the plain hash chain from there, hmac can't be
+    # recomputed without the key
     import hashlib
     import json
 
@@ -60,7 +58,7 @@ def test_hmac_anchor_detects_rewrite_without_the_key(fresh_db, monkeypatch):
 
     with connect() as connection:
         rows = [dict(r) for r in connection.execute("SELECT * FROM audit_logs ORDER BY id").fetchall()]
-        # tamper the 3rd row's action, then rebuild hashes (not hmacs) forward
+        # tamper 3rd row's action then rebuild hashes (not hmacs) forward
         expected_prev = GENESIS_HASH
         for idx, row in enumerate(rows):
             action = "PRIVILEGE-GRANTED" if idx == 2 else row["action"]
