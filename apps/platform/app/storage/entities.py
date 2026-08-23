@@ -423,7 +423,7 @@ def upsert_observed_event(connection, event: dict[str, Any], attrs: dict[str, An
         or event.get("name")
         or "unknown"
     )
-    key = entity_id(event["type"], event["trace_id"], event["span_id"], name)
+    key = entity_id(event["type"], metadata.get("tenant_id") or "", event["project"], event["environment"], event["trace_id"], event["span_id"], name)
     connection.execute(
         """
         INSERT OR REPLACE INTO governance_observed_events (

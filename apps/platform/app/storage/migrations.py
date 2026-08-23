@@ -177,6 +177,58 @@ def _0009_config_table_tenancy(connection) -> None:
         connection.execute(f"DROP TABLE {table}_old")
 
 
+def _0010_cross_tenant_keys(connection) -> None:
+    """Make record identity tenant-scoped so one tenant's ingestion key cannot
+    overwrite another's records. governance_deployments, governance_incidents
+    and prompt_templates move from a client-id primary key to a composite
+    (tenant_id, project, environment, id); the sdk_events dedup index gains
+    tenant_id. Existing rows keep their data (tenant '' where it was NULL)."""
+    rebuilds = {
+        "governance_deployments": (
+            "deployment_id TEXT NOT NULL, tenant_id TEXT NOT NULL DEFAULT '', project TEXT NOT NULL, "
+            "environment TEXT NOT NULL, application_name TEXT NOT NULL, workflow_name TEXT NOT NULL, "
+            "current_version TEXT NOT NULL, current_status TEXT NOT NULL, provider TEXT, model TEXT, "
+            "artifact_ref TEXT NOT NULL, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL, "
+            "PRIMARY KEY (tenant_id, project, environment, deployment_id)",
+            "deployment_id, project, environment, application_name, workflow_name, current_version, "
+            "current_status, provider, model, artifact_ref, first_seen, last_seen",
+        ),
+        "prompt_templates": (
+            "prompt_id TEXT NOT NULL, tenant_id TEXT NOT NULL DEFAULT '', project TEXT NOT NULL, "
+            "environment TEXT NOT NULL, application_name TEXT NOT NULL, workflow_name TEXT NOT NULL, "
+            "current_version TEXT NOT NULL, current_status TEXT NOT NULL, owner_ref TEXT, "
+            "artifact_ref TEXT NOT NULL, first_seen TEXT NOT NULL, last_seen TEXT NOT NULL, "
+            "PRIMARY KEY (tenant_id, project, environment, prompt_id)",
+            "prompt_id, project, environment, application_name, workflow_name, current_version, "
+            "current_status, owner_ref, artifact_ref, first_seen, last_seen",
+        ),
+        "governance_incidents": (
+            "incident_id TEXT NOT NULL, tenant_id TEXT NOT NULL DEFAULT '', project TEXT NOT NULL, "
+            "environment TEXT NOT NULL, application_name TEXT NOT NULL, workflow_name TEXT NOT NULL, "
+            "title TEXT NOT NULL, severity TEXT NOT NULL, status TEXT NOT NULL, description_summary TEXT NOT NULL, "
+            "detected_by TEXT, trace_id TEXT NOT NULL, impacted_trace_id TEXT, provider TEXT, model TEXT, "
+            "risk_count INTEGER NOT NULL, missing_control_count INTEGER NOT NULL, deployment_id TEXT, "
+            "deployment_version_id TEXT, deployment_gate_id TEXT, actor_ref TEXT, resolution_rationale TEXT, "
+            "first_seen TEXT NOT NULL, last_seen TEXT NOT NULL, closed_at TEXT, "
+            "PRIMARY KEY (tenant_id, project, environment, incident_id)",
+            "incident_id, project, environment, application_name, workflow_name, title, severity, status, "
+            "description_summary, detected_by, trace_id, impacted_trace_id, provider, model, risk_count, "
+            "missing_control_count, deployment_id, deployment_version_id, deployment_gate_id, actor_ref, "
+            "resolution_rationale, first_seen, last_seen, closed_at",
+        ),
+    }
+    for table, (schema, columns) in rebuilds.items():
+        connection.execute(f"ALTER TABLE {table} RENAME TO {table}_old10")
+        connection.execute(f"CREATE TABLE {table} ({schema})")
+        connection.execute(
+            f"INSERT INTO {table} (tenant_id, {columns}) SELECT COALESCE(tenant_id, ''), {columns} FROM {table}_old10"
+        )
+        connection.execute(f"DROP TABLE {table}_old10")
+    # Rebuild the events dedup index to include tenant.
+    connection.execute("DROP INDEX IF EXISTS idx_sdk_events_span")
+    connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_sdk_events_span_tenant ON sdk_events(tenant_id, trace_id, span_id)")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
@@ -187,6 +239,7 @@ MIGRATIONS: list[Migration] = [
     Migration(7, "notification outbox, webhooks, invites", _0007_notifications),
     Migration(8, "outbox delivery claims for multi-replica workers", _0008_outbox_claims),
     Migration(9, "tenant-scoped config tables (control library, risk rules, routing, owner policies)", _0009_config_table_tenancy),
+    Migration(10, "tenant-scoped record keys (deployments, incidents, prompts, event dedup)", _0010_cross_tenant_keys),
 ]
 
 

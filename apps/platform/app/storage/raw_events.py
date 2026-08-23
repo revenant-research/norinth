@@ -70,8 +70,8 @@ def init_storage() -> None:
         # duplicates from before this constraint existed.
         try:
             connection.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_sdk_events_span "
-                "ON sdk_events(trace_id, span_id)"
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_sdk_events_span_tenant "
+                "ON sdk_events(tenant_id, trace_id, span_id)"
             )
         except db.IntegrityError:
             pass

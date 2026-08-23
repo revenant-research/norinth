@@ -12,8 +12,8 @@ def init_prompts() -> None:
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS prompt_templates (
-                prompt_id TEXT PRIMARY KEY,
-                tenant_id TEXT,
+                prompt_id TEXT NOT NULL,
+                tenant_id TEXT NOT NULL DEFAULT '',
                 project TEXT NOT NULL,
                 environment TEXT NOT NULL,
                 application_name TEXT NOT NULL,
@@ -23,7 +23,8 @@ def init_prompts() -> None:
                 owner_ref TEXT,
                 artifact_ref TEXT NOT NULL,
                 first_seen TEXT NOT NULL,
-                last_seen TEXT NOT NULL
+                last_seen TEXT NOT NULL,
+                PRIMARY KEY (tenant_id, project, environment, prompt_id)
             )
             """
         )
@@ -80,7 +81,7 @@ def upsert_prompt_event(connection, event: dict[str, Any]) -> None:
             current_version, current_status, owner_ref, artifact_ref, first_seen, last_seen
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(prompt_id) DO UPDATE SET
+        ON CONFLICT(tenant_id, project, environment, prompt_id) DO UPDATE SET
             current_version=excluded.current_version,
             current_status=excluded.current_status,
             owner_ref=excluded.owner_ref,
@@ -89,7 +90,7 @@ def upsert_prompt_event(connection, event: dict[str, Any]) -> None:
         """,
         (
             prompt_id,
-            metadata.get("tenant_id"),
+            metadata.get("tenant_id") or "",
             event["project"],
             event["environment"],
             application_name,
@@ -121,7 +122,7 @@ def upsert_prompt_event(connection, event: dict[str, Any]) -> None:
         (
             version_id,
             prompt_id,
-            metadata.get("tenant_id"),
+            metadata.get("tenant_id") or "",
             event["project"],
             event["environment"],
             application_name,
