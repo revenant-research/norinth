@@ -41,7 +41,7 @@ def test_stage_moves_discovered_to_in_review_to_approved(super_admin_client):
     task = next(t for t in org.get("/api/review-tasks").json()["review_tasks"] if t["task_type"] == "intake_review")
     with TestClient(app) as rev:
         login_and_activate(rev, "rev@acme.test", "rev-password-1")
-        decided = rev.post("/api/decisions", json={"target_type": "review_task", "target_id": task["task_id"], "decision": "approve", "rationale": "fine"})
+        decided = rev.post("/api/decisions", json={"target_type": "review_task", "target_id": task["task_id"], "decision": "approve", "rationale": "Intake evidence reviewed; risk tier is appropriate."})
         assert decided.status_code == 200, decided.text
     app_row = org.get("/api/applications").json()["applications"][0]
     assert app_row["stage"] == "approved"

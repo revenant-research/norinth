@@ -48,7 +48,7 @@ def test_decision_rejects_unknown_verb(super_admin_client):
                 "target_type": "review_task",
                 "target_id": "whatever",
                 "decision": "totally_done",  # not a real workflow verb
-                "rationale": "x",
+                "rationale": "Reviewed the evidence and this looks acceptable.",
             },
         )
         assert resp.status_code == 400

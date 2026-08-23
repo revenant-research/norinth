@@ -61,10 +61,10 @@ def test_untested_version_does_not_inherit_prior_evals(super_admin_client):
     org.post("/api/org/role-assignments", json={"user_ref": "gov@acme.test", "role": "governance_admin"})
     with TestClient(app) as gov:
         login_and_activate(gov, "gov@acme.test", "gov-password-1")
-        r = gov.post(f"/api/deployment-gates/{gates['2.0.0']['gate_id']}/approve", json={"rationale": "looks fine"})
+        r = gov.post(f"/api/deployment-gates/{gates['2.0.0']['gate_id']}/approve", json={"rationale": "Evidence for 2.0.0 reviewed and acceptable."})
         assert r.status_code == 400 and "bound to this version" in r.text
-        # Empty rationale is rejected on the v1 gate too.
-        assert gov.post(f"/api/deployment-gates/{gates['1.0.0']['gate_id']}/approve", json={"rationale": "   "}).status_code == 400
+        # Empty rationale is rejected on the v1 gate too (schema validation, 422).
+        assert gov.post(f"/api/deployment-gates/{gates['1.0.0']['gate_id']}/approve", json={"rationale": "   "}).status_code == 422
         # v2 gets its own eval -> now approvable (assuming no open risks/controls on this app).
         v2 = {g["version"]: g for g in org.get("/api/deployment-gates").json()["deployment_gates"]}["2.0.0"]
         if v2["risk_count"] == 0 and v2["missing_control_count"] == 0:

@@ -1414,7 +1414,13 @@ function ReviewDecisionPanel({ task, mutate }: { task: Record<string, any>; muta
           <option value="mitigate">Require mitigation</option>
         </select>
         <textarea placeholder="Rationale, required changes, or residual risk accepted by the reviewer" aria-label="Reviewer rationale" value={rationale} onChange={(event) => setRationale(event.target.value)} />
-        <button onClick={() => mutate("/api/decisions", { target_type: "review_task", target_id: task.task_id, decision, rationale: decisionPacket }, "Review decision recorded.")}>Record decision</button>
+        <button
+          disabled={rationale.trim().length < 12}
+          title={rationale.trim().length < 12 ? "Enter a rationale before recording the decision" : undefined}
+          onClick={() => mutate("/api/decisions", { target_type: "review_task", target_id: task.task_id, decision, rationale: decisionPacket }, "Review decision recorded.")}
+        >
+          Record decision
+        </button>
       </div>
     </div>
   );
@@ -1454,6 +1460,8 @@ function GateDecisionPanel({ gate, mutate }: { gate: Record<string, any>; mutate
       <div className="inline-form workflow-action">
         <textarea placeholder="Decision rationale, production condition, or blocker that prevents release" aria-label="Release decision rationale" value={rationale} onChange={(event) => setRationale(event.target.value)} />
         <button
+          disabled={rationale.trim().length < 12}
+          title={rationale.trim().length < 12 ? "Enter a rationale before recording the decision" : undefined}
           onClick={async () => {
             const ok = await confirm({
               title: "Approve this release?",
@@ -1467,6 +1475,8 @@ function GateDecisionPanel({ gate, mutate }: { gate: Record<string, any>; mutate
         </button>
         <button
           className="secondary"
+          disabled={rationale.trim().length < 12}
+          title={rationale.trim().length < 12 ? "Enter a rationale before recording the decision" : undefined}
           onClick={async () => {
             const ok = await confirm({
               title: "Reject this release?",
@@ -1513,6 +1523,8 @@ function IncidentClosurePanel({ incident, mutate }: { incident: Record<string, a
       </div>
       <div className="inline-form workflow-action">
         <button
+          disabled={rootCause.trim().length < 12}
+          title={rootCause.trim().length < 12 ? "Document the root cause before closing" : undefined}
           onClick={async () => {
             const ok = await confirm({
               title: "Close this incident?",
