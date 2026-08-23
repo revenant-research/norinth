@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { type PageMeta, type Scope, getJson, postJson } from "../api";
+import { Button, Callout, Code } from "../design";
 import { useResource } from "./useResource";
 import { Badge, EmptyState, MetricCard, RecordList, Section, SkeletonCards, SkeletonMetrics } from "./ui";
 import { toast } from "./toast";
@@ -542,6 +543,7 @@ export function TeamConsole() {
     }>("/api/org/role-assignments"),
   );
   const [tempPassword, setTempPassword] = useState<{ user: string; password: string } | null>(null);
+  const [invite, setInvite] = useState<{ user: string; url: string; emailed: boolean } | null>(null);
   const [userForm, setUserForm] = useState({ email: "", display_name: "" });
   const [assignForm, setAssignForm] = useState({ user_ref: "", role: "" });
   const assignRef = useRef<HTMLDivElement>(null);
@@ -557,9 +559,12 @@ export function TeamConsole() {
     event.preventDefault();
     setTempPassword(null);
     try {
-      const result = await postJson<{ temporary_password: string | null }>("/api/org/users", userForm);
-      toast.success(`User ${userForm.email} created.`);
-      if (result.temporary_password) {
+      const result = await postJson<{ temporary_password: string | null; invite_url?: string; invite_emailed?: boolean }>("/api/org/users", userForm);
+      toast.success(result.invite_emailed ? `Invitation emailed to ${userForm.email}.` : `User ${userForm.email} created.`);
+      if (result.invite_url) {
+        setInvite({ user: userForm.email, url: result.invite_url, emailed: Boolean(result.invite_emailed) });
+      }
+      if (result.temporary_password && !result.invite_emailed) {
         setTempPassword({ user: userForm.email, password: result.temporary_password });
       }
       setUserForm({ email: "", display_name: "" });
@@ -640,13 +645,20 @@ export function TeamConsole() {
   return (
     <>
       <Feedback message={users.error || roles.error} />
+      {invite ? (
+        <Callout tone={invite.emailed ? "success" : "info"} title={invite.emailed ? `Invitation emailed to ${invite.user}.` : `Invite link for ${invite.user}`}
+          action={<Button variant="secondary" size="sm" onClick={() => navigator.clipboard?.writeText(invite.url)}>Copy link</Button>}>
+          {invite.emailed ? "They set their own password through the link; it expires in 7 days." : "Email is not configured on this platform, so send this link yourself. They set their own password through it; it expires in 7 days."}
+          <div><Code>{invite.url}</Code></div>
+        </Callout>
+      ) : null}
       {tempPassword ? (
         <div className="message">
-          Temporary password for {tempPassword.user}: <strong>{tempPassword.password}</strong>. Deliver it securely. The user must change it at next sign in.
+          Fallback one-time password for {tempPassword.user}: <strong>{tempPassword.password}</strong> (if the invite link cannot be used). The user must change it at next sign in.
         </div>
       ) : null}
       <div className="two-column">
-        <Section title="Create a user" description="New users join your organization. A one-time password is generated for you to relay; they must change it at first sign in.">
+        <Section title="Invite a person" description="They receive an invite link (emailed when SMTP is configured) and set their own password. Give them a role next; administrators cannot hold decision roles.">
           <form className="admin-form" onSubmit={createUser}>
             <label>
               Email

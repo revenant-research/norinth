@@ -7,6 +7,29 @@ to Semantic Versioning once it reaches a tagged release.
 ## [Unreleased]
 
 ### Added
+- **Notifications (email + signed webhooks).** A notification outbox with a
+  background delivery worker (retries with backoff, every outcome recorded)
+  so governance actions never block on mail servers. Events: `user.invited`,
+  `review.assigned`, `review.overdue`, `review.escalated`, `gate.approved`,
+  `gate.rejected`, `incident.opened`, `incident.closed`. Email via
+  `NORINTH_SMTP_*`; without SMTP nothing is lost — emails are logged as
+  `skipped_no_smtp`. Webhooks per organization (`/api/org/webhooks`): JSON or
+  Slack format, event selection, secret shown once, `X-Norinth-Signature`
+  HMAC-SHA256, test delivery. Identity & Integrations → Notifications panel
+  and a delivery log (`/api/org/notifications`). Migration 7.
+- **Invite links.** Creating a person generates a single-use, 7-day invite
+  (`/#invite/<token>`): they set their own password and are signed in
+  (`/api/auth/accept-invite`). Emailed when SMTP is configured; always shown
+  to the administrator with a copy button. One-time passwords remain as a
+  fallback.
+- **Review escalation notifications**: assignment, overdue and escalation are
+  emitted once per transition even though the queue is recomputed on every
+  ingest; escalations also go to organization administrators.
+- **Default review routing** seeded: intake reviews → `governance_reviewer`
+  (5 days, escalate after 3), material-change reviews → `governance_admin`
+  (3/2). Previously nothing routed until an admin created a policy.
+
+### Added
 - **`norinth` CLI** (SDK package): `init` (writes `NORINTH_*` to `.env`,
   detects AI clients), `doctor` (reachability, key validity, test event, plain
   diagnosis of failures), `gate check --deployment --version [--wait]` (CI

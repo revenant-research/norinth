@@ -71,6 +71,7 @@ def upsert_incident_event(connection, event: dict[str, Any]) -> None:
     incident_id = attrs.get("incident_id") or entity_id("incident", event["trace_id"], event["span_id"])
     description_summary = json.dumps(attrs.get("description") or {}, sort_keys=True)
     status = attrs.get("incident_status") or event.get("status", "open")
+    is_new = connection.execute("SELECT 1 FROM governance_incidents WHERE incident_id = ?", (incident_id,)).fetchone() is None
     connection.execute(
         """
         INSERT INTO governance_incidents (
@@ -124,6 +125,19 @@ def upsert_incident_event(connection, event: dict[str, Any]) -> None:
             event["timestamp"],
         ),
     )
+    if is_new and status != "closed":
+        from app.services.notifications import emit, public_base_url
+
+        emit(
+            connection,
+            tenant_id=scope["tenant_id"],
+            event_type="incident.opened",
+            subject=f"Incident opened: {attrs.get('title') or event.get('name') or incident_id}",
+            text=f"Severity {attrs.get('severity') or 'unclassified'} incident on {application_name} / {workflow_name}, reported by {attrs.get('detected_by') or 'the SDK'}.",
+            data={"incident_id": incident_id, "application_name": application_name, "workflow_name": workflow_name, "severity": attrs.get("severity")},
+            to_roles=["org_admin", "risk_owner", "governance_admin"],
+            link=f"{public_base_url()}/#incident/{incident_id}",
+        )
 
 
 def latest_deployment_evidence(connection, scope: dict[str, Any]) -> dict[str, Any] | None:

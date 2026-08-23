@@ -16,6 +16,8 @@ import tempfile
 
 import pytest
 
+os.environ.setdefault("NORINTH_NOTIFICATIONS_WORKER", "0")  # deliver synchronously in tests
+
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 PLATFORM_DIR = REPO_ROOT / "apps" / "platform"
 sys.path.insert(0, str(PLATFORM_DIR))

@@ -32,6 +32,14 @@ config:
   trustProxy: "1"               # ingress sets X-Forwarded-For
   sessionTtlHours: "12"
   extraEnv: []                  # - {name: NORINTH_LOGIN_IP_THRESHOLD, value: "100"}
+  # Email for invites and notifications. Put the password in secrets.existingSecret
+  # under NORINTH_SMTP_PASSWORD or pass it via extraEnv from your own Secret.
+  smtp:
+    host: ""
+    port: "587"
+    user: ""
+    from: ""
+    starttls: "1"
 
 service:
   type: ClusterIP

@@ -5,6 +5,7 @@ import { confirm } from "./confirm";
 import { toast } from "./toast";
 import { Badge, EmptyState, RecordList, Section } from "./ui";
 import { useResource } from "./useResource";
+import { WebhookSettings } from "./webhooks";
 
 /**
  * Identity & Integrations — self-serve enterprise setup for an organization
@@ -574,6 +575,7 @@ export function IdentityView({ tenantId }: { tenantId: string }) {
       <ScimSettings />
       <IngestionKeySettings />
       <AttestationKeySettings />
+      <WebhookSettings />
     </>
   );
 }

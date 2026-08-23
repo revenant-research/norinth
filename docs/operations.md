@@ -82,6 +82,8 @@ secret manager; the installer writes them to `.env` for Compose.
 | `NORINTH_LOGIN_LOCKOUT_THRESHOLD` / `_WINDOW_MINUTES` / `_MINUTES` | no | `5` / `15` / `15` | Per-account failed-login throttling. |
 | `NORINTH_LOGIN_IP_THRESHOLD` / `_WINDOW_MINUTES` / `_LOCKOUT_MINUTES` | no | `50` / `15` / `15` | Per-source-IP throttling (higher: shared NATs). |
 | `NORINTH_DEV_INGEST_TENANT` | no | `tenant-local` | Tenant bound to the dev `dev` key (development mode only). |
+| `NORINTH_SMTP_HOST` / `_PORT` / `_USER` / `_PASSWORD` / `_FROM` / `_STARTTLS` | for email | — / `587` / — / — / user / `1` | Outbound email for invites and notifications (review assigned/overdue/escalated, gate decisions, incidents). Without a host, emails are recorded as `skipped_no_smtp` in the delivery log and invite links are shown to the administrator instead. |
+| `NORINTH_NOTIFICATIONS_WORKER` | no | `1` | `0` disables the background delivery thread (tests). |
 
 SDK-side variables (in your applications): `NORINTH_API_KEY`, `NORINTH_ENDPOINT`,
 `NORINTH_PROJECT`, `NORINTH_ENVIRONMENT`, `NORINTH_SERVICE`,
@@ -141,7 +143,21 @@ Releases follow semantic versioning; the changelog lists breaking changes.
 - Schedule `scripts/backup.sh`; test `restore.sh` once.
 - Verify the audit chain periodically: `GET /api/admin/audit-logs/verify`.
 
-## 8. Observability
+## 8. Notifications
+
+Email (SMTP) and signed webhooks. Organization administrators add webhooks
+under Identity & Integrations → Notifications: JSON for SIEM/ticketing or
+Slack incoming-webhook format, per-event selection, a signing secret shown
+once. Every delivery is `POST` with `X-Norinth-Event`, `X-Norinth-Delivery`
+and `X-Norinth-Signature: sha256=<HMAC-SHA256(secret, body)>`. Failed
+deliveries retry with exponential backoff (up to six attempts); the delivery
+log shows every outcome.
+
+Events: `user.invited`, `review.assigned`, `review.overdue`,
+`review.escalated`, `gate.approved`, `gate.rejected`, `incident.opened`,
+`incident.closed`.
+
+## 9. Observability
 
 `/health` for liveness. Application logs go to stdout (uvicorn). The platform
 itself emits no telemetry to anyone.

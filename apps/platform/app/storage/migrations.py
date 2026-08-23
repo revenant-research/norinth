@@ -121,6 +121,13 @@ def _0006_leads(connection) -> None:
     ensure_leads_table(connection)
 
 
+def _0007_notifications(connection) -> None:
+    """Notification outbox, webhooks, invites."""
+    from app.storage.notifications import ensure_notification_tables
+
+    ensure_notification_tables(connection)
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
@@ -128,6 +135,7 @@ MIGRATIONS: list[Migration] = [
     Migration(4, "per-IP login throttling", _0004_login_throttle),
     Migration(5, "evidence attestation keys", _0005_attestation_keys),
     Migration(6, "inbound leads from the landing page", _0006_leads),
+    Migration(7, "notification outbox, webhooks, invites", _0007_notifications),
 ]
 
 

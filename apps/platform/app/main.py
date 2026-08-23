@@ -13,6 +13,7 @@ from app.api.auth import router as auth_router
 from app.api.compliance import router as compliance_router
 from app.api.ingestion_keys import router as ingestion_keys_router
 from app.api.intake import router as intake_router
+from app.api.notifications import router as notifications_router
 from app.api.onboarding import router as onboarding_router
 from app.api.public import router as public_router
 from app.api.routes import router as api_router
@@ -25,6 +26,7 @@ from app.dependencies import SESSION_COOKIE
 from app.ingestion.routes import router as ingestion_router
 from app.services.auth import resolve_session
 from app.services.bootstrap import seed_dev_ingestion_key_if_dev, seed_super_admin
+from app.services.notifications import start_worker as start_notification_worker
 from app.storage.migrations import run_migrations
 from app.storage.workflow import load_platform_user
 
@@ -35,6 +37,7 @@ INDEX_FILE = STATIC_DIR / "index.html"
 app = FastAPI(title="Norinth Platform", description="AI governance platform API: ingestion, inventory, risk, review workflow, release gates, compliance evidence.")
 
 run_migrations()
+start_notification_worker()
 seed_super_admin()
 seed_dev_ingestion_key_if_dev()
 app.include_router(ingestion_router)
@@ -52,6 +55,7 @@ app.include_router(attestation_keys_router)
 app.include_router(public_router)
 app.include_router(onboarding_router)
 app.include_router(setup_router)
+app.include_router(notifications_router)
 
 # Endpoints reachable while a user still owes a password change.
 _PASSWORD_CHANGE_ALLOWLIST = {
@@ -63,6 +67,7 @@ _PASSWORD_CHANGE_ALLOWLIST = {
     "/api/auth/saml/acs",
     "/api/auth/saml/metadata",
     "/api/setup/state",
+    "/api/auth/accept-invite",
 }
 
 

@@ -60,12 +60,14 @@ from app.services.governance import (
     build_workflow_detail,
     build_workflows,
 )
+from app.services.notifications import emit as notify
+from app.services.notifications import public_base_url
 from app.storage.audit import record_audit
 from app.storage.deployments import load_deployment_gate, set_deployment_gate_status
 from app.storage.governance_policy import upsert_control_definition, upsert_risk_rule
 from app.storage.incidents import load_incident, set_incident_status
 from app.storage.intake import intake_submitter
-from app.storage.raw_events import count_events, count_scoped_events, list_events, list_scopes
+from app.storage.raw_events import connect, count_events, count_scoped_events, list_events, list_scopes
 from app.storage.workflow import (
     assign_owner,
     create_exception,
@@ -362,6 +364,17 @@ def close_incident(incident_id: str, payload: DeploymentGateDecisionRequest, act
     updated_incident = set_incident_status(incident_id, "closed", actor.user_ref, payload.rationale)
     decision = record_decision("incident", incident_id, "close", payload.rationale, actor.user_ref)
     record_audit(actor_ref=actor.user_ref, action="incident.close", tenant_id=incident.get("tenant_id"), target_type="incident", target_id=incident_id)
+    with connect() as connection:
+        notify(
+            connection,
+            tenant_id=incident.get("tenant_id"),
+            event_type="incident.closed",
+            subject=f"Incident closed: {incident.get('title') or incident_id}",
+            text=f"{actor.user_ref} closed the incident for {incident.get('application_name')} / {incident.get('workflow_name')}.\n\nRationale: {payload.rationale}",
+            data={"incident_id": incident_id, "application_name": incident.get("application_name"), "severity": incident.get("severity"), "closed_by": actor.user_ref},
+            to_roles=["org_admin", "risk_owner"],
+            link=f"{public_base_url()}/#incident/{incident_id}",
+        )
     return {"incident": updated_incident, "decision": decision}
 
 
@@ -380,6 +393,18 @@ def approve_deployment_gate(gate_id: str, payload: DeploymentGateDecisionRequest
         raise HTTPException(status_code=400, detail=str(error)) from error
     decision = record_decision("deployment_gate", gate_id, "approve", payload.rationale, actor.user_ref)
     record_audit(actor_ref=actor.user_ref, action="gate.approve", tenant_id=gate.get("tenant_id"), target_type="deployment_gate", target_id=gate_id)
+    with connect() as connection:
+        notify(
+            connection,
+            tenant_id=gate.get("tenant_id"),
+            event_type="gate.approved",
+            subject=f"Release gate approved: {gate.get('application_name')} / {gate.get('workflow_name')}",
+            text=f"{actor.user_ref} approved the release gate for {gate.get('application_name')} / {gate.get('workflow_name')}.\n\nRationale: {payload.rationale}",
+            data={"gate_id": gate_id, "application_name": gate.get("application_name"), "workflow_name": gate.get("workflow_name"), "decided_by": actor.user_ref},
+            to_users=[u for u in [gate.get("submitted_by"), gate.get("created_by")] if u],
+            to_roles=["org_admin"],
+            link=f"{public_base_url()}/#gate/{gate_id}",
+        )
     return {"deployment_gate": updated_gate, "decision": decision}
 
 
@@ -395,6 +420,18 @@ def reject_deployment_gate(gate_id: str, payload: DeploymentGateDecisionRequest,
     updated_gate = set_deployment_gate_status(gate_id, "rejected", actor.user_ref, payload.rationale)
     decision = record_decision("deployment_gate", gate_id, "reject", payload.rationale, actor.user_ref)
     record_audit(actor_ref=actor.user_ref, action="gate.reject", tenant_id=gate.get("tenant_id"), target_type="deployment_gate", target_id=gate_id)
+    with connect() as connection:
+        notify(
+            connection,
+            tenant_id=gate.get("tenant_id"),
+            event_type="gate.rejected",
+            subject=f"Release gate rejected: {gate.get('application_name')} / {gate.get('workflow_name')}",
+            text=f"{actor.user_ref} rejected the release gate for {gate.get('application_name')} / {gate.get('workflow_name')}.\n\nRationale: {payload.rationale}",
+            data={"gate_id": gate_id, "application_name": gate.get("application_name"), "workflow_name": gate.get("workflow_name"), "decided_by": actor.user_ref},
+            to_users=[u for u in [gate.get("submitted_by"), gate.get("created_by")] if u],
+            to_roles=["org_admin"],
+            link=f"{public_base_url()}/#gate/{gate_id}",
+        )
     return {"deployment_gate": updated_gate, "decision": decision}
 
 
