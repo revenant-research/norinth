@@ -27,6 +27,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import uuid
 from datetime import UTC, datetime
 from email.message import EmailMessage
 from typing import Any
@@ -144,7 +145,14 @@ def _post_webhook(hook: dict[str, Any], payload: dict[str, Any]) -> None:
     body_obj = _slack_payload(payload) if hook.get("format") == "slack" else payload
     body = json.dumps(body_obj, sort_keys=True).encode("utf-8")
     secret = store.webhook_secret(hook)
-    signature = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    # Sign timestamp + body (Stripe-style) so a captured request cannot be
+    # replayed: the receiver rejects an old X-Norinth-Timestamp and recomputes
+    # HMAC(secret, "<timestamp>." + body). A unique per-delivery id lets the
+    # receiver dedupe even identical payloads (audit finding M106).
+    timestamp = str(int(datetime.now(UTC).timestamp()))
+    signed = f"{timestamp}.".encode() + body
+    signature = hmac.new(secret.encode("utf-8"), signed, hashlib.sha256).hexdigest()
+    delivery_id = uuid.uuid4().hex
     validate_external_url(hook["url"])
     req = urllib.request.Request(
         hook["url"],
@@ -154,8 +162,9 @@ def _post_webhook(hook: dict[str, Any], payload: dict[str, Any]) -> None:
             "Content-Type": "application/json",
             "User-Agent": "norinth-webhook/1",
             "X-Norinth-Event": payload.get("type", ""),
-            "X-Norinth-Signature": f"sha256={signature}",
-            "X-Norinth-Delivery": hashlib.sha256(body).hexdigest()[:32],
+            "X-Norinth-Timestamp": timestamp,
+            "X-Norinth-Signature": f"t={timestamp},v1={signature}",
+            "X-Norinth-Delivery": delivery_id,
         },
     )
     with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 - operator-configured URL

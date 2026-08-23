@@ -213,9 +213,13 @@ def test_signed_webhooks_receive_gate_and_incident_events(super_admin_client, mo
     test = org.post(f"/api/org/webhooks/{webhook_id}/test").json()
     assert test["delivered"]["sent"] == 1 and test["last_status"] == "ok"
     body = receiver.received[-1]["body"]
-    expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-    assert receiver.received[-1]["headers"]["X-Norinth-Signature"] == expected
-    assert receiver.received[-1]["headers"]["X-Norinth-Event"] == "test"
+    headers = receiver.received[-1]["headers"]
+    # Replay-resistant signature: HMAC over "<timestamp>." + body, delivered as
+    # t=<ts>,v1=<sig> alongside an X-Norinth-Timestamp header (audit M106).
+    timestamp = headers["X-Norinth-Timestamp"]
+    expected_sig = hmac.new(secret.encode(), f"{timestamp}.".encode() + body, hashlib.sha256).hexdigest()
+    assert headers["X-Norinth-Signature"] == f"t={timestamp},v1={expected_sig}"
+    assert headers["X-Norinth-Event"] == "test"
 
     # Real events: an incident opened by ingestion, a gate rejected by a human.
     token = org.post("/api/ingestion-keys", json={"name": "k"}).json()["token"]

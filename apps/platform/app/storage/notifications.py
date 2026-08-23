@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+import urllib.parse
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -206,8 +207,26 @@ def list_outbox(tenant_id: str, limit: int = 100) -> list[dict[str, Any]]:
 # --- webhooks -----------------------------------------------------------------------
 
 
+def mask_url(url: str) -> str:
+    """Hide the path of a webhook URL. A Slack incoming-webhook URL carries its
+    auth token in the path, so returning it in the list endpoint or writing it to
+    the audit log leaks a bearer secret (audit finding M106). We keep only the
+    scheme and host."""
+    try:
+        parsed = urllib.parse.urlsplit(url)
+    except ValueError:
+        return "[redacted-url]"
+    if not parsed.scheme or not parsed.netloc:
+        return "[redacted-url]"
+    suffix = "/…" if parsed.path not in ("", "/") or parsed.query else ""
+    return f"{parsed.scheme}://{parsed.netloc}{suffix}"
+
+
 def _public_webhook(row: dict[str, Any]) -> dict[str, Any]:
     out = {k: v for k, v in row.items() if k != "secret"}
+    # Never expose the full URL (its path may be a bearer secret); show host only.
+    if out.get("url"):
+        out["url"] = mask_url(out["url"])
     out["events"] = json.loads(row["events"])
     return out
 
@@ -216,7 +235,9 @@ def create_webhook(tenant_id: str, *, name: str, url: str, events: list[str], fm
     """Returns (signing secret shown once, public record)."""
     webhook_id = "whk_" + secrets.token_urlsafe(9)
     secret = "whs_" + secrets.token_urlsafe(24)
-    stored = secret_store.encrypt(secret, associated_data=f"webhook:{tenant_id}:{webhook_id}") if secret_store.encryption_enabled() else secret
+    # Always encrypt (fail-closed): storing the signing secret in plaintext when
+    # no key is set is exactly the M101 fail-open. encrypt() raises without a key.
+    stored = secret_store.encrypt(secret, associated_data=f"webhook:{tenant_id}:{webhook_id}")
     with connect() as connection:
         connection.execute(
             "INSERT INTO webhooks (webhook_id, tenant_id, name, url, secret, events, format, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, datetime('now'))",
