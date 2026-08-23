@@ -13,6 +13,8 @@ from app.api.auth import router as auth_router
 from app.api.compliance import router as compliance_router
 from app.api.ingestion_keys import router as ingestion_keys_router
 from app.api.intake import router as intake_router
+from app.api.onboarding import router as onboarding_router
+from app.api.public import router as public_router
 from app.api.routes import router as api_router
 from app.api.saml import router as saml_router
 from app.api.scim import router as scim_router
@@ -29,7 +31,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "dashboard" / "static"
 ASSETS_DIR = STATIC_DIR / "assets"
 INDEX_FILE = STATIC_DIR / "index.html"
 
-app = FastAPI(title="Norinth Platform Sandbox")
+app = FastAPI(title="Norinth Platform", description="AI governance platform API: ingestion, inventory, risk, review workflow, release gates, compliance evidence.")
 
 run_migrations()
 seed_super_admin()
@@ -46,6 +48,8 @@ app.include_router(saml_router)
 app.include_router(scim_router)
 app.include_router(agents_router)
 app.include_router(attestation_keys_router)
+app.include_router(public_router)
+app.include_router(onboarding_router)
 
 # Endpoints reachable while a user still owes a password change.
 _PASSWORD_CHANGE_ALLOWLIST = {

@@ -8,7 +8,7 @@ acknowledge within 3 business days.
 
 ## Scope
 
-- **Platform** (`apps/platform/`) — the commercial server. Highest priority.
+- **Platform** (`apps/platform/`) — the server. Highest priority.
 - **SDK** (`packages/python-sdk/`) — the open telemetry client. The SDK is
   observe-only and fail-open by default; report any path that can (a) block or
   crash host application code, or (b) transmit raw prompt/response content when

@@ -2,20 +2,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
 from app.dependencies import ActorContext, current_actor, now, scoped_dependency
 from app.schemas.events import ScopeFilter
-from app.services.authorization import (
-    ENTERPRISE_SUBSCRIBER,
-    GOVERNANCE_ADMIN,
-    PERM_NETWORK_READ,
-    AuthorizationError,
-    require_permission,
-)
-from app.storage.audit import list_audit_logs, verify_audit_chain
+from app.storage.audit import list_audit_logs, record_audit, verify_audit_chain
 from app.storage.raw_events import list_events
-from app.storage.workflow import list_actor_role_assignments
 
 router = APIRouter()
 
@@ -64,6 +56,16 @@ def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilte
     from app.storage.agents import compute_agent_posture, list_registered_agents, public_posture
     from app.storage.entities import list_providers
 
+    # Exporting evidence is itself an auditable act: record who pulled the
+    # packet and for which scope, before assembling it.
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="compliance.audit_packet",
+        tenant_id=scope.tenant_id,
+        target_type="audit_packet",
+        target_id=scope.tenant_id or "platform",
+        detail={"project": scope.project, "environment": scope.environment},
+    )
     return {
         "packet_version": "2026-01",
         "generated_at": now(),
@@ -207,30 +209,3 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
         "models_in_use": list(models_in_use),
         "ai_systems_inventory": ai_systems_inventory
     }
-
-@router.get("/api/network/vendors")
-def list_network_vendors(actor: ActorContext = Depends(current_actor)):
-    try:
-        require_permission(actor, PERM_NETWORK_READ)
-    except AuthorizationError as error:
-        raise HTTPException(status_code=403, detail=str(error)) from error
-    assignments = list_actor_role_assignments(actor.user_ref)
-
-    authorized_tenants = [
-        a["tenant_id"] for a in assignments
-        if a["role"] in {ENTERPRISE_SUBSCRIBER, GOVERNANCE_ADMIN} and a["tenant_id"] is not None
-    ]
-    
-    vendors = []
-    for tenant_id in set(authorized_tenants):
-        aibom = generate_aibom(tenant_id=tenant_id)
-        
-        vendors.append({
-            "tenant_id": tenant_id,
-            "system_count": len(aibom["ai_systems_inventory"]),
-            "providers_in_use": aibom["providers_in_use"],
-            "models_in_use": aibom["models_in_use"],
-            "aibom": aibom
-        })
-        
-    return {"vendors": vendors}

@@ -63,7 +63,7 @@ type SsoConfig = {
   updated_at?: string;
 } | null;
 
-const JIT_ROLES = ["governance_reviewer", "control_owner", "risk_owner", "governance_admin", "enterprise_subscriber"];
+const JIT_ROLES = ["governance_reviewer", "control_owner", "risk_owner", "governance_admin"];
 
 export function SsoSettings({ tenantId }: { tenantId: string }) {
   const { value, error, reload } = useResource(() => getJson<{ sso: SsoConfig }>("/api/org/sso"));

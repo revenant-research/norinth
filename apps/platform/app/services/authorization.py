@@ -19,7 +19,6 @@ ORG_ADMIN = "org_admin"
 RISK_OWNER = "risk_owner"
 CONTROL_OWNER = "control_owner"
 GOVERNANCE_REVIEWER = "governance_reviewer"
-ENTERPRISE_SUBSCRIBER = "enterprise_subscriber"
 
 # Permission identifiers (mirrors workflow.DEFAULT_PERMISSIONS).
 PERM_ORG_MANAGE = "org.manage"
@@ -33,7 +32,6 @@ PERM_RISK_ACCEPT = "risk.accept"
 PERM_GATE_DECIDE = "gate.decide"
 PERM_INCIDENT_CLOSE = "incident.close"
 PERM_LIFECYCLE_MANAGE = "lifecycle.manage"
-PERM_NETWORK_READ = "network.read"
 
 
 class AuthorizationError(Exception):

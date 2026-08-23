@@ -1,28 +1,30 @@
 # Norinth Platform
 
-**Proprietary and commercial (All Rights Reserved).** Not open source. See
-[`LICENSE`](./LICENSE).
+Apache-2.0. See [`LICENSE`](./LICENSE).
 
-This is the closed, commercial component of Norinth — the server that receives
-telemetry from the open [Norinth Logger SDK](../../packages/python-sdk/) and
-turns it into governance evidence and the Enterprise Network. It is a separate
-program from the SDK and shares only the public wire protocol
-([`PROTOCOL.md`](../../packages/python-sdk/PROTOCOL.md)).
+The server that receives telemetry from the [Norinth Logger SDK](../../packages/python-sdk/)
+(or any OpenTelemetry GenAI source) and turns it into governance evidence: a
+live inventory, risk findings, framework-mapped control evidence, routed
+reviews, release gates, incidents and the audit packet. It shares only the
+public wire protocol ([`PROTOCOL.md`](../../packages/python-sdk/PROTOCOL.md))
+with the SDK.
 
-## What lives here (the commercial moat)
+## What lives here
 
-- **Ingestion** (`app/ingestion/`) — receives and verifies signed event batches
-  at `/v1/events/batch`.
+- **Ingestion** (`app/ingestion/`) — `/v1/events/batch` (SDK) and
+  `/v1/otel/traces` (OpenTelemetry GenAI), per-tenant keys, attestation
+  verification.
 - **Governance mapping engine** (`app/storage/governance_policy.py`,
   `app/services/governance.py`) — maps runtime telemetry to NIST AI RMF,
-  ISO/IEC 42001, EU AI Act, and SOC 2 controls.
+  ISO/IEC 42001, EU AI Act, OWASP LLM/Agentic and SOC 2 controls.
 - **Entity & lifecycle processing** (`app/storage/`) — applications, workflows,
-  deployments, incidents, prompts, and material-change fingerprinting.
-- **AIBOM + Enterprise Network API** (`app/api/compliance.py`) — CycloneDX AIBOM
-  generation and the cross-tenant `/api/network/vendors` endpoint.
-- **Authorization** (`app/services/authorization.py`) — roles including
-  `ENTERPRISE_SUBSCRIBER` (the paid network access tier).
-- **Dashboard / buyer UI** (`frontend/` source; compiled into `app/dashboard/static/`
+  deployments, incidents, prompts, agents, material-change fingerprinting.
+- **Compliance** (`app/api/compliance.py`) — CycloneDX AI-BOM, framework
+  coverage, the audit packet.
+- **Identity & authorization** (`app/api/{auth,sso,saml,scim}.py`,
+  `app/services/authorization.py`) — sessions, OIDC, SAML 2.0, SCIM 2.0,
+  permission-based roles with separation of duties.
+- **Dashboard** (`frontend/` source; compiled into `app/dashboard/static/`
   by `make build-frontend` / CI / Docker — never committed).
 
 ## Boundary rules

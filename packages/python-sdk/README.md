@@ -7,7 +7,7 @@ captures AI telemetry, redacts and hashes content by default, optionally signs
 the payload, and transmits it over the documented Norinth wire protocol. It
 contains no dashboard, no database, and no governance logic — it is a thin,
 auditable client. The server that receives this telemetry (the Norinth
-Platform) is a separate, commercially licensed component.
+Platform, also Apache-2.0) is a separate program that shares only the wire protocol.
 
 Because this SDK runs next to your prompts and responses, it is open by design:
 you can read exactly what is captured, how it is redacted, and what leaves your

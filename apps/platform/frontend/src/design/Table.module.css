@@ -1,0 +1,5 @@
+.wrap { width: 100%; overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: var(--n-text-md); }
+.caption { text-align: left; caption-side: bottom; padding-top: var(--n-space-2); font-size: var(--n-text-sm); color: var(--n-ink-dim); }
+.table th, .table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--n-rule-dim); vertical-align: top; line-height: 1.5; }
+.table th { font-size: var(--n-text-xs); font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--n-ink-dim); border-bottom-color: var(--n-rule); }

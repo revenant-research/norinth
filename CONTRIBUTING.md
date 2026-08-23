@@ -5,7 +5,7 @@
 | Zone | Path | License |
 |---|---|---|
 | Open SDK | `packages/python-sdk/` | Apache-2.0 |
-| Platform | `apps/platform/` | Proprietary |
+| Platform | `apps/platform/` | Apache-2.0 |
 | Demo apps | `demo-apps/` | Apache-2.0 |
 
 The SDK and Platform meet only at the wire protocol

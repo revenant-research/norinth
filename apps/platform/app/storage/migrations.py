@@ -114,12 +114,20 @@ def _0005_attestation_keys(connection) -> None:
     ensure_attestation_tables(connection)
 
 
+def _0006_leads(connection) -> None:
+    """Inbound pilot/demo requests captured by the public landing page."""
+    from app.storage.leads import ensure_leads_table
+
+    ensure_leads_table(connection)
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
     Migration(3, "SAML 2.0 configuration and request state", _0003_saml),
     Migration(4, "per-IP login throttling", _0004_login_throttle),
     Migration(5, "evidence attestation keys", _0005_attestation_keys),
+    Migration(6, "inbound leads from the landing page", _0006_leads),
 ]
 
 

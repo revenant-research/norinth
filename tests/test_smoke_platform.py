@@ -15,7 +15,7 @@ def test_health_ok(client):
 
 def test_unauthenticated_reads_are_rejected(client):
     assert client.get("/api/applications").status_code == 401
-    assert client.get("/api/network/vendors").status_code == 401
+    assert client.get("/api/compliance/aibom").status_code == 401
 
 
 def test_default_super_admin_login(client):

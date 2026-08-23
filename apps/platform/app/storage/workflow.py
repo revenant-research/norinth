@@ -197,7 +197,6 @@ DEFAULT_PERMISSIONS: dict[str, str] = {
     "gate.decide": "Approve or reject deployment release gates",
     "incident.close": "Close incidents with a documented closure record",
     "lifecycle.manage": "Recertify and retire AI use cases",
-    "network.read": "Read cross-tenant network compliance postures",
 }
 
 DEFAULT_ROLE_PERMISSIONS: dict[str, set[str]] = {
@@ -215,7 +214,6 @@ DEFAULT_ROLE_PERMISSIONS: dict[str, set[str]] = {
     "risk_owner": {"review.decide", "risk.accept", "owner.assign"},
     "control_owner": {"review.decide", "owner.assign"},
     "governance_reviewer": {"review.decide"},
-    "enterprise_subscriber": {"network.read"},
 }
 
 

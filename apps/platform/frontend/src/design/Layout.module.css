@@ -1,0 +1,11 @@
+.stack { display: flex; flex-direction: column; min-width: 0; }
+.inline { display: flex; flex-wrap: wrap; min-width: 0; }
+.grid { display: grid; min-width: 0; }
+.gap_1 { gap: var(--n-space-1); } .gap_2 { gap: var(--n-space-2); } .gap_3 { gap: var(--n-space-3); } .gap_4 { gap: var(--n-space-4); }
+.gap_5 { gap: var(--n-space-5); } .gap_6 { gap: var(--n-space-6); } .gap_7 { gap: var(--n-space-7); } .gap_8 { gap: var(--n-space-8); }
+.align_start { align-items: flex-start; } .align_center { align-items: center; } .align_end { align-items: flex-end; } .align_baseline { align-items: baseline; }
+.justify_start { justify-content: flex-start; } .justify_between { justify-content: space-between; } .justify_end { justify-content: flex-end; }
+.container { width: 100%; max-width: var(--n-content-max); margin: 0 auto; padding: 0 var(--n-pad-x); }
+.wide { max-width: 96rem; }
+.rule { border: 0; border-top: 1px solid var(--n-rule); margin: 0; }
+.ruleDim { border-top-color: var(--n-rule-dim); }

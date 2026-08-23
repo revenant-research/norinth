@@ -9,7 +9,10 @@ export type RouteItem = { id: string; label: string; description?: string };
 export function Sidebar({ tagline, routes, active }: { tagline: string; routes: RouteItem[]; active: string }) {
   return (
     <aside className="sidebar">
-      <div className="brand">Norinth</div>
+      <div className="brand">
+        Norinth
+        <span className="brand-sub">Revenant Research</span>
+      </div>
       <p>{tagline}</p>
       <nav aria-label="Primary">
         {routes.map((item) => (
