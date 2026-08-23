@@ -2,9 +2,11 @@
 
 ## Reporting a vulnerability
 
-Email **security@revenantai.com** with a description, reproduction steps, and
-impact. Please do not open public issues for security reports. We aim to
-acknowledge within 3 business days.
+Use GitHub's private vulnerability reporting for this repository
+(**Security → Report a vulnerability** at
+https://github.com/revenant-research/norinth/security/advisories/new) with a
+description, reproduction steps, and impact. Please do not open public issues
+for security reports.
 
 ## Scope
 

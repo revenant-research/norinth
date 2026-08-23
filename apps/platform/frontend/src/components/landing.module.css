@@ -93,7 +93,7 @@ a.heroGhost.heroGhost:hover { background: rgba(255, 252, 245, 0.12); border-colo
 .compare { display: grid; gap: 0; border-top: 1px solid var(--n-rule); }
 .compareHead, .compareRow {
   display: grid;
-  grid-template-columns: 1.1fr 1.2fr 1.4fr;
+  grid-template-columns: 1fr 1.6fr;
   gap: var(--n-space-4);
   padding: var(--n-space-3) 0;
   border-bottom: 1px solid var(--n-rule-dim);

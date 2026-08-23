@@ -8,17 +8,17 @@
 
 Norinth is free, Apache-2.0, and runs inside the customer's own environment. It starts from runtime evidence (the SDK and OpenTelemetry, not a survey), enforces governance (release gates, separation of duties, signed evidence) rather than displaying it, and produces the audit packet auditors and regulators ask for. There is no hosted tier, no paid tier, and no vendor in the data path.
 
-The strategy is to **undercut the Credo AI / Holistic AI / OneTrust / IBM watsonx.governance class of product on every axis a buyer cares about**:
+The strategy is to **undercut closed, commercially licensed AI-governance platforms** by being free, open, self-hosted and enforcement-first. We make that case with what Norinth does, not with claims about other vendors' products or prices (none of which we have sourced):
 
-| Buyer question | Closed governance suites | Norinth |
-|---|---|---|
-| What does it cost? | Six-figure annual contracts, per seat or per "use case" | $0. Your infrastructure and one part-time platform engineer. |
-| Where does my data go? | Their cloud; vendor security questionnaire required | Nowhere. Runs in your VPC. Prompt/completion text never leaves by default. |
-| How do they know what I run? | You fill in an intake form | The SDK / your LLM gateway / OTel tells it, including the systems nobody registered |
-| Can I read the code my evidence depends on? | No | Every line, including the evidence engine and the audit chain |
-| Does it enforce anything? | Dashboards and workflows | Release gates fail your pipeline; admins cannot approve; evidence must be signed by CI |
-| How long to first value? | Procurement, then implementation partner | Ten minutes from a curl command |
-| What if the vendor is acquired or pivots? | Your evidence is in their database | It is in your PostgreSQL |
+| Buyer question | Norinth |
+|---|---|
+| What does it cost? | Nothing. Apache-2.0. Your infrastructure. |
+| Where does my data go? | Nowhere. Runs in your network. Prompt/completion text never leaves by default. |
+| How does it know what I run? | The SDK / your LLM gateway / OTel tells it, including the systems nobody registered. |
+| Can I read the code my evidence depends on? | Every line, including the evidence engine and the audit chain. |
+| Does it enforce anything? | Release gates fail your pipeline; admins cannot approve; evidence must be signed by CI. |
+| How long to first value? | One command, a setup wizard, first event within minutes. |
+| What if the project changes direction? | Your evidence is in your PostgreSQL under a license that lets you keep running it. |
 
 Three-word positioning: **runtime → evidence → assurance.** The open-source move adds a fourth word: **yours.**
 
@@ -26,8 +26,8 @@ Three-word positioning: **runtime → evidence → assurance.** The open-source 
 
 Same ICP as before; the open model widens the front door.
 
-- **Health systems and medical-AI builders** (beachhead). HIPAA, FDA PCCP, Part 11, and the healthcare AI assurance/certification programs now emerging (Norinth has no affiliation with any of them; it produces the organizational evidence they ask for). Ambient documentation, imaging, agentic back-office — most of it outside the EHR vendor's governance. Health systems are especially receptive to self-hosting: no BAA negotiation with yet another vendor, no PHI-adjacent telemetry leaving the network.
-- **Regulated enterprises with consequential AI**: EU AI Act high-risk (2 Dec 2027), Colorado ADMT (Jan 2027), Texas TRAIGA, NYC LL144, bank model-risk.
+- **Health systems and medical-AI builders** (beachhead). HIPAA, FDA PCCP, Part 11, and the voluntary Joint Commission certification launched 1 June 2026 (see `docs/SOURCES.md`; Norinth has no affiliation with it or with CHAI — it produces the organizational evidence such programs ask for). Self-hosting removes the vendor-BAA question because no PHI-adjacent telemetry leaves the network.
+- **Regulated enterprises with consequential AI**: EU AI Act Annex III obligations apply 2 December 2027; Colorado's automated-decision-making law applies 1 January 2027 (both sourced in `docs/SOURCES.md`). Other state and sector rules exist; cite them only with a source.
 - **Public sector and defence-adjacent**, who cannot use SaaS governance tools at all.
 
 **Champion:** the AI/ML platform lead who owns the runtime and hates evidence collection by spreadsheet. They can install Norinth on a Friday afternoon without asking anyone.
@@ -57,12 +57,13 @@ Metrics that matter: installs (image pulls), organizations that reach "first eve
 
 ## 5. Competitive frame
 
-| Camp | Their pitch | Their gap | Norinth's line |
-|---|---|---|---|
-| Governance suites (Credo AI, Holistic AI, OneTrust, IBM) | Policy packs, intake, reporting | Closed, costly, questionnaire-first, runtime bolted on | "You should not have to pay six figures to find out what AI you run." |
-| Observability/security (Datadog, Arize, Fiddler, Prisma AIRS) | Runtime signal | No regulatory evidence, no system of record | "They tell you what happened; we turn it into evidence you own." |
-| Compliance automation (Vanta, Drata) | Evidence workflows | No model/runtime/agent depth | "They file paperwork; we generate the AI evidence they can't see." |
-| Healthcare-native (Qualified Health, Epic Seismometer) | Clinical validation | Narrow estate, hosted | "Whole estate, your network, your evidence." |
+| Category | What it typically sells | Norinth's line |
+|---|---|---|
+| Commercial AI-governance platforms | Policy content, intake, reporting, hosted | "Free, open, in your network, starts from what ran." |
+| AI observability / security tooling | Runtime signal | "Telemetry is not evidence until it is mapped to controls and decisions you can hand an auditor." |
+| Compliance automation | Evidence workflows for SOC 2 / ISO | "We produce the AI-specific runtime evidence those workflows need." |
+
+Do not characterize named vendors' products, pricing or roadmaps in any material unless sourced.
 
 Build to OpenTelemetry GenAI conventions so Norinth consumes the observability layer instead of competing with it.
 
@@ -89,7 +90,7 @@ There is no revenue in the product and none is planned inside it. Norinth is a R
 
 ## 8. Proof and content
 
-- Regulatory-deadline content timed to catalysts: EU AI Act Dec 2027, Colorado Jan 2027, healthcare AI assurance evidence checklists.
+- Regulatory-deadline content timed to sourced catalysts (`docs/SOURCES.md`): EU AI Act 2 Dec 2027, Colorado 1 Jan 2027, the Joint Commission certification.
 - The ten-minute demo: install, instrument the sample app, watch the inventory, findings and AI-BOM appear, export the packet.
 - Design partners: 3–5 named health systems and regulated enterprises co-developing crosswalks and packs, credited publicly.
 - Publish the security posture: SECURITY.md, threat model, audit history, CI results.

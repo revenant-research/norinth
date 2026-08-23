@@ -1323,7 +1323,7 @@ function OwnerAssignmentPanel({ owner, mutate }: { owner: Record<string, any>; m
         <span>{owner.application_name} / {owner.owner_role} / {owner.status}</span>
       </div>
       <div className="inline-form owner-action">
-        <input placeholder="owner@company.com" aria-label="Owner email" value={ownerRef} onChange={(event) => setOwnerRef(event.target.value)} />
+        <input placeholder="Email of the accountable owner" aria-label="Owner email" value={ownerRef} onChange={(event) => setOwnerRef(event.target.value)} />
         <input placeholder="Why this owner is accountable" aria-label="Assignment rationale" value={reason} onChange={(event) => setReason(event.target.value)} />
         <button onClick={() => mutate(`/api/owner-assignments/${owner.owner_assignment_id}/assign`, { owner_ref: ownerRef, rationale: assignmentPacket }, "Owner assigned.")}>Assign owner</button>
       </div>
