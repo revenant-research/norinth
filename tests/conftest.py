@@ -17,6 +17,7 @@ import tempfile
 import pytest
 
 os.environ.setdefault("NORINTH_NOTIFICATIONS_WORKER", "0")  # deliver synchronously in tests
+os.environ.setdefault("NORINTH_ALLOW_PRIVATE_EGRESS", "1")  # test webhook receivers run on 127.0.0.1
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
 PLATFORM_DIR = REPO_ROOT / "apps" / "platform"

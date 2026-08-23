@@ -25,6 +25,7 @@ from urllib import parse, request
 import jwt
 
 from app.services.authorization import ADMINISTRATION_ROLES
+from app.services.net_guard import validate_external_url
 from app.storage.sso import consume_login_state, create_login_state, load_sso_configuration
 from app.storage.workflow import create_platform_user, get_user_by_email, upsert_role_assignment
 
@@ -37,12 +38,14 @@ class SsoError(Exception):
 
 
 def http_get_json(url: str, timeout: float = 10.0) -> dict[str, Any]:
-    with request.urlopen(url, timeout=timeout) as response:  # noqa: S310 - IdP URL from admin config
+    validate_external_url(url)
+    with request.urlopen(url, timeout=timeout) as response:  # noqa: S310 - validated above
         return json.loads(response.read().decode("utf-8"))
 
 
 def http_post_form(url: str, data: dict[str, str], timeout: float = 10.0) -> dict[str, Any]:
     body = parse.urlencode(data).encode("utf-8")
+    validate_external_url(url)
     req = request.Request(url, data=body, method="POST", headers={"Content-Type": "application/x-www-form-urlencoded"})
     with request.urlopen(req, timeout=timeout) as response:  # noqa: S310
         return json.loads(response.read().decode("utf-8"))

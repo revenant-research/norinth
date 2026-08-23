@@ -31,6 +31,7 @@ from datetime import UTC, datetime
 from email.message import EmailMessage
 from typing import Any
 
+from app.services.net_guard import validate_external_url
 from app.storage import notifications as store
 from app.storage.raw_events import connect
 
@@ -144,6 +145,7 @@ def _post_webhook(hook: dict[str, Any], payload: dict[str, Any]) -> None:
     body = json.dumps(body_obj, sort_keys=True).encode("utf-8")
     secret = store.webhook_secret(hook)
     signature = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+    validate_external_url(hook["url"])
     req = urllib.request.Request(
         hook["url"],
         data=body,
