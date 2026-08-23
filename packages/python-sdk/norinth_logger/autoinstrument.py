@@ -18,36 +18,101 @@ def autoinstrument(client) -> None:
     instrument_anthropic(client)
 
 
+def _openai_input(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
+    return kwargs.get("input") or kwargs.get("prompt")
+
+
+def _messages(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
+    return kwargs.get("messages")
+
+
 def instrument_openai(client) -> None:
+    # Responses API (sync + async).
     try:
         from openai.resources.responses.responses import Responses
+
+        patch_provider_method(
+            patch_key="openai.responses.create",
+            owner=Responses,
+            method_name="create",
+            provider="openai",
+            operation="responses.create",
+            prompt_getter=_openai_input,
+            client=client,
+        )
     except Exception:
-        return
-    patch_provider_method(
-        patch_key="openai.responses.create",
-        owner=Responses,
-        method_name="create",
-        provider="openai",
-        operation="responses.create",
-        prompt_getter=lambda args, kwargs: kwargs.get("input") or kwargs.get("prompt"),
-        client=client,
-    )
+        pass
+    try:
+        from openai.resources.responses.responses import AsyncResponses
+
+        patch_provider_method_async(
+            patch_key="openai.responses.acreate",
+            owner=AsyncResponses,
+            method_name="create",
+            provider="openai",
+            operation="responses.create",
+            prompt_getter=_openai_input,
+            client=client,
+        )
+    except Exception:
+        pass
+    # Chat Completions API — the most widely used OpenAI surface (sync + async).
+    # Previously uninstrumented, so this traffic was invisible (audit A1/H-14).
+    try:
+        from openai.resources.chat.completions import AsyncCompletions, Completions
+
+        patch_provider_method(
+            patch_key="openai.chat.completions.create",
+            owner=Completions,
+            method_name="create",
+            provider="openai",
+            operation="chat.completions.create",
+            prompt_getter=_messages,
+            client=client,
+        )
+        patch_provider_method_async(
+            patch_key="openai.chat.completions.acreate",
+            owner=AsyncCompletions,
+            method_name="create",
+            provider="openai",
+            operation="chat.completions.create",
+            prompt_getter=_messages,
+            client=client,
+        )
+    except Exception:
+        pass
 
 
 def instrument_anthropic(client) -> None:
+    # Messages API (sync + async).
     try:
         from anthropic.resources.messages.messages import Messages
+
+        patch_provider_method(
+            patch_key="anthropic.messages.create",
+            owner=Messages,
+            method_name="create",
+            provider="anthropic",
+            operation="messages.create",
+            prompt_getter=_messages,
+            client=client,
+        )
     except Exception:
-        return
-    patch_provider_method(
-        patch_key="anthropic.messages.create",
-        owner=Messages,
-        method_name="create",
-        provider="anthropic",
-        operation="messages.create",
-        prompt_getter=lambda args, kwargs: kwargs.get("messages"),
-        client=client,
-    )
+        pass
+    try:
+        from anthropic.resources.messages.messages import AsyncMessages
+
+        patch_provider_method_async(
+            patch_key="anthropic.messages.acreate",
+            owner=AsyncMessages,
+            method_name="create",
+            provider="anthropic",
+            operation="messages.create",
+            prompt_getter=_messages,
+            client=client,
+        )
+    except Exception:
+        pass
 
 
 def patch_provider_method(
@@ -72,6 +137,58 @@ def patch_provider_method(
         error: dict[str, Any] | None = None
         try:
             response = original(self, *args, **kwargs)
+            return response
+        except Exception as exc:
+            status = "error"
+            error = summarize_error(exc, client.config.capture_content, client.config.signing_secret)
+            raise
+        finally:
+            duration_ms = (perf_counter() - started) * 1000
+            model = str(getattr(response, "model", None) or kwargs.get("model") or "unknown")
+            client.model_call(
+                provider=provider,
+                model=model,
+                operation=operation,
+                prompt=prompt_getter(args, kwargs),
+                response=response,
+                usage=normalize_usage(getattr(response, "usage", None)),
+                status=status,
+                duration_ms=duration_ms,
+                error=error,
+            )
+
+    setattr(owner, method_name, instrumented)
+    _PATCHED.add(patch_key)
+
+
+def patch_provider_method_async(
+    *,
+    patch_key: str,
+    owner: type,
+    method_name: str,
+    provider: str,
+    operation: str,
+    prompt_getter: Callable[[tuple[Any, ...], dict[str, Any]], Any],
+    client,
+) -> None:
+    """Async counterpart to patch_provider_method.
+
+    The wrapper awaits the real coroutine and records the model call only after
+    it resolves, so async provider calls are captured correctly instead of being
+    logged as instant success before they run (audit A2/H-14).
+    """
+    if patch_key in _PATCHED:
+        return
+
+    original = getattr(owner, method_name)
+
+    async def instrumented(self, *args: Any, **kwargs: Any):
+        started = perf_counter()
+        response = None
+        status = "success"
+        error: dict[str, Any] | None = None
+        try:
+            response = await original(self, *args, **kwargs)
             return response
         except Exception as exc:
             status = "error"

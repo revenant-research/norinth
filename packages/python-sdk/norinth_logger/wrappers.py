@@ -9,18 +9,42 @@ from .privacy import summarize_error
 
 
 def normalize_usage(usage: Any) -> dict[str, Any]:
+    """Normalize provider usage objects to input/output/total token counts.
+
+    Handles both the Responses/Anthropic naming (input_tokens/output_tokens) and
+    the chat.completions naming (prompt_tokens/completion_tokens), plus cached and
+    reasoning token detail when present (audit A5).
+    """
     if usage is None:
         return {}
     if isinstance(usage, dict):
         return usage
     usage_values: dict[str, Any] = {}
-    for field in ("input_tokens", "output_tokens", "total_tokens"):
+
+    def read(*names: str) -> Any:
+        for name in names:
+            value = getattr(usage, name, None)
+            if value is not None:
+                return value
+        return None
+
+    input_tokens = read("input_tokens", "prompt_tokens")
+    output_tokens = read("output_tokens", "completion_tokens")
+    total_tokens = read("total_tokens")
+    if input_tokens is not None:
+        usage_values["input_tokens"] = input_tokens
+    if output_tokens is not None:
+        usage_values["output_tokens"] = output_tokens
+    if total_tokens is not None:
+        usage_values["total_tokens"] = total_tokens
+
+    # Optional detail: Anthropic cache tokens, OpenAI cached/reasoning tokens.
+    for field in ("cache_read_input_tokens", "cache_creation_input_tokens"):
         value = getattr(usage, field, None)
         if value is not None:
             usage_values[field] = value
-    if usage_values:
-        return usage_values
-    return getattr(usage, "__dict__", {})
+
+    return usage_values or getattr(usage, "__dict__", {})
 
 
 class WrappedCallable:

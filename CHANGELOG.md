@@ -42,6 +42,19 @@ to Semantic Versioning once it reaches a tagged release.
   triggered the destructive action); Enter/Space now activate the focused button
   natively. Added a focus trap and focus return to the invoking control on close.
 
+### Fixed
+- **SDK auto-instrumentation coverage (H-14).** The SDK only patched the sync
+  OpenAI Responses API and sync Anthropic `messages.create`, so the most widely
+  used surface (`chat.completions`) and all async clients emitted no telemetry —
+  an AI inventory built on it was silently incomplete ("negative assurance").
+  Added `chat.completions.create` (sync + async), async Responses, and async
+  Anthropic `messages.create`, via a new async patcher that awaits the coroutine
+  and records the call only after it resolves (fixing the async
+  fabricated-success bug). Usage normalization now maps the chat naming
+  (`prompt_tokens`/`completion_tokens`) and cache tokens, not just the Responses
+  naming (audit A5). All patches are import-guarded so missing/changed provider
+  SDK internals never raise.
+
 ### Fixed / Hardened
 - **SDK transport resilience (C-8).** A single non-serializable event (or a NaN
   score) used to crash `json.dumps` in the background worker, which had no
