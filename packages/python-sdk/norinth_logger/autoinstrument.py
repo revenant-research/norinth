@@ -213,6 +213,9 @@ def patch_provider_method_async(
     _PATCHED.add(patch_key)
 
 
+_BODY_INFERENCE_CAP = 64 * 1024  # bytes of request body buffered for context inference
+
+
 class NorinthFastAPIMiddleware:
     def __init__(self, app, client, *, system: str = "fastapi") -> None:
         self.app = app
@@ -224,19 +227,37 @@ class NorinthFastAPIMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # Buffer only enough of the request body to infer governance context, then
+        # replay what we read and DELEGATE the rest of receive() to the real
+        # transport. Returning a synthetic request forever (the old behaviour)
+        # starves Starlette's disconnect listener, which polls receive() while a
+        # StreamingResponse is open -> the worker spins at 100% CPU and never
+        # completes (finding C8). Delegating also bounds memory for large uploads.
         body = b""
-        more_body = True
-        messages = []
-        while more_body:
+        buffered: list[dict] = []
+        while True:
             message = await receive()
-            messages.append(message)
+            buffered.append(message)
+            if message["type"] != "http.request":
+                break
             body += message.get("body", b"")
-            more_body = message.get("more_body", False)
+            if not message.get("more_body", False):
+                break
+            if len(body) > _BODY_INFERENCE_CAP:
+                break  # stop buffering; the rest streams straight to the app
 
         async def replay_receive():
-            if messages:
-                return messages.pop(0)
-            return {"type": "http.request", "body": b"", "more_body": False}
+            if buffered:
+                return buffered.pop(0)
+            return await receive()
+
+        # Capture the response status so 4xx/5xx are not recorded as success.
+        response_status = {"code": None}
+
+        async def wrapped_send(event):
+            if event.get("type") == "http.response.start":
+                response_status["code"] = event.get("status")
+            await send(event)
 
         workflow_name = workflow_name_from_path(scope.get("path", ""))
         metadata = infer_governance_context((decode_body(body),), {})
@@ -247,13 +268,16 @@ class NorinthFastAPIMiddleware:
         status = "success"
         error_summary = None
         try:
-            await self.app(scope, replay_receive, send)
+            await self.app(scope, replay_receive, wrapped_send)
         except Exception as exc:
             status = "error"
             error_summary = summarize_error(exc, self.client.config.capture_content, self.client.config.signing_secret)
             raise
         finally:
             duration_ms = (perf_counter() - started) * 1000
+            code = response_status["code"]
+            if status != "error" and isinstance(code, int) and code >= 500:
+                status = "error"  # a 5xx response is a failed request, not a success
             self.client.record(
                 NorinthEvent(
                     type="trace.completed",
@@ -266,7 +290,7 @@ class NorinthFastAPIMiddleware:
                     name=workflow_name,
                     status=status,
                     duration_ms=duration_ms,
-                    attributes={"metadata": context.metadata, "error": error_summary},
+                    attributes={"metadata": context.metadata, "error": error_summary, "http_status": code},
                 )
             )
             reset_context(token)
