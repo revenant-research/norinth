@@ -33,17 +33,17 @@ import styles from "./landing.module.css";
  * Visual language follows the Revenant Research identity via src/design.
  */
 
+// Dated regulatory facts only, each with a primary source (docs/SOURCES.md).
 const CATALYSTS = [
-  { label: "EU AI Act high-risk", value: "Dec 2027", note: "obligations apply" },
-  { label: "Colorado ADMT", value: "Jan 2027", note: "in force" },
-  { label: "HIPAA / FDA PCCP", value: "In force", note: "for clinical AI" },
-  { label: "ISO/IEC 42001", value: "Table stakes", note: "for regulated AI" },
+  { label: "EU AI Act · Annex III high-risk obligations", value: "2 Dec 2027", note: "Regulation (EU) 2026/1744", href: "https://www.aiactblog.nl/en/posts/digital-omnibus-high-risk-postponement-december-2027" },
+  { label: "Colorado automated decision-making law", value: "1 Jan 2027", note: "SB 26-189", href: "https://www.akingump.com/en/insights/ai-law-and-regulation-tracker/colorado-postpones-implementation-of-colorado-ai-act-sb-24-205" },
+  { label: "Joint Commission AI certification (voluntary)", value: "Live", note: "launched 1 Jun 2026", href: "https://www.jointcommission.org/en-us/knowledge-library/news/2026-05-responsible-use-of-ai-in-healthcare-certification" },
 ];
 
 const AUDIENCES = [
   {
     eyebrow: "Health systems",
-    title: "Ambient scribes, imaging models and back-office agents, most of them outside the EHR vendor's governance.",
+    title: "Ambient scribes, imaging models and back-office agents across the whole estate.",
     body: "Healthcare AI assurance programs ask for organizational evidence: an inventory, monitoring, named accountability, decisions on record. Norinth produces it from what actually runs.",
     tags: ["HIPAA", "FDA PCCP", "21 CFR Part 11", "ISO/IEC 42001"],
   },
@@ -98,9 +98,9 @@ const CAPABILITIES = [
 ];
 
 const POSITIONING = [
-  { them: "Governance suites start from a questionnaire.", us: "We start from what actually ran." },
-  { them: "Observability tools tell you what happened.", us: "We turn it into evidence mapped to your frameworks." },
-  { them: "Compliance automation files the paperwork.", us: "We generate the AI evidence it cannot see." },
+  { them: "Questionnaires describe what people believe is running.", us: "Norinth starts from what actually ran." },
+  { them: "Telemetry on its own is not evidence.", us: "Norinth maps it to the controls your frameworks name." },
+  { them: "Paperwork without runtime data is hard to defend.", us: "Norinth produces the runtime evidence behind the paperwork." },
 ];
 
 const FRAMEWORKS = ["NIST AI RMF 1.0", "ISO/IEC 42001", "EU AI Act", "OWASP LLM Top 10", "OWASP Agentic", "HIPAA", "SOC 2"];
@@ -126,13 +126,13 @@ const GET_STARTED = [
   },
 ];
 
-const UNDERCUT = [
-  { q: "What does it cost?", them: "Six-figure annual contracts, per seat or per use case.", us: "Nothing. Your infrastructure and a part-time platform engineer." },
-  { q: "Where does my data go?", them: "Their cloud, after a vendor security questionnaire.", us: "Nowhere. It runs in your network; prompt text never leaves by default." },
-  { q: "How does it know what I run?", them: "You fill in an intake form.", us: "Your SDK, gateway or OpenTelemetry pipeline tells it, including the systems nobody registered." },
-  { q: "Can I read the code my evidence depends on?", them: "No.", us: "Every line, including the evidence engine and the audit chain." },
-  { q: "Does it enforce anything?", them: "Dashboards and workflows.", us: "Release gates fail your pipeline; admins cannot approve; evidence must be signed by CI." },
-  { q: "What if the vendor pivots or is acquired?", them: "Your evidence is in their database.", us: "It is in your PostgreSQL." },
+const ANSWERS = [
+  { q: "What does it cost?", us: "Nothing. Apache-2.0. You run it on your own infrastructure." },
+  { q: "Where does my data go?", us: "Nowhere. It runs in your network. Prompt and completion text are hashed, not sent, unless you turn capture on." },
+  { q: "How does it know what I run?", us: "Your SDK, LLM gateway or OpenTelemetry pipeline tells it, including systems nobody registered." },
+  { q: "Can I read the code my evidence depends on?", us: "Every line, including the evidence engine and the hash-chained audit log." },
+  { q: "Does it enforce anything?", us: "Release gates fail your pipeline; administrators cannot approve; evidence must be signed by your CI key." },
+  { q: "What if the project changes direction?", us: "Your evidence is in your PostgreSQL, under a license that lets you keep running and modifying it." },
 ];
 
 function Section({ id, eyebrow, title, lede, children }: { id: string; eyebrow: string; title: string; lede?: string; children: React.ReactNode }) {
@@ -148,7 +148,7 @@ function Section({ id, eyebrow, title, lede, children }: { id: string; eyebrow: 
   );
 }
 
-export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn: () => void; onAdminSignIn: () => void }) {
+export function LandingPage({ onClientSignIn }: { onClientSignIn: () => void }) {
   return (
     <div className={styles.page}>
       <header className={styles.header}>
@@ -181,7 +181,7 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
           </Lede>
           <div className={styles.actions}>
             <ButtonLink size="lg" href="#start" className={styles.heroCta}>Install it</ButtonLink>
-            <ButtonLink variant="secondary" size="lg" href="https://github.com/revenant-research/norinth">Read the source</ButtonLink>
+            <ButtonLink variant="secondary" size="lg" href="https://github.com/revenant-research/norinth" className={styles.heroGhost}>Read the source</ButtonLink>
           </div>
           <ul className={styles.proof} aria-label="Key facts">
             <li>No hosted tier, no paid tier, no vendor in the data path</li>
@@ -203,9 +203,9 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
 
       <Container>
         <div className={styles.catalysts}>
-        <StatGroup columns={4}>
+        <StatGroup columns={3}>
           {CATALYSTS.map((c) => (
-            <Stat key={c.label} label={c.label} value={c.value} note={c.note} />
+            <Stat key={c.label} label={c.label} value={c.value} note={<a href={c.href} target="_blank" rel="noreferrer">{c.note} ↗</a>} />
           ))}
         </StatGroup>
         </div>
@@ -222,21 +222,19 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
             ))}
           </Grid>
           <Text size="sm">
-            Requirements: Docker (the installer can install it on Ubuntu LTS), 2 CPU, 4 GB RAM, PostgreSQL for production. Python 3.11+ for the SDK.
+            Requirements: Docker (the installer can install it on Ubuntu or Debian), PostgreSQL for production, Python 3.11+ where the SDK runs.
           </Text>
         </Section>
 
-        <Section id="undercut" eyebrow="What you are not paying for" title="The questions you would ask a governance vendor, answered.">
-          <div className={styles.compare} role="table" aria-label="Closed governance suites compared with Norinth">
+        <Section id="answers" eyebrow="Straight answers" title="The questions you would ask a governance vendor.">
+          <div className={styles.compare} role="table" aria-label="Questions and answers about Norinth">
             <div className={styles.compareHead} role="row">
               <span role="columnheader">Question</span>
-              <span role="columnheader">Closed governance suites</span>
               <span role="columnheader">Norinth</span>
             </div>
-            {UNDERCUT.map((row) => (
+            {ANSWERS.map((row) => (
               <div className={styles.compareRow} role="row" key={row.q}>
                 <strong role="cell">{row.q}</strong>
-                <Text size="sm" role="cell">{row.them}</Text>
                 <Text size="sm" tone="ink" role="cell">{row.us}</Text>
               </div>
             ))}
@@ -403,15 +401,14 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
       <footer className={styles.footer}>
         <div className={styles.brand}>
           <span className={styles.brandName}>Norinth</span>
-          <span className={styles.brandBy}>A Revenant Research company</span>
+          <span className={styles.brandBy}>A Revenant Research product</span>
           <Text size="sm">Open-source AI governance from runtime evidence. Apache-2.0.</Text>
         </div>
         <div className={styles.footerLinks}>
           <ButtonLink variant="link" href="https://github.com/revenant-research/norinth">GitHub</ButtonLink>
           <ButtonLink variant="link" href="https://github.com/revenant-research/norinth/blob/main/LICENSE">Apache-2.0</ButtonLink>
+          <ButtonLink variant="link" href="https://github.com/revenant-research/norinth/blob/main/SECURITY.md">Security</ButtonLink>
           <ButtonLink variant="link" href="https://www.revenantresearch.com/">revenantresearch.com</ButtonLink>
-          <Button variant="secondary" size="sm" onClick={onClientSignIn}>Sign in</Button>
-          <Button variant="link" size="sm" onClick={onAdminSignIn}>Platform administrator access</Button>
         </div>
       </footer>
     </div>
@@ -444,7 +441,7 @@ export function ContactSection() {
       lede="Stuck on an install, reviewing it for your security team, or want to help shape the healthcare or EU AI Act pack? Tell us what you run. Bugs and feature requests belong on GitHub issues; everything else here."
     >
       {state === "sent" ? (
-        <Callout tone="success" title="Thanks.">We have your message and will reply within a few business days.</Callout>
+        <Callout tone="success" title="Thanks.">Your message was received.</Callout>
       ) : (
         <form className={styles.contactForm} onSubmit={submit} aria-label="Contact">
           <Stack gap={4}>

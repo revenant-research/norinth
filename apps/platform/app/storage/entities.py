@@ -646,7 +646,39 @@ def scoped_rows(table: str, *, tenant_id: str | None, project: str | None, envir
     return [dict(row) for row in rows]
 
 
+STAGE_ORDER = ["retired", "rejected", "approved", "recertified", "in_review", "discovered"]
+
+
+def _lifecycle_by_application(tenant_id: str | None, project: str | None, environment: str | None) -> dict[str, dict[str, Any]]:
+    """Governance stage per application, derived from its intake record(s):
+    none -> discovered (seen in telemetry, never registered); submitted ->
+    in_review; approved/recertified/rejected/retired as decided. Also the
+    highest risk tier declared for it."""
+    rows = scoped_rows("ai_use_cases", tenant_id=tenant_id, project=project, environment=environment, order_by="updated_at")
+    out: dict[str, dict[str, Any]] = {}
+    tier_rank = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+    for row in rows:
+        name = row.get("application_name")
+        if not name:
+            continue
+        status = row.get("status") or "submitted"
+        stage = "in_review" if status == "submitted" else status
+        current = out.get(name)
+        tier = row.get("risk_tier")
+        if current is None:
+            out[name] = {"stage": stage, "risk_tier": tier, "intake_ids": [row["intake_id"]]}
+            continue
+        current["intake_ids"].append(row["intake_id"])
+        # An in-review or approved record outranks retired/rejected for the headline stage.
+        if STAGE_ORDER.index(stage) > STAGE_ORDER.index(current["stage"]):
+            current["stage"] = stage
+        if tier_rank.get(str(tier), -1) > tier_rank.get(str(current["risk_tier"]), -1):
+            current["risk_tier"] = tier
+    return out
+
+
 def list_applications(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
+    lifecycle = _lifecycle_by_application(tenant_id, project, environment)
     return [
         {
             **row,
@@ -654,6 +686,9 @@ def list_applications(*, tenant_id: str | None = None, project: str | None = Non
             "model_purposes": decode_json(row["model_purposes"], []),
             "providers": decode_json(row["providers"], []),
             "models": decode_json(row["models"], []),
+            "stage": lifecycle.get(row["application_name"], {}).get("stage", "discovered"),
+            "risk_tier": lifecycle.get(row["application_name"], {}).get("risk_tier"),
+            "intake_ids": lifecycle.get(row["application_name"], {}).get("intake_ids", []),
         }
         for row in scoped_rows("governance_applications", tenant_id=tenant_id, project=project, environment=environment)
     ]

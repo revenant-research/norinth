@@ -122,7 +122,16 @@ code { font-family: var(--n-font-mono); font-size: 0.9em; }
 
 .sidebar nav {
   display: grid;
-  gap: 2px;
+  gap: var(--n-space-4);
+}
+.nav-group { display: grid; gap: 2px; }
+.nav-group-label {
+  padding: 0 10px 4px;
+  font-size: var(--n-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--n-ink-dim);
 }
 
 .sidebar a {
@@ -348,6 +357,10 @@ code { font-family: var(--n-font-mono); font-size: 0.9em; }
 .detail-layout {
   grid-template-columns: 230px minmax(0, 1fr);
   align-items: start;
+}
+/* A detail page without a rail (the AI System hub) spans the full width. */
+.detail-layout:has(> .detail-stack:only-child) {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .detail-rail {

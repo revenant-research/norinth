@@ -1,4 +1,4 @@
-import type { HTMLAttributes, ReactNode } from "react";
+import type { AnchorHTMLAttributes, HTMLAttributes, ReactNode } from "react";
 
 import styles from "./Card.module.css";
 
@@ -21,7 +21,7 @@ export function Card({
   tone?: "paper" | "lead" | "well";
   interactive?: boolean;
   as?: "div" | "article" | "section" | "a" | "li";
-} & HTMLAttributes<HTMLElement>) {
+} & HTMLAttributes<HTMLElement> & Pick<AnchorHTMLAttributes<HTMLAnchorElement>, "href" | "target" | "rel">) {
   const cls = [styles.card, styles[`pad_${padding}`], styles[`tone_${tone}`], interactive && styles.interactive, className]
     .filter(Boolean)
     .join(" ");

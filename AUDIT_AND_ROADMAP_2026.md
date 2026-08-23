@@ -130,7 +130,7 @@ Two independent mechanisms approve deployments with **no human and no real evide
 
 ## 6. Feature & robustness gaps for a 2026 AIO governance platform
 
-Grounded in the current (Aug 2026) regulatory and standards landscape. **Dates verified against primary sources this session.**
+Grounded in the current (Aug 2026) regulatory and standards landscape. Dated regulatory claims (EU AI Act Omnibus, Colorado, Joint Commission certification) are sourced in `docs/SOURCES.md`; standards references are to the named documents and should be checked against the current edition before being cited externally.
 
 ### 6.1 The single biggest 2026 correction the founder's docs miss
 The **EU AI Act Digital Omnibus (Regulation (EU) 2026/1744)** is **enacted and in force since 27 July 2026**. It **deferred the high-risk regime**: standalone Annex III systems now apply from **2 December 2027** (was 2 Aug 2026), and product-embedded/medical-device AI (Annex I, incl. MDR/IVDR) from **2 August 2028** (was 2 Aug 2027), with **fixed dates and no standards-availability condition**. What is **live now (2 Aug 2026)**: Art 5 prohibitions (+ new CSAM/NCII ban, safeguards due 2 Dec 2026), Art 4 literacy, **GPAI Chapter V with Commission fining powers (up to 3%/€15M)**, and **Art 50 transparency** (chatbot disclosure, machine-readable AI-content marking; marking grace to 2 Dec 2026, watermark interoperability by 2 Feb 2027).

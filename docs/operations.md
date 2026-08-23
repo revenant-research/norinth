@@ -50,7 +50,7 @@ cosign verify ghcr.io/revenant-research/norinth:<version> \
 ### Requirements
 
 - Docker 24+ with the compose plugin (or any OCI runtime).
-- 2 vCPU, 4 GB RAM for evaluation; size PostgreSQL to your event volume.
+- Modest resources for evaluation (the platform is a single Python process); size PostgreSQL to your event volume.
 - PostgreSQL 14+ for production. SQLite is for local evaluation only.
 - Python 3.11+ where the SDK runs.
 

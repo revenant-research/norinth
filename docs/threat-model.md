@@ -29,7 +29,7 @@ JWKS, SAML) and Google Fonts for the dashboard's typeface.
 | Prompt / completion **text** | SDK | **High** (may contain PHI/PII) | **Not sent by default.** The SDK sends a keyed HMAC fingerprint (`privacy.py`); raw text only if `NORINTH_CAPTURE_CONTENT=1` is set on the application side. |
 | Exception messages | SDK | Medium (often contain PII) | Hashed + length by default (`summarize_error`). |
 | Governance records: systems, owners, findings, decisions with rationale, exceptions, incidents | People via the dashboard | Medium (business-confidential) | PostgreSQL |
-| Identity: users, emails, password hashes (PBKDF2/bcrypt via `services/auth.py`), role assignments | Admins / SCIM / SSO | Medium | PostgreSQL |
+| Identity: users, emails, password hashes (salted PBKDF2-HMAC via `services/auth.py`), role assignments | Admins / SCIM / SSO | Medium | PostgreSQL |
 | IdP secrets (OIDC client secret) | Org admins | High | AES-256-GCM with tenant-bound AAD (`services/secrets.py`), key from `NORINTH_SECRET_KEY` |
 | Credentials issued by Norinth: ingestion keys, SCIM tokens, session tokens | Platform | High | Only SHA-256 hashes are stored; plaintext shown once |
 | Attestation public keys | Org admins | Low | PostgreSQL |
