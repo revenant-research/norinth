@@ -799,7 +799,7 @@ def apply_decision_status(connection, target_type: str, target_id: str, decision
         "close": "closed",
     }
     # Defense in depth: an unknown decision maps to no status change rather than
-    # being written verbatim as the target's status (audit M-2). The API already
+    # being written verbatim as the target's status. The API already
     # rejects unknown decisions.
     status = status_by_decision.get(decision)
     if status is None:
@@ -823,7 +823,7 @@ def apply_decision_status(connection, target_type: str, target_id: str, decision
     # Their status changes must go through the guarded set_deployment_gate_status
     # (evidence check + attribution) and set_incident_status, invoked by the
     # dedicated /approve, /reject, and /close endpoints. Allowing a generic
-    # decision to flip a gate to "approved" bypassed the evidence gate (audit C-2).
+    # decision to flip a gate to "approved" bypassed the evidence gate.
 
 
 def create_exception(

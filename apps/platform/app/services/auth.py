@@ -51,7 +51,7 @@ def _hash_token(token: str) -> str:
 
     Session tokens are high-entropy bearer secrets; storing only their SHA-256
     means a database read (or backup leak) never yields a usable, replayable
-    token (audit H-7).
+    token.
     """
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 

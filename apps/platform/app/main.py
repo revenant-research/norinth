@@ -87,7 +87,7 @@ async def csrf_origin_check(request: Request, call_next):
     mutating /api/* calls blocks cross-site request forgery. Requests without an
     Origin (non-browser API clients, which don't carry a victim's ambient
     cookies) are unaffected. Ingestion (/v1/*) uses key auth, not cookies, so it
-    is out of scope. This complements the cookie's SameSite=lax (audit H-8).
+    is out of scope. This complements the cookie's SameSite=lax.
     """
     if (
         request.method in _MUTATING_METHODS
@@ -113,7 +113,7 @@ async def enforce_password_change(request: Request, call_next):
 
     Previously this was enforced only in the frontend, so anyone holding a
     temporary password could drive the entire API with curl indefinitely
-    (audit C-4). Ingestion (`/v1/...`) uses key auth and is unaffected.
+. Ingestion (`/v1/...`) uses key auth and is unaffected.
     """
     path = request.url.path
     if path.startswith("/api/") and path not in _PASSWORD_CHANGE_ALLOWLIST:

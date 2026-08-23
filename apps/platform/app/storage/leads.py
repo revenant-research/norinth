@@ -1,9 +1,7 @@
 """Inbound interest from the public landing page.
 
-"Start a pilot" / "Book a demo" must land somewhere a human will see: leads
-are stored here and shown to platform administrators in the console. This is
-the first piece of the GTM motion that lives in the product rather than in a
-document.
+Messages from the contact form are stored here and shown to platform
+administrators in the console.
 """
 
 from __future__ import annotations

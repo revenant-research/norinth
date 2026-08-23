@@ -25,7 +25,7 @@ def seed_dev_ingestion_key_if_dev() -> None:
     """Seed the well-known ``dev`` ingestion key in development only.
 
     The key is bound to a single tenant, so even the dev token cannot forge
-    telemetry for another tenant (audit C-1). Production (env-configured) never
+    telemetry for another tenant. Production (env-configured) never
     gets this key.
     """
     if not using_development_defaults():

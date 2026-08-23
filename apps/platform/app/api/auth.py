@@ -37,7 +37,7 @@ def _cookie_secure() -> bool:
     Explicit ``NORINTH_COOKIE_SECURE`` wins. Otherwise the cookie is Secure in
     production (env-configured deployments) and relaxed in local development
     (documented dev defaults, plain HTTP), so the quickstart works out of the
-    box while production is protected (audit H-7).
+    box while production is protected.
     """
     override = os.getenv("NORINTH_COOKIE_SECURE")
     if override is not None:
@@ -85,7 +85,7 @@ def client_ip(request: Request) -> str | None:
 @router.post("/api/auth/login")
 def login(payload: LoginRequest, request: Request, response: Response) -> dict[str, Any]:
     # Throttle credential stuffing / password spraying per account AND per
-    # source IP (audit H-6 + follow-up: targeted-lockout DoS and cross-account
+    # source IP ( + follow-up: targeted-lockout DoS and cross-account
     # spraying).
     account = email_subject(payload.email)
     source = ip_subject(client_ip(request))
@@ -137,7 +137,7 @@ def change_password(
         raise HTTPException(status_code=400, detail="New password must differ from the current password")
     set_user_password(actor.user_ref, hash_password(payload.new_password))
     # Revoke every existing session for this user (defeats a stolen/leaked token
-    # surviving a password change, audit H-7), then issue a fresh rotated session
+    # surviving a password change), then issue a fresh rotated session
     # so the current browser stays signed in.
     end_all_sessions(actor.user_ref)
     token = create_session(actor.user_ref)

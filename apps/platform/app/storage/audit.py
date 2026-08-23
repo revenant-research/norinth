@@ -5,7 +5,7 @@ Each entry carries a hash that chains it to the previous entry
 reordering, or field modification breaks the chain and is detectable by
 verify_audit_chain(). This gives the audit trail the integrity property that
 SOC 2 CC7.2, HIPAA 45 CFR 164.312(b), and 21 CFR Part 11 auditors expect
-(audit finding H-9).
+.
 """
 
 from __future__ import annotations

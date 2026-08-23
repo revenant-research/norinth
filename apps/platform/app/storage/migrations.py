@@ -1,7 +1,6 @@
 """Versioned schema migrations.
 
-Replaces "run every CREATE/ALTER on every boot and swallow the errors" (audit
-M1) with an ordered, recorded migration history:
+An ordered, recorded migration history:
 
 * ``schema_migrations`` records every applied version with a timestamp.
 * Each migration runs once, in its own transaction, in version order.

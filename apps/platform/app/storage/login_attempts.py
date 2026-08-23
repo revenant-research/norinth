@@ -1,6 +1,6 @@
 """Failed-login throttling, per account AND per source IP.
 
-Per-account lockout alone (audit H-6) has two gaps: an attacker can lock a
+Per-account lockout alone has two gaps: an attacker can lock a
 victim out on purpose (targeted-lockout DoS), and spraying one password across
 many accounts from one source never trips a per-account counter. Throttling the
 source IP closes both. Thresholds are separate: the IP threshold is higher so a

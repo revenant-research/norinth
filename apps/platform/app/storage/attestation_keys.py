@@ -1,4 +1,4 @@
-"""Per-tenant evidence attestation keys (audit roadmap #20, C-2 hardening).
+"""Per-tenant evidence attestation keys.
 
 A deployment gate is only as trustworthy as the eval evidence behind it. An
 ``eval.result`` event is client-authored: whoever holds an ingestion key can

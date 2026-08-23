@@ -75,7 +75,7 @@ export function ConfirmHost() {
       // Do NOT globally bind Enter to confirm: a keyboard user on the Cancel
       // button pressing Enter would otherwise trigger the destructive action.
       // Enter/Space on the focused button is handled natively. Trap Tab so focus
-      // cannot leave the modal (audit a11y).
+      // cannot leave the modal.
       if (event.key === "Tab") {
         const focusables = [cancelRef.current, confirmRef.current].filter(Boolean) as HTMLButtonElement[];
         if (focusables.length === 0) return;

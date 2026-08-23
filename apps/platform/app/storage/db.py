@@ -1,8 +1,7 @@
 """Database backend abstraction: SQLite (default) or PostgreSQL.
 
-SQLite is disqualifying for an enterprise evidence store (single writer, no
-replication/HA, no network access — audit C-5 / buyer requirements). This module
-lets the same storage code run on PostgreSQL by setting
+SQLite is single-writer and file-local, so production deployments use
+PostgreSQL. This module lets the same storage code run on PostgreSQL by setting
 ``NORINTH_DATABASE_URL=postgresql://user:pass@host:port/dbname``; with it unset
 the platform keeps the zero-config SQLite behaviour for local development.
 

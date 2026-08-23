@@ -192,7 +192,7 @@ def upsert_deployment_gate(connection, version: dict[str, Any]) -> None:
     gate_id = entity_id("deployment-gate", version["version_id"])
     existing = connection.execute("SELECT * FROM deployment_approval_gates WHERE gate_id = ?", (gate_id,)).fetchone()
     current_status = existing["gate_status"] if existing else None
-    # A gate is NEVER auto-approved (audit C-2). Undecided gates stay
+    # A gate is NEVER auto-approved. Undecided gates stay
     # pending_review until a human approves or rejects them through the guarded
     # /approve|/reject endpoints; an existing human decision is preserved. Whether
     # a gate is approvable (has linked prompt + passing eval and no open blockers)
@@ -318,7 +318,7 @@ def count_passing_eval_evidence(connection, params: dict[str, Any]) -> int:
     # Once an organization has registered an attestation key, only evals whose
     # Ed25519 signature verified at ingestion count as gate evidence; a
     # self-reported ``passed: true`` no longer satisfies the gate (C-2
-    # hardening, roadmap #20).
+    # hardening).
     require_attested = tenant_requires_attestation(params.get("tenant_id"), connection)
     count = 0
     for row in rows:

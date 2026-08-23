@@ -1,4 +1,4 @@
-"""Notification outbox, webhooks and invites (roadmap: self-contained operations).
+"""Notification outbox, webhooks and invites.
 
 Nothing in a request path talks to SMTP or a webhook URL. Events are written
 to ``notification_outbox`` inside the caller's transaction and a background

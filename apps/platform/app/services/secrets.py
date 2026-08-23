@@ -3,8 +3,7 @@
 Secrets the platform must keep in recoverable form (today: each tenant's OIDC
 client secret) are encrypted at rest with AES-256-GCM under a master key
 supplied by the environment, so a database dump or backup does not yield
-usable credentials. Enterprise buyers expect this ("encryption at rest / KMS /
-BYOK", GTM §6).
+usable credentials.
 
 Key material:
   NORINTH_SECRET_KEY   base64 (urlsafe) 32-byte key. Generate with

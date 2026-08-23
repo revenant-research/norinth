@@ -28,7 +28,7 @@ router = APIRouter()
 
 # Attributes each event type requires beyond the envelope. The entity
 # processors access these without a default, so a missing one previously crashed
-# ingestion with an unhandled 500 after a partial write (audit C-6). Validation
+# ingestion with an unhandled 500 after a partial write. Validation
 # runs before any write, so a malformed batch is rejected atomically with 422.
 _REQUIRED_ATTRIBUTES: dict[str, tuple[str, ...]] = {
     "deployment.event": ("deployment_id", "version", "artifact_ref"),
@@ -123,7 +123,7 @@ async def ingest_otel_traces(
 
 
 def _verify_eval_attestations(events: list[dict[str, Any]], tenant_id: str) -> None:
-    """Signed eval evidence (roadmap #20). ``attested`` is a platform-set fact,
+    """Signed eval evidence. ``attested`` is a platform-set fact,
     never a client claim: it is stripped from every event and set only after
     an Ed25519 signature verifies against one of the tenant's *active*
     attestation keys. A present-but-invalid attestation rejects the batch and

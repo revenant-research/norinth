@@ -18,7 +18,7 @@ from .config import NorinthConfig
 logger = logging.getLogger("norinth_logger")
 # A library must not configure the root logger. Adding a NullHandler prevents
 # "No handlers could be found" warnings and stops the SDK from spamming stderr in
-# a host app that has not configured logging (audit F5).
+# a host app that has not configured logging.
 logger.addHandler(logging.NullHandler())
 
 
@@ -38,7 +38,7 @@ class TransportStats:
 class EventTransport:
     """Fail-open, background-batching transport.
 
-    The overriding contract (audit C-8): nothing here may crash, block, or kill
+    The overriding contract: nothing here may crash, block, or kill
     the host application, and the background worker must never die silently. A
     single bad event must not stop telemetry: serialization is defensive, the
     worker loop is fully guarded, and a dead worker is restarted on the next
@@ -81,7 +81,7 @@ class EventTransport:
     def _register_fork_handler(self) -> None:
         # Under prefork servers (gunicorn, celery) the child inherits a queue
         # with no consumer thread. Reset and restart the worker in the child so
-        # telemetry keeps flowing (audit F2).
+        # telemetry keeps flowing.
         if hasattr(os, "register_at_fork"):
             os.register_at_fork(after_in_child=self._after_fork)
 
@@ -151,7 +151,7 @@ class EventTransport:
             # default=str tolerates non-JSON-native values; allow_nan=False turns
             # NaN/Infinity (which are invalid JSON the receiver would reject) into
             # a caught error instead of a poisoned batch. Serialization happens
-            # inside the guard so a bad event is dropped, not fatal (audit C-8/F6).
+            # inside the guard so a bad event is dropped, not fatal.
             payload = json.dumps(
                 {"events": events},
                 separators=(",", ":"),

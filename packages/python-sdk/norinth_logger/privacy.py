@@ -22,7 +22,7 @@ def _canonical_bytes(value: Any) -> bytes:
     """Deterministic byte encoding for hashing.
 
     repr() is not canonical — dict ordering and object memory addresses make it
-    unstable and unsuitable as a content fingerprint (audit H-12). Strings/bytes
+    unstable and unsuitable as a content fingerprint. Strings/bytes
     hash directly; structured values use sorted-key JSON; everything else falls
     back to repr.
     """
@@ -39,7 +39,7 @@ def _canonical_bytes(value: Any) -> bytes:
 def stable_hash(value: Any, hash_key: str | None = None) -> str:
     """Content fingerprint. When a hash_key is supplied it is an HMAC, so the
     digest is not a globally-reversible dictionary lookup and cannot be linked
-    across tenants (audit H-12). Configure NORINTH_SIGNING_SECRET to key it."""
+    across tenants. Configure NORINTH_SIGNING_SECRET to key it."""
     data = _canonical_bytes(value)
     if hash_key:
         digest = hmac.new(hash_key.encode("utf-8"), data, hashlib.sha256).hexdigest()
@@ -70,7 +70,7 @@ def summarize_error(exc: BaseException, capture_content: bool, hash_key: str | N
     application exceptions routinely interpolate PII/PHI (e.g. an invalid SSN or
     patient identifier). It is therefore hashed and length-reported by default,
     and only included verbatim when capture_content is explicitly enabled
-    (audit H-13). The exception *type* is always safe to record.
+. The exception *type* is always safe to record.
     """
     message = str(exc)
     result: dict[str, Any] = {
@@ -118,7 +118,7 @@ def infer_governance_context(args: tuple[Any, ...], kwargs: dict[str, Any]) -> d
                 continue
             # Governance context fields are scalar identifiers/labels. Skip nested
             # structures so request-body content is never stringified wholesale,
-            # and cap length (audit H-13 / P3).
+            # and cap length.
             if isinstance(field_value, (dict, list, tuple, set)):
                 continue
             text = str(field_value)

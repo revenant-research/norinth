@@ -57,7 +57,7 @@ def instrument_openai(client) -> None:
     except Exception:
         pass
     # Chat Completions API — the most widely used OpenAI surface (sync + async).
-    # Previously uninstrumented, so this traffic was invisible (audit A1/H-14).
+    # Previously uninstrumented, so this traffic was invisible.
     try:
         from openai.resources.chat.completions import AsyncCompletions, Completions
 
@@ -175,7 +175,7 @@ def patch_provider_method_async(
 
     The wrapper awaits the real coroutine and records the model call only after
     it resolves, so async provider calls are captured correctly instead of being
-    logged as instant success before they run (audit A2/H-14).
+    logged as instant success before they run.
     """
     if patch_key in _PATCHED:
         return

@@ -26,11 +26,10 @@ import { ChromeBand, ChromeStrip, Screenshot } from "./Showcase";
 import styles from "./landing.module.css";
 
 /**
- * Project site, structured on docs/GTM_STRATEGY.md (open source, self-hosted):
- *   §1 thesis → hero + "What you are not paying for";  §4 motion → "Get started";
- *   §2 ICP → "Built for";  §3 wedge → "Start here";  §5 → "Why Norinth";
- *   §6 → "Security";  docs;  "Get help" replaces the sales funnel.
- * Visual language follows the Revenant Research identity via src/design.
+ * Project landing page. Sections: hero, sourced regulatory dates, get started,
+ * questions and answers, who it is for, start here, how it works, screenshots,
+ * platform, why Norinth, security, docs, contact. Dated facts must be listed in
+ * docs/SOURCES.md.
  */
 
 // Dated regulatory facts only, each with a primary source (docs/SOURCES.md).

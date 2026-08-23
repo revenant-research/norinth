@@ -640,8 +640,7 @@ def build_control_evidence(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]
 # Prefixes used in control framework_refs, mapped to a display family. A control
 # assessment cites specific requirements (e.g. "NIST AI RMF MAP 1.1",
 # "ISO/IEC 42001 A.5.2", "EU AI Act Art 26", "SOC 2 CC7.2"); we roll these up per
-# framework so a buyer/auditor sees coverage by regulation, not a flat list
-# (audit §6.2, GTM: framework crosswalks are table-stakes).
+# framework so coverage is shown by regulation rather than as a flat list.
 _FRAMEWORK_FAMILIES: list[tuple[str, str]] = [
     ("OWASP Agentic", "OWASP Top 10 for Agentic Applications (2026)"),
     ("NIST AI 600", "NIST GenAI Profile (AI 600-1)"),

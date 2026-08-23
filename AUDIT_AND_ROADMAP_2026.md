@@ -140,10 +140,10 @@ The **EU AI Act Digital Omnibus (Regulation (EU) 2026/1744)** is **enacted and i
 Today the control library is 9 seeded controls with framework *string labels* (`governance_policy.py:17-90`). A 2026 buyer expects living, mapped crosswalks:
 - **NIST AI RMF 1.0** + **AI 600-1 Generative AI Profile** (the 12 GAI risk categories with action IDs) — the US baseline.
 - **NIST SP 800-53 "Control Overlays for Securing AI Systems" (COSAIS)** — draft through 2026 (GenAI, predictive, single/multi-agent, secure dev overlays); track and pre-map.
-- **ISO/IEC 42001:2023** Annex A (~38 controls) — **now table-stakes**, moving from differentiator to buyer prerequisite; add **ISO/IEC 42005** (AI impact assessment, 2025) and **ISO/IEC 23894** (risk).
+- **ISO/IEC 42001:2023** Annex A controls; add **ISO/IEC 42005** (AI impact assessment, 2025) and **ISO/IEC 23894** (risk).
 - **EU AI Act** Art 9/10/11-AnnexIV/12/13/14/15/17/72/73 — as concrete evidence requirements, not labels.
 - **SOC 2** (+ AICPA AI assurance) and **HITRUST AI** for the buyers' own audits.
-- **Regulatory change tracking** as a product surface (the Omnibus is proof this list moves quarterly).
+- **Regulatory change tracking** as a product surface (the Omnibus deferral shows this list changes).
 
 ### 6.3 Healthcare / medical is a distinct, high-value product line — and needs its own module
 - **FDA** finalized the **PCCP guidance** (predetermined change control plans, retitled to cover AI-DSF not just ML) and issued **draft Total Product Life Cycle lifecycle-management** guidance in 2025. A Norinth "PCCP evidence pack" (change logs, performance monitoring, retraining lineage) is a natural fit — this is exactly the material-change + deployment-gate data model, pointed at a regulated artifact.
@@ -153,9 +153,9 @@ Today the control library is 9 seeded controls with framework *string labels* (`
 - **21 CFR Part 11 / GxP validation (IQ/OQ/PQ)** and electronic-signature semantics for regulated records — the audit log (H-9) must be WORM-grade first.
 
 ### 6.4 Agentic governance — the fastest-moving 2026 requirement
-Norinth captures `agent.run` and `tool.call`, which is a head start, but agentic governance in 2026 means more:
+Norinth captures `agent.run` and `tool.call`; agentic governance also needs:
 - Map to the **OWASP Top 10 for Agentic Applications 2026** (ASI01–ASI10: planning, tool use, identity, supply chain, code execution, memory, inter-agent comms, cascading failures, human-agent trust, rogue agents) and **MITRE ATLAS** agentic techniques.
-- **Agent identity & authorization** (agent IDs, scoped credentials, tool allow-lists, human-in-the-loop checkpoints, kill switches) — governance of *what an agent may do*, not just what it did. Singapore's Model AI Governance Framework for Agentic AI is an emerging template.
+- **Agent identity & authorization** (agent IDs, scoped credentials, tool allow-lists, human-in-the-loop checkpoints, kill switches) — governance of *what an agent may do*, not just what it did.
 - **Runtime enforcement (`enforce` mode)** — the SDK's roadmap already names this; it's what turns Norinth from a recorder into a control.
 
 ### 6.5 Security posture as a first-class governance dimension
@@ -165,10 +165,10 @@ Norinth captures `agent.run` and `tool.call`, which is a head start, but agentic
 ### 6.6 Enterprise interoperability & the "system of record" bar
 - **OpenTelemetry GenAI semantic conventions** (still "Development"/pre-stable in 2026, moved to a dedicated repo; `invoke_agent`/`execute_tool`/`chat` span tree) — adopt `gen_ai.*` and W3C `traceparent` so Norinth joins existing APM/SIEM, rather than inventing `trc_...` ids. Offer OTel/OpenInference ingestion *and* export.
 - **LLM-gateway ingestion** (LiteLLM, Portkey, Kong AI Gateway, Cloudflare AI Gateway) — most enterprises will route through a gateway; meet them there instead of relying on per-SDK patching (which H-14 shows is fragile).
-- **Shadow-AI discovery** — the top-ranked 2026 buyer capability; passive discovery of un-instrumented AI usage (network, gateway, CASB, code scan) to complement runtime telemetry.
+- **Shadow-AI discovery** — passive discovery of un-instrumented AI usage (network, gateway, CASB, code scan) to complement runtime telemetry.
 
-### 6.7 Competitive table-stakes (Credo AI, Holistic AI, IBM watsonx.governance, OneTrust, Vanta/Drata AI, Microsoft Purview, Trustible, Saidot…)
-Every serious 2026 platform ships, and RFPs will demand: **AI use-case intake/triage with risk tiering** (Norinth has a start via `/api/intake`), **policy-as-code**, **evidence automation & audit-packet/report generation**, **framework crosswalks**, **model registry & vendor/third-party AI risk**, **FRIA/impact-assessment templates**, **bias/fairness testing**, **explainability**, **data lineage**, **human-oversight workflow**, **continuous monitoring & drift**, **regulatory change tracking**, and **integrations/webhooks/Terraform**.
+### 6.7 Capabilities commonly expected of an AI-governance platform
+Capabilities to plan for (no vendor comparison is made here; none has been sourced): **AI use-case intake/triage with risk tiering** (Norinth has a start via `/api/intake`), **policy-as-code**, **evidence automation & audit-packet/report generation**, **framework crosswalks**, **model registry/inventory**, **incident management**, **vendor/third-party AI risk**, **regulatory change tracking**, **agent governance**, **SSO/SCIM/RBAC**, **audit-grade logging**, **data retention/erasure**.
 
 ### 6.8 Enterprise/medical buyer infrastructure requirements (hard gates in procurement)
 | Requirement | Status today | Needed |

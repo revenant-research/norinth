@@ -38,7 +38,7 @@ export function LeadsView() {
   }
 
   return (
-    <Section title="Pilot and demo requests" description="Submitted through the landing page. Reply within one business day; move each request through the funnel here.">
+    <Section title="Pilot and demo requests" description="Messages submitted through the landing page contact form. Track each one here.">
       {error ? <Callout tone="danger">{error}</Callout> : null}
       <Inline gap={3} align="end">
         <SelectField

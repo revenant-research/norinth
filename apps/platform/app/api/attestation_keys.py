@@ -1,4 +1,4 @@
-"""Org-plane management of evidence attestation keys (roadmap #20).
+"""Org-plane management of evidence attestation keys.
 
 An organization admin registers the Ed25519 *public* key its CI pipeline uses
 to sign eval results. From the first active key onward, deployment gates in

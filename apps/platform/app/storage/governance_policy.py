@@ -367,7 +367,7 @@ def assess_controls(connection, app_context: dict[str, Any], controls: list[dict
         # Preserve a human decision (e.g. "waived" from an exception) across
         # re-computation. Only the automated passing/missing statuses are
         # recomputed; a reviewer's terminal decision sticks until a human changes
-        # it, instead of being silently reset on the next ingest (audit B6).
+        # it, instead of being silently reset on the next ingest.
         status = _preserve_decided_status(
             connection, "control_assessments", "assessment_id", assessment_id, computed_status, {"passing", "missing"}
         )

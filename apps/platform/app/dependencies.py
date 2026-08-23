@@ -48,7 +48,7 @@ def ingestion_tenant(authorization: str | None = Header(default=None)) -> str:
 
     Telemetry tenancy is derived from the authenticated key, never from the
     client-supplied event payload. An invalid or revoked key is rejected. This
-    is the authentication half of audit finding C-1; the ingestion route then
+    is the authentication half of; the ingestion route then
     enforces that every event in the batch belongs to this tenant.
     """
     # Imported here to avoid a circular import at module load.

@@ -12,7 +12,7 @@ export function useResource<T>(loader: () => Promise<T>): { value: T | null; err
   const [error, setError] = useState("");
   // Always call the LATEST loader. Previously `reload` captured the first
   // loader closure permanently (useCallback with []), so filter changes never
-  // took effect — "Apply filters" was a silent no-op (audit frontend bug).
+  // took effect — "Apply filters" was a silent no-op.
   const loaderRef = useRef(loader);
   loaderRef.current = loader;
   // Guards against setState-after-unmount and out-of-order responses.

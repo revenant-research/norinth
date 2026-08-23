@@ -67,11 +67,11 @@ class NorinthClient:
                     "async_transport": self.config.async_transport,
                     # Surface whether raw content capture is enabled so an auditor
                     # can tell from telemetry alone whether a fleet is in raw mode
-                    # (audit P7).
+                    #.
                     "capture_content": self.config.capture_content,
                     # Report the worker's liveness and backlog so a stalled or
                     # dead transport is visible instead of silently lying with
-                    # zero counters (audit C-8).
+                    # zero counters.
                     "thread_alive": self.transport.thread_alive(),
                     "queue_depth": stats.queued - stats.sent - stats.dropped,
                     "endpoint": self.config.endpoint,

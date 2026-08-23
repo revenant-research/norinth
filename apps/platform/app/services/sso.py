@@ -181,7 +181,7 @@ def _provision_user(tenant_id: str, email: str, claims: dict[str, Any], config: 
     )
     default_role = config.get("default_role") or "governance_reviewer"
     # JIT provisioning never grants administration rights; an org admin must
-    # elevate a user deliberately (separation of duties, audit C-4).
+    # elevate a user deliberately (separation of duties).
     if default_role in ADMINISTRATION_ROLES:
         default_role = "governance_reviewer"
     upsert_role_assignment(

@@ -1,11 +1,9 @@
 """Data retention and right-to-erasure.
 
-Enterprise and health-system buyers require the ability to purge a tenant's data
-on offboarding (GDPR Art 17 erasure, CCPA deletion, HIPAA/BAA return-or-destroy)
-and to enforce a retention window on telemetry (audit finding H-10). Previously
-the only DELETE statements in the platform were for expired sessions.
+Purge a tenant's data on offboarding and enforce a retention window on
+telemetry.
 
-The tamper-evident audit log (audit_logs) is intentionally NOT purged here: it is
+The tamper-evident audit log is intentionally NOT purged here: it is
 retained under the legal-basis/records-retention exception, and deleting rows
 would break the hash chain that proves its integrity. A future enhancement can
 seal, export, and then rotate per-tenant audit segments.

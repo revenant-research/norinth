@@ -3,7 +3,7 @@
 An organization admin (any actor holding ``config.write`` in their tenant)
 provisions, lists, and revokes the API keys their applications use to send
 telemetry. Keys are tenant-scoped: the plaintext token is shown exactly once at
-creation and never again. See storage/ingestion_keys.py and audit finding C-1.
+creation and never again. See storage/ingestion_keys.py and.
 """
 
 from __future__ import annotations

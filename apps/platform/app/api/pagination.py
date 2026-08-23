@@ -1,7 +1,6 @@
 """Uniform server-side pagination for list endpoints.
 
-Every list endpoint previously returned its entire result set (audit: unbounded
-lists on both API and UI). Endpoints now accept ``offset`` and ``limit`` query
+Endpoints accept ``offset`` and ``limit`` query
 parameters and return, alongside the existing list key, a ``page`` object with
 ``offset``, ``limit``, ``total`` and ``has_more`` so API consumers and the UI can
 page. The default limit is bounded; the maximum is capped.

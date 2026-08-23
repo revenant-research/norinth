@@ -159,7 +159,7 @@ export function AgentsView({ scope, canRegister, canRetire }: { scope: Scope; ca
             </label>
             <label>
               Accountable owner
-              <input value={form.owner_ref} onChange={(e) => setForm({ ...form, owner_ref: e.target.value })} required placeholder="owner@company.com" />
+              <input value={form.owner_ref} onChange={(e) => setForm({ ...form, owner_ref: e.target.value })} required placeholder="Email of the accountable owner" />
             </label>
             <label>
               Application

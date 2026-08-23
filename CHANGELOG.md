@@ -449,9 +449,8 @@ First public release: the open-source, self-hosted AI governance platform, SDK, 
   external action with no human checkpoint (ASI01/ASI09, Critical), and high
   autonomy without oversight (ASI09 / EU AI Act Art 14). Findings land in the
   risk register (preserving reviewer decisions), the audit packet, and an
-  "OWASP Agentic" framework-coverage family. Grounded in the 2026 research
-  (OWASP Agentic 2026, Microsoft agent failure taxonomy, Meta Rule of Two,
-  Singapore MGF for Agentic AI).
+  "OWASP Agentic" framework-coverage family. Rule ids follow the OWASP Top 10
+  for Agentic Applications.
 
 ### Added
 - **SCIM 2.0 user provisioning.** Identity providers (Okta, Microsoft Entra ID,
@@ -475,7 +474,7 @@ First public release: the open-source, self-hosted AI governance platform, SDK, 
   exp, nonce). New users are provisioned just-in-time inside the tenant with the
   configured default role — never an administration role (separation of
   duties) — and have no password, so the IdP is their sole authority. Optional
-  email-domain restriction. SSO is table-stakes for every enterprise and
+  email-domain restriction. SSO is required by most enterprise identity policies and
   health-system buyer.
 
 ### Added
@@ -510,7 +509,7 @@ First public release: the open-source, self-hosted AI governance platform, SDK, 
   mapped requirements, how many are satisfied by passing/waived evidence, the
   coverage percentage, and the specific outstanding gaps. Also embedded in the
   audit-evidence packet. Turns the audit's "framework string labels" into an
-  actual crosswalk — a table-stakes governance capability.
+  actual crosswalk.
 
 ### Added
 - **Audit-ready evidence packet.** New `GET /api/compliance/audit-packet`
@@ -519,7 +518,7 @@ First public release: the open-source, self-hosted AI governance platform, SDK, 
   decisions and exceptions, deployment approvals, incidents, material changes,
   the CycloneDX AI-BOM, and the tamper-evidence status of the audit trail — for
   an auditor or certification body (SOC 2, ISO 42001, EU AI Act, Joint Commission
-  RUAIH). Named as a missing capability in the audit; a table-stakes
+  RUAIH). Named as a missing capability in the audit; a common
   evidence-automation feature.
 
 ### Added

@@ -47,9 +47,8 @@ development) and on **PostgreSQL for production**. Select PostgreSQL by setting:
 export NORINTH_DATABASE_URL=postgresql://user:password@host:5432/norinth
 ```
 
-PostgreSQL gives the evidence store the properties enterprise buyers require —
-multiple writers, replication/HA, point-in-time recovery, and managed
-encryption — which SQLite (single-writer, file-local) cannot. The storage layer
+PostgreSQL provides multiple writers, replication, point-in-time recovery and
+managed encryption; SQLite is single-writer and file-local. The storage layer
 is backend-neutral via `app/storage/db.py`, and the full test suite runs against
 both backends in CI (`make test` for SQLite, `make test-postgres` with
 `NORINTH_TEST_DATABASE_URL` set).

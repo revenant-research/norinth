@@ -13,7 +13,7 @@ def normalize_usage(usage: Any) -> dict[str, Any]:
 
     Handles both the Responses/Anthropic naming (input_tokens/output_tokens) and
     the chat.completions naming (prompt_tokens/completion_tokens), plus cached and
-    reasoning token detail when present (audit A5).
+    reasoning token detail when present.
     """
     if usage is None:
         return {}

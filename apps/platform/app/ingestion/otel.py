@@ -1,11 +1,8 @@
 """Map OpenTelemetry GenAI spans to Norinth events.
 
-Lets Norinth ingest telemetry from ANY OpenTelemetry-instrumented framework or
-LLM gateway (LiteLLM, Portkey, Kong, Microsoft Agent Framework, Pydantic AI,
-Vercel AI SDK, ...), not only the first-party SDK. This is the strategic
-"consume everyone's signals" ingestion path from the GTM/research: build to the
-GenAI semantic conventions so the observability layer feeds the governance
-system of record.
+Lets Norinth ingest telemetry from OpenTelemetry-instrumented code and LLM
+gateways that emit GenAI semantic-convention spans, not only the first-party
+SDK.
 
 Accepts OTLP/HTTP JSON (`resourceSpans -> scopeSpans -> spans`) and maps the
 `gen_ai.*` attributes to the same event shapes the SDK emits, so the existing

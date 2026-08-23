@@ -54,7 +54,7 @@ def require_actor_scope(actor: ActorContext, target: dict[str, Any]) -> None:
     # tenant. A target naming a different tenant — or, since C-1 stamps a tenant
     # on all data, failing to name one at all — is denied. Previously this check
     # was skipped whenever either side was falsy, so NULL-tenant rows bypassed
-    # isolation entirely (audit H-1).
+    # isolation entirely.
     if actor.tenant_id and target.get("tenant_id") != actor.tenant_id:
         raise AuthorizationError("Actor tenant does not match target tenant")
     for field in ("project", "environment"):
@@ -67,7 +67,7 @@ def require_actor_scope(actor: ActorContext, target: dict[str, Any]) -> None:
 def role_scope_matches(assignment: dict[str, Any], target: dict[str, Any]) -> bool:
     # Tenant must match EXACTLY. A NULL-scoped assignment is not a cross-tenant
     # wildcard; treating it as one let a NULL-tenant role assignment grant access
-    # to every tenant (audit H-2).
+    # to every tenant.
     if assignment.get("tenant_id") != target.get("tenant_id"):
         return False
     for field in ("project", "environment"):
@@ -117,7 +117,7 @@ def require_owner_assignment(actor: ActorContext, assignment: dict[str, Any]) ->
 
 def require_decision(actor: ActorContext, target: dict[str, Any]) -> None:
     # Being the assignee of a task does NOT grant a decision permission the actor
-    # lacks; the appropriate decision permission is always required (audit B3).
+    # lacks; the appropriate decision permission is always required.
     # Auto-assignment by the review queue must not become a privilege-escalation
     # path.
     require_permission(actor, _decision_permission(target), target)
@@ -128,7 +128,7 @@ def require_decision(actor: ActorContext, target: dict[str, Any]) -> None:
 # A single person must not simultaneously administer the tenant (manage users,
 # assign roles) and hold governance decision authority (approve gates, accept
 # risk, close incidents, decide reviews). Enforcing this at role-assignment time
-# is the core fix for audit finding C-4.
+# is the core fix for.
 ADMINISTRATION_ROLES = {ORG_ADMIN}
 DECISION_ROLES = {GOVERNANCE_ADMIN, RISK_OWNER, CONTROL_OWNER, GOVERNANCE_REVIEWER}
 

@@ -34,8 +34,7 @@ def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilte
     review: inventory, framework-mapped control assessments, risk findings,
     governance decisions and exceptions, deployment approvals, incidents,
     material changes, the CycloneDX AI-BOM, and the tamper-evidence status of the
-    audit trail. This was named as a missing capability in the audit and is a
-    table-stakes feature for the evidence-automation market.
+    audit trail.
     """
     # Imported here to avoid a circular import at module load
     # (services.governance imports nothing from this module).

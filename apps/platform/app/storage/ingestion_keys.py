@@ -4,7 +4,7 @@ Replaces the previous single hard-coded ``Bearer dev`` ingestion token. Each
 key is bound to exactly one tenant; the ingestion endpoint derives the tenant
 from the presented key rather than trusting a client-supplied ``tenant_id`` in
 the event payload. This is the root fix for cross-tenant evidence forgery
-(audit finding C-1).
+.
 
 Keys are high-entropy random tokens. Only a SHA-256 hash of the full token is
 stored; the plaintext token is shown exactly once at creation. Lookup is by

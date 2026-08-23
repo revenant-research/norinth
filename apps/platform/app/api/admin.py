@@ -284,7 +284,7 @@ def purge_organization(
 ) -> dict[str, Any]:
     """Permanently erase all of a tenant's data (GDPR Art 17 / CCPA / BAA
     return-or-destroy). Irreversible; super admin only; requires typing the
-    tenant id to confirm. The tamper-evident audit log is retained (audit H-10)."""
+    tenant id to confirm. The tamper-evident audit log is retained."""
     _guard_super_admin(actor)
     if payload.confirm_tenant_id != tenant_id:
         raise HTTPException(status_code=400, detail="confirm_tenant_id must match the tenant being purged")
@@ -460,7 +460,7 @@ def verify_audit_logs(actor: ActorContext = Depends(current_actor)) -> dict[str,
     """Verify the integrity of the append-only audit chain (super admin only).
 
     Recomputes the hash chain and reports whether any entry was deleted,
-    reordered, or modified (audit H-9).
+    reordered, or modified.
     """
     _guard_super_admin(actor)
     return verify_audit_chain()
@@ -672,7 +672,7 @@ def change_org_role_assignment(payload: RoleAssignmentChange, actor: ActorContex
     if target_user is None or target_user.get("tenant_id") != tenant_id:
         raise HTTPException(status_code=404, detail="User not found in this organization")
     # A single user must not hold both an administration role and a
-    # governance-decision role (audit C-4).
+    # governance-decision role.
     existing_roles = {
         assignment["role"]
         for assignment in list_role_assignments(tenant_id=tenant_id)

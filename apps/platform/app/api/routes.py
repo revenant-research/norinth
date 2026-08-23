@@ -271,7 +271,7 @@ def configure_owner_policy(payload: OwnerPolicyRequest, actor: ActorContext = De
 # `POST /api/users` / `POST /api/role-assignments` endpoints here were removed:
 # they authorized on `config.write` with no tenant scoping on the target, which
 # let any config.write holder overwrite arbitrary accounts (including the super
-# admin — a lockout DoS, audit C-7) and self-grant globally-scoped roles (H-2).
+# admin — a lockout DoS) and self-grant globally-scoped roles (H-2).
 
 
 @router.get("/api/review-queue-policies")
@@ -459,7 +459,7 @@ def decisions(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams 
 
 # The only decisions the workflow understands. Anything else previously fell
 # through and was written verbatim as the target's status, letting a reviewer
-# escape the workflow by inventing a status string (audit M-2).
+# escape the workflow by inventing a status string.
 _ALLOWED_DECISIONS = {"approve", "reject", "accept_risk", "mitigate", "waive", "close"}
 
 
@@ -473,7 +473,7 @@ def create_decision(payload: DecisionRequest, actor: ActorContext = Depends(curr
     # Deployment gates and incidents have dedicated, guarded endpoints
     # (/approve, /reject, /close) that enforce evidence and attribution. They
     # must not be transitioned through the generic decision route, which would
-    # bypass those guards (audit C-2).
+    # bypass those guards.
     if payload.target_type in {"deployment_gate", "incident"}:
         raise HTTPException(
             status_code=400,
@@ -526,7 +526,7 @@ def create_exception_route(payload: ExceptionRequest, actor: ActorContext = Depe
 def sdk_health(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
     # sdk.health events are stamped with the authenticated tenant at ingestion
     # (C-1), so they must be tenant-scoped like every other read; previously the
-    # tenant filter was dropped, leaking other tenants' telemetry (audit H-4).
+    # tenant filter was dropped, leaking other tenants' telemetry.
     return _event_page(scope, page, "sdk_health", event_type="sdk.health")
 
 

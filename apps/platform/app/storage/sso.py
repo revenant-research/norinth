@@ -1,8 +1,6 @@
 """Per-tenant OpenID Connect (SSO) configuration and login-flow state.
 
-Enterprise buyers require SSO (SAML/OIDC) as table-stakes; password-only
-authentication blocks procurement. This module stores each organization's OIDC
-provider settings and the short-lived state for in-flight authorization-code
+This module stores each organization's OIDC provider settings and the short-lived state for in-flight authorization-code
 logins (state + nonce + PKCE verifier), which protects the flow against CSRF,
 replay, and code interception.
 """

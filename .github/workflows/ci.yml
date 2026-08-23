@@ -26,6 +26,8 @@ jobs:
           pip install -e packages/python-sdk
       - name: Lint (ruff)
         run: ruff check apps/platform/app packages/python-sdk/norinth_logger tests scripts demo-apps
+      - name: Claims check (no unsourced facts, emails, promises, ticket refs in copy/docs/code)
+        run: python scripts/check_claims.py
       - name: Type check (mypy)
         run: mypy packages/python-sdk/norinth_logger || true  # non-blocking baseline; tightened over time
       - name: Test (pytest)

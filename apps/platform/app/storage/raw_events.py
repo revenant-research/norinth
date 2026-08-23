@@ -59,14 +59,14 @@ def init_storage() -> None:
         connection.execute("CREATE INDEX IF NOT EXISTS idx_sdk_events_type ON sdk_events(event_type)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_sdk_events_application ON sdk_events(application_name)")
         # Composite index for the per-application evidence scans run on every
-        # ingest (governance_policy / lifecycle recompute), audit P3.
+        # ingest (governance_policy / lifecycle recompute).
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_sdk_events_app_scope "
             "ON sdk_events(project, environment, application_name, tenant_id)"
         )
         # Idempotency: a retried batch re-sends the same (trace_id, span_id)
         # spans; a unique index plus INSERT OR IGNORE prevents double-counting
-        # (audit C-6 / M4). Guarded because a legacy DB may already hold
+        #. Guarded because a legacy DB may already hold
         # duplicates from before this constraint existed.
         try:
             connection.execute(
@@ -81,7 +81,7 @@ def insert_events(events: list[dict[str, Any]]) -> int:
     """Insert events idempotently and return the number newly accepted.
 
     Uses INSERT OR IGNORE against the unique (trace_id, span_id) index so a
-    retried batch does not double-count (audit C-6). The return value is the
+    retried batch does not double-count. The return value is the
     count actually inserted, not the batch size.
     """
     rows = [event_to_row(event) for event in events]
