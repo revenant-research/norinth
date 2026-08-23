@@ -123,7 +123,7 @@ to Semantic Versioning once it reaches a tagged release.
   target.
 
 ### Added
-- **SSO via SAML 2.0.** Alongside OIDC, organizations can now federate with
+- **SSO via SAML 2.0** (with an Identity & Integrations UI panel showing the SP metadata URL and ACS URL to import into the IdP). Alongside OIDC, organizations can now federate with
   SAML-only identity providers (ADFS, Okta/Entra SAML apps): SP-initiated Web
   Browser SSO with an HTTP-Redirect AuthnRequest and HTTP-POST Response,
   SP metadata at `/api/auth/saml/metadata`, and org-admin configuration at

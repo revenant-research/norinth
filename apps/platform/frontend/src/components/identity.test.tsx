@@ -85,3 +85,30 @@ describe("IngestionKeySettings", () => {
     await waitFor(() => expect(screen.getByText("revoked")).toBeInTheDocument());
   });
 });
+
+describe("SamlSettings", () => {
+  it("submits the IdP configuration and shows SP metadata + ACS URL", async () => {
+    const { SamlSettings } = await import("./identity");
+    const user = userEvent.setup();
+    vi.spyOn(api, "getJson").mockResolvedValue({
+      saml: null,
+      sp_entity_id: "http://localhost/api/auth/saml/metadata",
+      acs_url: "http://localhost/api/auth/saml/acs",
+      login_url: "http://localhost/api/auth/saml/acme/start",
+    } as any);
+    const put = vi.spyOn(api, "putJson").mockResolvedValue({ saml: {} } as any);
+    render(<SamlSettings />);
+    await waitFor(() => expect(screen.getByText(/\/api\/auth\/saml\/acs/)).toBeInTheDocument());
+
+    await user.type(screen.getByLabelText("IdP entity ID"), "https://idp.example.test/saml");
+    await user.type(screen.getByLabelText("IdP SSO URL"), "https://idp.example.test/sso");
+    await user.type(screen.getByLabelText(/IdP signing certificate/), "-----BEGIN CERTIFICATE-----abc-----END CERTIFICATE-----");
+    await user.click(screen.getByRole("button", { name: "Enable SAML" }));
+
+    await waitFor(() => expect(put).toHaveBeenCalled());
+    const [path, body] = put.mock.calls[0];
+    expect(path).toBe("/api/org/saml");
+    expect(body).toMatchObject({ idp_entity_id: "https://idp.example.test/saml", idp_sso_url: "https://idp.example.test/sso" });
+    expect((body as any).idp_certificate).toContain("BEGIN CERTIFICATE");
+  });
+});
