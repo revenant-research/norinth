@@ -25,6 +25,8 @@ def _offline_transport():
         endpoint="http://127.0.0.1:9",  # discard port; connection refused
         async_transport=False,
         timeout_seconds=0.2,
+        max_send_retries=0,  # keep offline tests fast; retry paths tested separately
+        retry_backoff_seconds=0,
     )
     return EventTransport(config)
 
@@ -53,7 +55,7 @@ def test_worker_survives_and_restarts_after_death():
     from norinth_logger.config import NorinthConfig
     from norinth_logger.transport import EventTransport
 
-    config = NorinthConfig(api_key="t", endpoint="http://127.0.0.1:9", async_transport=True, timeout_seconds=0.2)
+    config = NorinthConfig(api_key="t", endpoint="http://127.0.0.1:9", async_transport=True, timeout_seconds=0.2, max_send_retries=0, retry_backoff_seconds=0)
     transport = EventTransport(config)
     assert transport.thread_alive()
 

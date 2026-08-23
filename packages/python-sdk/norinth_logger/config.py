@@ -24,6 +24,14 @@ class NorinthConfig:
     max_queue_size: int = 1000
     flush_interval_seconds: float = 2.0
     timeout_seconds: float = 2.0
+    # Delivery durability (audit finding H13). A transient failure (timeout,
+    # connection error, 5xx, 408, 429) is retried with exponential backoff; if it
+    # still fails and a spool directory is configured, the batch is written to
+    # disk and retried on the next flush instead of being dropped.
+    max_send_retries: int = 3
+    retry_backoff_seconds: float = 0.5
+    spool_dir: str | None = None
+    spool_max_bytes: int = 32 * 1024 * 1024
 
     @classmethod
     def from_env(cls, **overrides: object) -> NorinthConfig:
@@ -38,6 +46,7 @@ class NorinthConfig:
             "use_case": getenv("NORINTH_USE_CASE"),
             "mode": getenv("NORINTH_MODE", "observe"),
             "capture_content": getenv("NORINTH_CAPTURE_CONTENT", "false").lower() == "true",
+            "spool_dir": getenv("NORINTH_SPOOL_DIR"),
         }
         values.update({key: value for key, value in overrides.items() if value is not None})
         return cls(**values)

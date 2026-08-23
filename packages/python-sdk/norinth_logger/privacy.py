@@ -6,12 +6,22 @@ import json
 from typing import Any
 
 GOVERNANCE_CONTEXT_FIELDS = {
-    "tenant_id",
     "user_id",
     "application_name",
     "use_case",
     "model_purpose",
 }
+
+# The Norinth platform tenant is authoritative from the ingestion key and is
+# stamped server-side; the SDK must never infer it from an application's request
+# body. Doing so stamped ``metadata.tenant_id`` with the application's *own*
+# customer identifier, which the platform then rejected (403) because it did not
+# match the ingestion key's tenant — discarding the entire batch (audit finding
+# H12). An app's customer/tenant identifier is still useful governance context,
+# so any of these fields is recorded under a non-colliding key the platform does
+# not use for routing or authorization.
+_APP_TENANT_FIELDS = ("tenant_id", "org_id", "organization_id", "account_id", "customer_id")
+_APP_TENANT_OUTPUT_KEY = "subject_tenant"
 
 # Governance context values are identifiers/labels, not free-form content; cap
 # their length so a stray large field can't ride out under a governance label.
@@ -106,6 +116,16 @@ def object_to_mapping(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _scalar_label(field_value: Any) -> str | None:
+    # Governance context fields are scalar identifiers/labels. Skip nested
+    # structures so request-body content is never stringified wholesale, and cap
+    # length (audit H-13 / P3).
+    if field_value is None or isinstance(field_value, (dict, list, tuple, set)):
+        return None
+    text = str(field_value)
+    return text[:_MAX_CONTEXT_LEN] if len(text) > _MAX_CONTEXT_LEN else text
+
+
 def infer_governance_context(args: tuple[Any, ...], kwargs: dict[str, Any]) -> dict[str, str]:
     context: dict[str, str] = {}
     for value in (*args, *kwargs.values()):
@@ -113,16 +133,15 @@ def infer_governance_context(args: tuple[Any, ...], kwargs: dict[str, Any]) -> d
         for key in GOVERNANCE_CONTEXT_FIELDS:
             if key in context:
                 continue
-            field_value = fields.get(key)
-            if field_value is None:
-                continue
-            # Governance context fields are scalar identifiers/labels. Skip nested
-            # structures so request-body content is never stringified wholesale,
-            # and cap length (audit H-13 / P3).
-            if isinstance(field_value, (dict, list, tuple, set)):
-                continue
-            text = str(field_value)
-            if len(text) > _MAX_CONTEXT_LEN:
-                text = text[:_MAX_CONTEXT_LEN]
-            context[key] = text
+            label = _scalar_label(fields.get(key))
+            if label is not None:
+                context[key] = label
+        # Never emit ``tenant_id`` (the platform routing key) from inferred app
+        # data; record the app's own tenant under subject_tenant instead (H12).
+        if _APP_TENANT_OUTPUT_KEY not in context:
+            for tenant_field in _APP_TENANT_FIELDS:
+                label = _scalar_label(fields.get(tenant_field))
+                if label is not None:
+                    context[_APP_TENANT_OUTPUT_KEY] = label
+                    break
     return context

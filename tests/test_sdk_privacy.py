@@ -58,7 +58,10 @@ def test_inferred_context_caps_length_and_skips_nested():
         "model_purpose": {"secret": "do not stringify me"},
     }
     context = infer_governance_context((payload,), {})
-    assert context["tenant_id"] == "acme"
+    # The platform routing tenant is never inferred from app data (H12); the
+    # app's own tenant is recorded under subject_tenant instead.
+    assert "tenant_id" not in context
+    assert context["subject_tenant"] == "acme"
     assert len(context["use_case"]) <= 256
     assert "model_purpose" not in context  # nested value skipped
 
