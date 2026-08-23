@@ -151,12 +151,11 @@ if [ "$FROM_SOURCE" = 1 ]; then compose build; elif [ "$NO_PULL" = 0 ]; then com
 compose up -d
 wait_healthy
 
-# shellcheck disable=SC1090,SC1091
-set -a; . "$DIR/.env"; set +a
+env_value() { sed -n "s/^$1=//p" "$DIR/.env" | head -1; }
 say "Norinth is running."
 info "URL:            http://localhost:${PORT}"
-info "Administrator:  ${NORINTH_SUPER_ADMIN_EMAIL}"
-info "Password:       ${NORINTH_SUPER_ADMIN_PASSWORD}   (also in $DIR/.env)"
+info "Administrator:  $(env_value NORINTH_SUPER_ADMIN_EMAIL)"
+info "Password:       $(env_value NORINTH_SUPER_ADMIN_PASSWORD)   (also in $DIR/.env)"
 info ""
 info "Next: open the URL. The setup wizard walks you through naming your organization,"
 info "creating an ingestion key, and instrumenting your first application."
