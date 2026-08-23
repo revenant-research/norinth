@@ -6,6 +6,43 @@ to Semantic Versioning once it reaches a tagged release.
 
 ## [Unreleased]
 
+### Added
+- **Revenant Research design system.** `apps/platform/frontend/src/design/`:
+  tokens (`tokens.css`) derived from revenantresearch.com — parchment ground,
+  ink rules, paper cards, IBM Plex Sans/Mono, teal signal with pink/orange
+  accents — and typed React components with co-located CSS modules: `Button`,
+  `ButtonLink`, `Card`, `Stat`/`StatGroup`, `Badge` (status→tone map), `Chip`,
+  `Eyebrow`, `Heading`, `Text`, `Lede`, `Code`, `TextField`, `TextArea`,
+  `SelectField`, `Checkbox`, `FormGrid`, `Stack`, `Inline`, `Grid`, `Container`,
+  `Rule`, `Callout`, `EmptyState`, `CodeBlock`, `Skeleton`, `Table`. The shared
+  view primitives in `components/ui.tsx` now delegate to them, so every existing
+  view renders in the new identity; the global stylesheet's palette is an alias
+  layer over the tokens and the old landing/badge/metric CSS is deleted.
+- **Buyer-facing landing page** (`components/landing.tsx`) structured on
+  `docs/GTM_STRATEGY.md`: thesis hero, regulatory catalysts, ICP (health
+  systems beachhead, regulated enterprise), the two wedge capabilities, how it
+  works, platform capabilities, positioning vs. governance suites /
+  observability / compliance automation, readable pricing (Open SDK, Team,
+  Enterprise per governed AI system, add-ons), trust program, docs, and a
+  contact form.
+- **Lead capture that lands in the product.** `POST /api/public/leads`
+  (validated, 10/IP/day) stores pilot/demo requests; platform administrators
+  work them as a funnel under Console → Pilot requests
+  (`/api/admin/leads`, status changes audit-logged). Migration 6.
+- **Getting started** (org admins): a checklist computed from the
+  organization's real state (`/api/onboarding`): ingestion key, first events,
+  first system, decision-role holders, named owners, signed evidence, identity
+  provider, first audit packet — each with why it matters and a link to where
+  it is done, plus SDK and OpenTelemetry snippets.
+- **Docs** view: roles and what they can/cannot do, product glossary,
+  integrations, API reference link.
+- Audit-packet exports are now audit-logged (`compliance.audit_packet`).
+
+### Changed
+- Every route and section description rewritten in plain, active language that
+  says what the person does there and why it matters, replacing passive
+  category labels.
+
 ### Security
 - **Signed eval evidence for release gates (roadmap #20, C-2 hardening).**
   Organizations register Ed25519 public keys (`/api/attestation-keys`,

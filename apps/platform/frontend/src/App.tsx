@@ -16,6 +16,10 @@ import {
   logout,
   postJson,
 } from "./api";
+import { LandingPage } from "./components/landing";
+import { LeadsView } from "./components/leads";
+import { GettingStarted } from "./components/guide";
+import { DocsView } from "./components/docs";
 import { Sidebar, SkipLink, useRouteAnnouncement } from "./components/shell";
 import {
   AdminConsole,
@@ -50,22 +54,24 @@ const DETAIL_ROUTE_META: Record<string, RouteDef> = {
 };
 
 const baseRoutes: RouteDef[] = [
-  { id: "overview", label: "Overview", description: "Posture, accountability staffing, and segregation of duties.", permission: "user.manage" },
-  { id: "portfolio", label: "My Work", description: "Reviews, release gates, and incidents that need attention." },
-  { id: "myqueue", label: "My Queue", description: "Review tasks routed directly to you for sign-off." },
-  { id: "intake", label: "Intake", description: "Register new AI use cases and review their risk tier.", permission: "intake.submit" },
-  { id: "inventory", label: "Inventory", description: "Applications, workflows, providers, prompts, and releases in your organization." },
-  { id: "reviews", label: "Review Work", description: "Open review tasks, owner follow-up, decisions, and active exceptions." },
-  { id: "risk", label: "Risk", description: "Open findings, accepted exceptions, and records that need a risk owner." },
-  { id: "compliance", label: "Compliance", description: "Framework coverage per regulation and the audit-evidence packet for auditors and certification bodies." },
-  { id: "controls", label: "Controls", description: "Control checks, missing records, and trace links for auditors and control owners." },
-  { id: "deployments", label: "Deployments", description: "Release records, approval gates, blockers, and reviewer decisions." },
-  { id: "monitoring", label: "Monitoring", description: "Request traces, model calls, tool use, guardrails, and evaluation records." },
-  { id: "incidents", label: "Incidents", description: "Open incidents, linked records, owners, and closure decisions." },
-  { id: "agents", label: "Agents", description: "Sanctioned agents, their autonomy bounds and tool allow-lists, and runtime posture mapped to OWASP Agentic." },
-  { id: "identity", label: "Identity & Integrations", description: "Single sign-on, SCIM provisioning, and SDK ingestion keys for your organization.", permission: "user.manage" },
-  { id: "team", label: "People & Access", description: "Create users, set their status, reset passwords, and assign governance roles in your organization.", permission: "user.manage" },
-  { id: "audit", label: "Audit Log", description: "Immutable record of administrative, identity, and decision actions." },
+  { id: "overview", label: "Overview", description: "How much of your AI estate is governed, who is accountable for it, and what is waiting on a decision.", permission: "user.manage" },
+  { id: "portfolio", label: "My Work", description: "Everything waiting on you: reviews to decide, releases to approve, incidents to close." },
+  { id: "myqueue", label: "My Queue", description: "Review tasks assigned to you. Decide them here with a rationale; the decision is recorded in the audit trail." },
+  { id: "intake", label: "Intake", description: "Register an AI use case before it ships. It gets a risk tier and a review task the moment you submit.", permission: "intake.submit" },
+  { id: "inventory", label: "Inventory", description: "Every AI system seen in production, including the ones nobody registered. Open one to see its owners, risks, controls, releases and incidents." },
+  { id: "reviews", label: "Review Work", description: "Decide open reviews, name accountable owners, and manage accepted risks. Submitters can never decide their own work." },
+  { id: "risk", label: "Risk", description: "Findings raised by the platform and by people. Accept a risk only with an owner, a compensating control and an expiry." },
+  { id: "compliance", label: "Compliance", description: "Which requirements of NIST AI RMF, ISO 42001, the EU AI Act and OWASP you can evidence today, and the packet to hand an auditor." },
+  { id: "controls", label: "Controls", description: "Each control assessed from what actually ran: passing with linked evidence, or missing with the gap named." },
+  { id: "deployments", label: "Deployments", description: "Nothing ships without a gate. Gates are approved by a named reviewer with a linked prompt version and signed eval evidence, never automatically." },
+  { id: "monitoring", label: "Monitoring", description: "The raw evidence: traces, model calls, tool use, guardrail decisions and eval results as the SDK reported them." },
+  { id: "incidents", label: "Incidents", description: "Incidents reported by guardrails, evals or people. Close one only with a root cause, impact and remediation on record." },
+  { id: "agents", label: "Agents", description: "Register the agents you sanction with an autonomy level and tool allow-list. Unregistered agents and off-policy tool use become findings." },
+  { id: "identity", label: "Identity & Integrations", description: "Connect your identity provider, issue SDK ingestion keys, and register the CI key that signs release evidence.", permission: "user.manage" },
+  { id: "team", label: "People & Access", description: "Invite people and give them a role. Administrators and decision-makers are kept separate by design.", permission: "user.manage" },
+  { id: "audit", label: "Audit Log", description: "Who did what, when. Hash-chained and verifiable; it is the trail your auditor will read." },
+  { id: "guide", label: "Getting started", description: "Set up your organization step by step. Each step is checked against your real state.", permission: "user.manage" },
+  { id: "docs", label: "Docs", description: "Roles, terms and integrations, explained in plain language." },
 ];
 
 type Mutate = (path: string, payload: unknown, success: string) => Promise<void>;
@@ -126,11 +132,12 @@ export function App() {
 // administrator, reviews the platform-wide audit trail, and never touches any
 // tenant's governance data.
 const PLATFORM_ROUTES: RouteDef[] = [
-  { id: "overview", label: "Overview", description: "Platform health: tenants, accounts, telemetry volume, and recent activity across every organization." },
-  { id: "organizations", label: "Organizations", description: "Provision tenants and their first administrator, and suspend or reactivate them." },
-  { id: "platform-users", label: "Accounts", description: "Every account on the platform. Suspend access or issue one-time passwords." },
-  { id: "rbac", label: "Roles", description: "The platform-global role and permission matrix that governs what each role can do in every tenant." },
-  { id: "audit", label: "Audit Log", description: "Append-only record of provisioning, identity, and governance actions across every tenant." },
+  { id: "overview", label: "Overview", description: "Organizations on the platform, accounts, telemetry volume and recent activity." },
+  { id: "organizations", label: "Organizations", description: "Create an organization and its first administrator; suspend or reactivate it." },
+  { id: "platform-users", label: "Accounts", description: "Every account on the platform. Suspend access or issue a one-time password." },
+  { id: "rbac", label: "Roles", description: "What each role is allowed to do, in every organization." },
+  { id: "leads", label: "Pilot requests", description: "Inbound pilot and demo requests from the landing page, worked as a funnel." },
+  { id: "audit", label: "Audit Log", description: "Who did what, when, across every organization. Hash-chained and verifiable." },
 ];
 
 function PlatformConsole({ user, onSignOut }: { user: User; onSignOut: () => void }) {
@@ -174,6 +181,7 @@ function PlatformConsole({ user, onSignOut }: { user: User; onSignOut: () => voi
           {active === "organizations" ? <AdminConsole /> : null}
           {active === "platform-users" ? <PlatformUsers /> : null}
           {active === "rbac" ? <RbacMatrixEditor /> : null}
+          {active === "leads" ? <LeadsView /> : null}
           {active === "audit" ? <AuditLog superAdmin /> : null}
         </div>
       </main>
@@ -207,77 +215,6 @@ function PublicEntry({ onAuthenticated }: { onAuthenticated: (user: User) => voi
     );
   }
   return <LandingPage onClientSignIn={() => setMode("client")} onAdminSignIn={() => setMode("admin")} />;
-}
-
-const LANDING_FEATURES: Array<{ title: string; body: string }> = [
-  {
-    title: "Register and tier every use case",
-    body: "Intake captures the purpose, data sensitivity, and level of autonomy for each AI system, then assigns a risk tier the moment it is submitted.",
-  },
-  {
-    title: "Route reviews to accountable owners",
-    body: "Every review lands with the right role, carries a due date and escalation clock, and produces a signed decision record that stands up in an audit.",
-  },
-  {
-    title: "Prove control coverage with live evidence",
-    body: "Controls map to NIST AI RMF, ISO 42001, and SOC 2, and each assessment links straight back to the runtime telemetry that backs it.",
-  },
-  {
-    title: "Keep duties separate and the trail clean",
-    body: "Approvals keep the submitter and the reviewer apart, and the audit log records who changed identities, roles, and decisions across the platform.",
-  },
-];
-
-function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn: () => void; onAdminSignIn: () => void }) {
-  return (
-    <div className="landing">
-      <header className="landing-nav">
-        <div className="brand">Norinth</div>
-        <button onClick={onClientSignIn}>Client sign in</button>
-      </header>
-
-      <section className="landing-hero">
-        <span className="eyebrow">AI governance platform</span>
-        <h1>Govern every AI system your company runs.</h1>
-        <p>
-          Norinth gives risk, compliance, security, and engineering teams one place to register AI use cases, route
-          reviews to the people who own them, and prove control coverage with evidence pulled straight from production.
-        </p>
-        <div className="landing-actions">
-          <button onClick={onClientSignIn}>Client sign in</button>
-          <a className="landing-link" href="#features">See what runs inside</a>
-        </div>
-      </section>
-
-      <section className="landing-features" id="features">
-        {LANDING_FEATURES.map((feature) => (
-          <article className="landing-feature" key={feature.title}>
-            <h2>{feature.title}</h2>
-            <p>{feature.body}</p>
-          </article>
-        ))}
-      </section>
-
-      <section className="landing-band">
-        <h2>One workflow from intake to retirement.</h2>
-        <p>
-          Submit a use case, tier its risk, route it for review, gate the release, and recertify it on a schedule. Risk
-          owners, control owners, reviewers, and release managers each see the work that belongs to them and nothing else.
-        </p>
-      </section>
-
-      <footer className="landing-footer">
-        <div>
-          <div className="brand">Norinth</div>
-          <p>AI governance for teams that answer to regulators, customers, and their own boards.</p>
-        </div>
-        <div className="landing-footer-links">
-          <button className="secondary" onClick={onClientSignIn}>Client sign in</button>
-          <button className="link-button" onClick={onAdminSignIn}>Platform administrator access</button>
-        </div>
-      </footer>
-    </div>
-  );
 }
 
 function LoginScreen({
@@ -508,7 +445,7 @@ function roleLabel(user: User): string {
   return "Member";
 }
 
-const ADMIN_ROUTES = new Set(["overview", "intake", "team", "audit", "agents", "identity", "compliance"]);
+const ADMIN_ROUTES = new Set(["overview", "intake", "team", "audit", "agents", "identity", "compliance", "guide", "docs"]);
 
 function isAdminRoute(active: string): boolean {
   return ADMIN_ROUTES.has(active);
@@ -536,6 +473,10 @@ function AdminRoutes({ active, scope, user }: { active: string; scope: Scope; us
       return <ComplianceView scope={scope} tenantId={user.tenant_id || ""} />;
     case "audit":
       return <AuditLog />;
+    case "guide":
+      return <GettingStarted />;
+    case "docs":
+      return <DocsView />;
     default:
       return null;
   }
@@ -673,7 +614,7 @@ function Portfolio({ data, mutate }: { data: DashboardData; mutate: (path: strin
           <IncidentCards rows={openIncidents.slice(0, 5)} />
         </WorkLane>
       </div>
-      <Section title="Applications" description="Open an application to review owners, workflows, risks, controls, releases, incidents, and decisions.">
+      <Section title="AI systems" description="Open a system to see who owns it, what it runs, what is wrong with it, and what is blocking its next release.">
         <ApplicationCards rows={data.applications} />
       </Section>
     </>
@@ -701,21 +642,21 @@ function Inventory({ data }: { data: DashboardData }) {
       <div className="toolbar">
         <input className="search" placeholder="Search applications, workflows, models, prompts, deployments" aria-label="Search inventory" value={query} onChange={(event) => setQuery(event.target.value)} />
       </div>
-      <Section title="Applications" description="Business applications in the selected tenant.">
+      <Section title="AI systems" description="Everything that has called a model from your organization, registered or not.">
         <ApplicationCards rows={data.applications.filter((row) => matches(row, ["application_name", "tenant_id", "environment"]))} />
       </Section>
-      <Section title="Workflows" description="Business processes inside those applications.">
+      <Section title="Workflows" description="The business processes inside those systems, each with its own models, prompts and controls.">
         <WorkflowCards rows={data.workflows.filter((row) => matches(row, ["workflow_name"]))} />
       </Section>
       <div className="two-column">
-        <Section title="Models And Providers">
+        <Section title="Models and providers" description="What your systems actually call, with volume and error rates. Unapproved vendors show up here first.">
           <ModelCards rows={data.models.filter((row) => matches(row, ["provider", "model"]))} />
         </Section>
-        <Section title="Prompt Releases">
+        <Section title="Prompt versions" description="Every prompt version seen in production. A release gate needs one linked to it.">
           <PromptCards rows={data.promptTemplates.filter((row) => matches(row, ["prompt_id", "application_name", "workflow_name"]))} />
         </Section>
       </div>
-      <Section title="Deployments">
+      <Section title="Deployments" description="Deployment versions reported by your pipeline. Each one gets a release gate.">
         <DeploymentCards rows={data.deployments.filter((row) => matches(row, ["deployment_id", "application_name", "workflow_name", "current_version"]))} />
       </Section>
     </>
@@ -731,16 +672,16 @@ function Reviews({ data, mutate }: { data: DashboardData; mutate: Mutate }) {
         <MetricCard label="Active Exceptions" value={data.exceptions.filter((item) => item.status === "active").length} />
         <MetricCard label="Decisions" value={totalOf(data, "decisions", data.decisions)} />
       </div>
-      <Section title="All Open Review Tasks" description="Risk, control, release, and change reviews waiting for a reviewer decision.">
+      <Section title="Open reviews" description="Intake, risk, control and change reviews waiting for a decision. Overdue items escalate to the role owner.">
         <ReviewCards rows={data.reviewTasks} total={totalOf(data, "reviewTasks", data.reviewTasks)} />
       </Section>
-      <Section title="Owner Follow-Up" description="Records that need a named business, technical, risk, control, or incident owner.">
+      <Section title="Needs an owner" description="Systems, risks and controls with nobody accountable yet. Name a person; they are notified and it is recorded.">
         <OwnerCards rows={data.owners} total={totalOf(data, "owners", data.owners)} />
       </Section>
-      <Section title="Decision Log" description="Recorded reviewer decisions and rationale.">
+      <Section title="Decisions" description="Every decision with who made it and why. This is what an auditor reads first.">
         <DecisionCards rows={data.decisions} total={totalOf(data, "decisions", data.decisions)} />
       </Section>
-      <Section title="Active Exceptions" description="Accepted risks that still need an owner, compensating control, and expiration date.">
+      <Section title="Accepted risks" description="Risks someone chose to live with. Each needs an owner, a compensating control and an expiry date, and comes back for re-review when it expires.">
         <ExceptionCards rows={data.exceptions.filter((item) => item.status === "active")} />
       </Section>
     </>
@@ -756,7 +697,7 @@ function Risk({ data, mutate }: { data: DashboardData; mutate: (path: string, pa
         <MetricCard label="Active Exceptions" value={data.exceptions.filter((item) => item.status === "active").length} />
         <MetricCard label="Linked Incidents" value={totalOf(data, "incidents", data.incidents)} />
       </div>
-      <Section title="Risk Findings">
+      <Section title="Findings" description="Raised by platform rules (missing guardrails, failed evals, unregistered agents) or by people. Decide each one: mitigate, accept with an exception, or close.">
         <RiskCards rows={data.risks} total={totalOf(data, "risks", data.risks)} />
       </Section>
     </>
@@ -772,7 +713,7 @@ function Controls({ data }: { data: DashboardData }) {
         <MetricCard label="Missing" value={data.controls.filter((control) => control.status === "missing").length} />
         <MetricCard label="Trace Links" value={new Set(data.controls.flatMap((control) => control.evidence_trace_ids || [])).size} />
       </div>
-      <Section title="Control Checks" description="Passing and missing control records for the selected tenant.">
+      <Section title="Controls" description="Each control is passing with linked evidence or missing with the gap named. Control owners can waive with a rationale.">
         <ControlCards rows={data.controls} total={totalOf(data, "controls", data.controls)} />
       </Section>
     </>
@@ -782,10 +723,10 @@ function Controls({ data }: { data: DashboardData }) {
 function Deployments({ data, mutate }: { data: DashboardData; mutate: (path: string, payload: unknown, success: string) => Promise<void> }) {
   return (
     <>
-      <Section title="Deployment Registry">
+      <Section title="Deployments" description="Versions reported by your pipeline and their current status.">
         <DeploymentCards rows={data.deployments} />
       </Section>
-      <Section title="Approval Gates" description="Release decisions waiting on a reviewer. Open a gate before approving or rejecting.">
+      <Section title="Release gates" description="Open a gate to see what is blocking it. Approval needs a linked prompt version, passing eval evidence and a reviewer who did not submit the change.">
         <GateCards rows={data.deploymentGates} total={totalOf(data, "deploymentGates", data.deploymentGates)} />
       </Section>
     </>
@@ -801,14 +742,14 @@ function Monitoring({ data }: { data: DashboardData }) {
         <MetricCard label="Agent Runs" value={totalOf(data, "agents", data.agents)} />
         <MetricCard label="Guardrails" value={totalOf(data, "guardrails", data.guardrails)} />
       </div>
-      <Section title="Trace Index">
+      <Section title="Traces" description="One row per request. Open a trace to see every model call, tool use and guardrail decision inside it.">
         <TraceCards rows={data.traces} total={totalOf(data, "traces", data.traces)} />
       </Section>
       <div className="two-column">
-        <Section title="Agent Runs">
+        <Section title="Agent runs" description="Runs reported by the SDK or OpenTelemetry, with steps and tools used.">
           <AgentCards rows={data.agents} total={totalOf(data, "agents", data.agents)} />
         </Section>
-        <Section title="Guardrails And Evals">
+        <Section title="Guardrails and evals" description="Guardrail decisions and evaluation results. Evals signed by your CI key are marked attested.">
           <GuardrailEvalCards guardrails={data.guardrails} evals={data.evals} />
         </Section>
       </div>
@@ -818,7 +759,7 @@ function Monitoring({ data }: { data: DashboardData }) {
 
 function Incidents({ data, mutate }: { data: DashboardData; mutate: (path: string, payload: unknown, success: string) => Promise<void> }) {
   return (
-    <Section title="Incident Response" description="Open incidents and their closure actions. Review linked records before closing.">
+    <Section title="Incidents" description="Open an incident to see the request that caused it, linked risks and controls, then close it with a root cause on record.">
       <IncidentCards rows={data.incidents} total={totalOf(data, "incidents", data.incidents)} />
     </Section>
   );

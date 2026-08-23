@@ -1,24 +1,39 @@
 import { useEffect, useState, type ReactNode } from "react";
 
+import {
+  Badge as DsBadge,
+  Chip as DsChip,
+  EmptyState as DsEmptyState,
+  Heading,
+  Skeleton as DsSkeleton,
+  Stat,
+  Text,
+} from "../design";
+
+/**
+ * Shared view primitives. These are thin adapters over the design system so
+ * that every existing view (which imports from here) renders with the Revenant
+ * identity; new views should import from "../design" directly.
+ */
+
 export function Badge({ value }: { value: ReactNode }) {
-  return <span className={`badge badge-${String(value || "unknown").toLowerCase().replace(/[^a-z0-9_-]/g, "_")}`}>{value || "unknown"}</span>;
+  return <DsBadge value={value} />;
 }
 
 export function Chip({ children }: { children: ReactNode }) {
-  return <span className="chip">{children}</span>;
+  return <DsChip>{children}</DsChip>;
 }
 
 export function EmptyState({ children }: { children: ReactNode }) {
-  return <div className="empty-state">{children}</div>;
+  return <DsEmptyState>{children}</DsEmptyState>;
 }
 
+/** Metric tile: delegates to the design system Stat inside a definition list. */
 export function MetricCard({ label, value, note }: { label: string; value: ReactNode; note?: string }) {
   return (
-    <div className="metric-card">
-      <div className="metric-label">{label}</div>
-      <div className="metric-value">{value}</div>
-      {note ? <div className="metric-note">{note}</div> : null}
-    </div>
+    <dl className="metric-card">
+      <Stat label={label} value={value} note={note} />
+    </dl>
   );
 }
 
@@ -26,8 +41,8 @@ export function Section({ title, description, children }: { title: string; descr
   return (
     <section className="section">
       <div className="section-header">
-        <h2>{title}</h2>
-        {description ? <p>{description}</p> : null}
+        <Heading level={2} size="xl">{title}</Heading>
+        {description ? <Text size="sm">{description}</Text> : null}
       </div>
       {children}
     </section>
@@ -93,7 +108,7 @@ export function formatList(values: unknown): string {
 }
 
 export function Skeleton({ width = "100%", height = 14 }: { width?: string; height?: number }) {
-  return <span className="skeleton" style={{ width, height }} aria-hidden="true" />;
+  return <DsSkeleton width={width} height={height} />;
 }
 
 export function SkeletonMetrics({ count = 4 }: { count?: number }) {

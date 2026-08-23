@@ -1,0 +1,76 @@
+/*
+ * Norinth design tokens — derived from the Revenant Research identity
+ * (revenantresearch.com): parchment ground, ink rules, paper cards, IBM Plex
+ * Sans, a single teal signal colour with pink/orange as secondary accents.
+ *
+ * Every component in src/design consumes these; nothing else defines colour,
+ * type, spacing or radius values.
+ */
+:root {
+  /* ---- colour: ground & ink ------------------------------------------- */
+  --n-bg: #e7e1d4;            /* parchment page ground */
+  --n-bg-deep: #ddd5c5;       /* darker parchment (bands, wells) */
+  --n-paper: #fffcf5;         /* warm white cards and inputs */
+  --n-ink: #1a1714;
+  --n-ink-muted: #3f3a33;
+  --n-ink-dim: #6a6358;       /* 5.0:1 on parchment, 5.6:1 on paper */
+  --n-silver: #c4ced4;
+  --n-white: #ffffff;
+  --n-black: #000000;
+  --n-surface: rgba(26, 23, 20, 0.04);
+  --n-surface-hover: rgba(26, 23, 20, 0.065);
+
+  /* ---- colour: signal ------------------------------------------------- */
+  --n-teal: #00b3b8;
+  --n-teal-ink: #007a7e;      /* teal for text on paper (4.6:1) */
+  --n-teal-wash: rgba(0, 179, 184, 0.12);
+  --n-pink: #f9386a;
+  --n-pink-ink: #b8123f;
+  --n-pink-wash: rgba(249, 56, 106, 0.12);
+  --n-orange: #f99f1c;
+  --n-orange-ink: #8a5300;
+  --n-orange-wash: rgba(249, 159, 28, 0.16);
+  --n-green-ink: #1f6b45;
+  --n-green-wash: rgba(31, 122, 77, 0.14);
+
+  /* ---- semantic ------------------------------------------------------- */
+  --n-accent: var(--n-teal);
+  --n-accent-ink: var(--n-teal-ink);
+  --n-rule: var(--n-ink);
+  --n-rule-dim: var(--n-silver);
+  --n-focus: var(--n-teal);
+  --n-on-ink: var(--n-white);
+
+  /* ---- type ----------------------------------------------------------- */
+  --n-font: "IBM Plex Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --n-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --n-text-xs: 0.72rem;     /* 11.5px eyebrows, table heads */
+  --n-text-sm: 0.8125rem;   /* 13px secondary */
+  --n-text-md: 0.9rem;      /* 14.4px body */
+  --n-text-lg: 1.05rem;
+  --n-text-xl: 1.35rem;     /* h3 */
+  --n-text-2xl: 1.75rem;    /* h2 ~28px */
+  --n-text-3xl: 2.35rem;    /* h1 ~38px */
+  --n-text-stat: 1.8rem;    /* 28.8px stat numbers */
+  --n-track-tight: -0.04em;
+  --n-track-eyebrow: 0.18em;
+  --n-leading: 1.55;
+
+  /* ---- space, radius, motion ----------------------------------------- */
+  --n-space-1: 4px;
+  --n-space-2: 8px;
+  --n-space-3: 12px;
+  --n-space-4: 16px;
+  --n-space-5: 24px;
+  --n-space-6: 32px;
+  --n-space-7: 48px;
+  --n-space-8: 64px;
+  --n-radius-sm: 4px;
+  --n-radius: 6px;
+  --n-radius-lg: 8px;
+  --n-content-max: 72rem;
+  --n-pad-x: clamp(1.25rem, 4vw, 3rem);
+  --n-header-h: 4rem;
+  --n-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --n-shadow: 0 1px 0 rgba(26, 23, 20, 0.06);
+}

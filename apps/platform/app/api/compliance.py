@@ -13,7 +13,7 @@ from app.services.authorization import (
     AuthorizationError,
     require_permission,
 )
-from app.storage.audit import list_audit_logs, verify_audit_chain
+from app.storage.audit import list_audit_logs, record_audit, verify_audit_chain
 from app.storage.raw_events import list_events
 from app.storage.workflow import list_actor_role_assignments
 
@@ -64,6 +64,16 @@ def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilte
     from app.storage.agents import compute_agent_posture, list_registered_agents, public_posture
     from app.storage.entities import list_providers
 
+    # Exporting evidence is itself an auditable act: record who pulled the
+    # packet and for which scope, before assembling it.
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="compliance.audit_packet",
+        tenant_id=scope.tenant_id,
+        target_type="audit_packet",
+        target_id=scope.tenant_id or "platform",
+        detail={"project": scope.project, "environment": scope.environment},
+    )
     return {
         "packet_version": "2026-01",
         "generated_at": now(),
