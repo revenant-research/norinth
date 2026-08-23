@@ -146,15 +146,9 @@ def verify_audit_chain(*, tenant_id: str | None = None) -> dict[str, Any]:
     return {"ok": True, "entries": len(rows), "broken_at": None}
 
 
-def list_audit_logs(
-    *,
-    tenant_id: str | None = None,
-    actor_ref: str | None = None,
-    action: str | None = None,
-    limit: int = 200,
-) -> list[dict[str, Any]]:
+def _audit_filters(tenant_id: str | None, actor_ref: str | None, action: str | None) -> tuple[str, dict[str, Any]]:
     clauses: list[str] = []
-    params: dict[str, Any] = {"limit": limit}
+    params: dict[str, Any] = {}
     if tenant_id:
         clauses.append("tenant_id = :tenant_id")
         params["tenant_id"] = tenant_id
@@ -165,7 +159,30 @@ def list_audit_logs(
         clauses.append("action = :action")
         params["action"] = action
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    query = f"SELECT * FROM audit_logs {where} ORDER BY id DESC LIMIT :limit"
+    return where, params
+
+
+def count_audit_logs(
+    *, tenant_id: str | None = None, actor_ref: str | None = None, action: str | None = None
+) -> int:
+    where, params = _audit_filters(tenant_id, actor_ref, action)
+    with connect() as connection:
+        row = connection.execute(f"SELECT COUNT(*) AS count FROM audit_logs {where}", params).fetchone()
+    return int(row["count"])
+
+
+def list_audit_logs(
+    *,
+    tenant_id: str | None = None,
+    actor_ref: str | None = None,
+    action: str | None = None,
+    limit: int = 200,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    """Newest-first window of audit entries."""
+    where, params = _audit_filters(tenant_id, actor_ref, action)
+    params.update({"limit": limit, "offset": offset})
+    query = f"SELECT * FROM audit_logs {where} ORDER BY id DESC LIMIT :limit OFFSET :offset"
     with connect() as connection:
         rows = connection.execute(query, params).fetchall()
     return [dict(row) for row in rows]

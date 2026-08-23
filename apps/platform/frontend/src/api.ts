@@ -38,7 +38,22 @@ export type DashboardData = {
   traces: Array<Record<string, any>>;
   modelCalls: Array<Record<string, any>>;
   intake: Array<Record<string, any>>;
+  /** Server-side totals per list (from `page.total`) so metrics count the whole
+   *  tenant, not just the first page held in memory. */
+  totals: Partial<Record<ListKey, number>>;
+  /** Endpoints that failed on the last load; the rest of the dashboard still
+   *  renders (one failing endpoint no longer blanks every view). */
+  partialErrors: Array<{ key: string; message: string }>;
 };
+
+export type ListKey = Exclude<keyof DashboardData, "summary" | "totals" | "partialErrors">;
+
+export type PageMeta = { offset: number; limit: number; total: number; has_more: boolean };
+
+export function totalOf(data: Pick<DashboardData, "totals">, key: ListKey, fallback: unknown[]): number {
+  const total = data.totals?.[key];
+  return typeof total === "number" ? total : fallback.length;
+}
 
 export type DetailKind = "application" | "workflow" | "review" | "gate" | "incident" | "trace";
 
@@ -204,12 +219,26 @@ export async function loadGraphNeighborhood(nodeId: string, scope: Scope): Promi
 }
 
 export async function loadDashboardData(scope: Scope): Promise<DashboardData> {
-  const pairs = await Promise.all(
+  const totals: DashboardData["totals"] = {};
+  const partialErrors: DashboardData["partialErrors"] = [];
+  const settled = await Promise.allSettled(
     Object.entries(endpoints).map(async ([key, endpoint]) => {
       const raw = await getJson<Record<string, any>>(endpoint, scope);
       const responseKey = responseKeys[key as keyof typeof endpoints];
-      return [key, responseKey ? raw[responseKey] : raw] as const;
+      const page = raw?.page as PageMeta | undefined;
+      if (page && typeof page.total === "number") totals[key as ListKey] = page.total;
+      return [key, responseKey ? raw[responseKey] ?? [] : raw] as const;
     }),
   );
-  return Object.fromEntries(pairs) as DashboardData;
+  const keys = Object.keys(endpoints) as Array<keyof typeof endpoints>;
+  const entries: Array<readonly [string, unknown]> = settled.map((result, index) => {
+    const key = keys[index];
+    if (result.status === "fulfilled") return result.value;
+    const reason = result.reason;
+    // Session loss is not partial: surface it so the shell can sign out.
+    if (reason instanceof ApiError && reason.status === 401) throw reason;
+    partialErrors.push({ key, message: reason instanceof Error ? reason.message : String(reason) });
+    return [key, responseKeys[key] ? [] : {}] as const;
+  });
+  return { ...(Object.fromEntries(entries) as Omit<DashboardData, "totals" | "partialErrors">), totals, partialErrors };
 }

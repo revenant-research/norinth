@@ -160,16 +160,11 @@ def list_scopes() -> dict[str, list[str]]:
     }
 
 
-def list_events(
-    *,
-    tenant_id: str | None = None,
-    project: str | None = None,
-    environment: str | None = None,
-    event_type: str | None = None,
-    limit: int = 200,
-) -> list[dict[str, Any]]:
+def _event_filters(
+    tenant_id: str | None, project: str | None, environment: str | None, event_type: str | None
+) -> tuple[str, dict[str, Any]]:
     clauses: list[str] = []
-    params: dict[str, Any] = {"limit": limit}
+    params: dict[str, Any] = {}
     if tenant_id:
         clauses.append("tenant_id = :tenant_id")
         params["tenant_id"] = tenant_id
@@ -182,9 +177,37 @@ def list_events(
     if event_type:
         clauses.append("event_type = :event_type")
         params["event_type"] = event_type
-
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    query = f"SELECT raw_event FROM sdk_events {where} ORDER BY id DESC LIMIT :limit"
+    return where, params
+
+
+def count_scoped_events(
+    *,
+    tenant_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+    event_type: str | None = None,
+) -> int:
+    where, params = _event_filters(tenant_id, project, environment, event_type)
+    with connect() as connection:
+        row = connection.execute(f"SELECT COUNT(*) AS count FROM sdk_events {where}", params).fetchone()
+    return int(row["count"])
+
+
+def list_events(
+    *,
+    tenant_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+    event_type: str | None = None,
+    limit: int = 200,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    """Newest-first window of events (``offset`` 0 = the most recent), returned
+    in chronological order within the window for display."""
+    where, params = _event_filters(tenant_id, project, environment, event_type)
+    params.update({"limit": limit, "offset": offset})
+    query = f"SELECT raw_event FROM sdk_events {where} ORDER BY id DESC LIMIT :limit OFFSET :offset"
     with connect() as connection:
         rows = connection.execute(query, params).fetchall()
     return [json.loads(row["raw_event"]) for row in reversed(rows)]

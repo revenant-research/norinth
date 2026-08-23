@@ -500,6 +500,32 @@ textarea {
   gap: 8px;
 }
 
+.record-list-wrap {
+  display: grid;
+  gap: 10px;
+}
+
+.record-list-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 2px;
+}
+
+.partial-load {
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--warn, #b8860b);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
 .record-card {
   padding: 13px;
 }
@@ -1427,4 +1453,12 @@ button.linklike {
 .muted {
   color: var(--muted, #5a5a55);
   font-size: 13px;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 12px 0 0;
 }

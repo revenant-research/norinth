@@ -7,6 +7,28 @@ to Semantic Versioning once it reaches a tagged release.
 ## [Unreleased]
 
 ### Added
+- **Server-side pagination on every list endpoint (audit L: unbounded lists).**
+  `/api/events`, `/api/model-calls`, `/api/sdk-health`, `/api/traces`,
+  `/api/audit-logs` and the entity lists (retrievals, tools, guardrails, evals,
+  agents, risk register, control evidence, change events, review tasks,
+  deployment gates, incidents, owner assignments, decisions, exceptions) accept
+  `offset`/`limit` (default 200, max 1000; out-of-range values are rejected with
+  422) and return a `page {offset, limit, total, has_more}` object next to the
+  existing list key, so current clients keep working. Event- and audit-backed
+  endpoints page in SQL (`LIMIT/OFFSET` + `COUNT`) instead of materialising the
+  table; the trace index is no longer silently truncated to 100.
+- **Windowed record lists in the UI.** `RecordList` mounts 25 cards at a time
+  with "Show more / Show all" and a live-region footer that reports the server
+  total ("Showing 25 of 1,200 records (200 loaded)"), so large tenants no longer
+  render thousands of DOM nodes. Metric cards count the whole tenant via
+  `page.total`. The Audit Log has a real Newer/Older server-side pager (50 per
+  page) that resets when filters change.
+- **Partial-failure tolerant dashboard load.** One failing list endpoint no
+  longer blanks every view: the remaining data renders, a banner names the
+  failed endpoints with a Retry action, and session loss (401) still signs the
+  user out.
+
+### Added
 - Version control for the repository (previously unversioned), with a hardened
   `.gitignore` excluding virtualenvs, `node_modules`, SQLite databases, build
   artifacts, and local secrets.

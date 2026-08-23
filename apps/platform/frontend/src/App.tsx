@@ -9,6 +9,7 @@ import {
   changePassword,
   fetchMe,
   loadDashboardData,
+  totalOf,
   loadDetail,
   loadGraphNeighborhood,
   login,
@@ -467,6 +468,15 @@ function Workspace({ user, onSignOut }: { user: User; onSignOut: () => void }) {
           {isAdminRoute(active) ? <AdminRoutes active={active} scope={scope} user={user} /> : null}
           {!isAdminRoute(active) && isLoading && !data ? <WorkspaceSkeleton /> : null}
           {!isAdminRoute(active) && !isLoading && !data && message ? <EmptyState>{message}</EmptyState> : null}
+          {data && !isAdminRoute(active) && data.partialErrors.length ? (
+            <div className="partial-load" role="alert">
+              <strong>Some records could not be loaded.</strong>
+              <span>
+                {data.partialErrors.map((item) => `${item.key}: ${item.message}`).join(" · ")}
+              </span>
+              <button type="button" className="linklike" onClick={refresh}>Retry</button>
+            </div>
+          ) : null}
           {data && !isAdminRoute(active) ? <View route={route} data={data} scope={scope} user={user} mutate={mutate} /> : null}
         </div>
       </main>
@@ -710,16 +720,16 @@ function Reviews({ data, mutate }: { data: DashboardData; mutate: Mutate }) {
         <MetricCard label="Open Tasks" value={data.reviewTasks.filter((task) => task.status === "open").length} />
         <MetricCard label="Unassigned Owners" value={data.owners.filter((owner) => owner.status === "unassigned").length} />
         <MetricCard label="Active Exceptions" value={data.exceptions.filter((item) => item.status === "active").length} />
-        <MetricCard label="Decisions" value={data.decisions.length} />
+        <MetricCard label="Decisions" value={totalOf(data, "decisions", data.decisions)} />
       </div>
       <Section title="All Open Review Tasks" description="Risk, control, release, and change reviews waiting for a reviewer decision.">
-        <ReviewCards rows={data.reviewTasks} />
+        <ReviewCards rows={data.reviewTasks} total={totalOf(data, "reviewTasks", data.reviewTasks)} />
       </Section>
       <Section title="Owner Follow-Up" description="Records that need a named business, technical, risk, control, or incident owner.">
-        <OwnerCards rows={data.owners} />
+        <OwnerCards rows={data.owners} total={totalOf(data, "owners", data.owners)} />
       </Section>
       <Section title="Decision Log" description="Recorded reviewer decisions and rationale.">
-        <DecisionCards rows={data.decisions} />
+        <DecisionCards rows={data.decisions} total={totalOf(data, "decisions", data.decisions)} />
       </Section>
       <Section title="Active Exceptions" description="Accepted risks that still need an owner, compensating control, and expiration date.">
         <ExceptionCards rows={data.exceptions.filter((item) => item.status === "active")} />
@@ -732,13 +742,13 @@ function Risk({ data, mutate }: { data: DashboardData; mutate: (path: string, pa
   return (
     <>
       <div className="metric-grid">
-        <MetricCard label="Findings" value={data.risks.length} />
+        <MetricCard label="Findings" value={totalOf(data, "risks", data.risks)} />
         <MetricCard label="Open Findings" value={data.risks.filter((risk) => risk.status !== "closed").length} />
         <MetricCard label="Active Exceptions" value={data.exceptions.filter((item) => item.status === "active").length} />
-        <MetricCard label="Linked Incidents" value={data.incidents.length} />
+        <MetricCard label="Linked Incidents" value={totalOf(data, "incidents", data.incidents)} />
       </div>
       <Section title="Risk Findings">
-        <RiskCards rows={data.risks} />
+        <RiskCards rows={data.risks} total={totalOf(data, "risks", data.risks)} />
       </Section>
     </>
   );
@@ -748,13 +758,13 @@ function Controls({ data }: { data: DashboardData }) {
   return (
     <>
       <div className="metric-grid">
-        <MetricCard label="Assessments" value={data.controls.length} />
+        <MetricCard label="Assessments" value={totalOf(data, "controls", data.controls)} />
         <MetricCard label="Passing" value={data.controls.filter((control) => control.status === "passing").length} />
         <MetricCard label="Missing" value={data.controls.filter((control) => control.status === "missing").length} />
         <MetricCard label="Trace Links" value={new Set(data.controls.flatMap((control) => control.evidence_trace_ids || [])).size} />
       </div>
       <Section title="Control Checks" description="Passing and missing control records for the selected tenant.">
-        <ControlCards rows={data.controls} />
+        <ControlCards rows={data.controls} total={totalOf(data, "controls", data.controls)} />
       </Section>
     </>
   );
@@ -767,7 +777,7 @@ function Deployments({ data, mutate }: { data: DashboardData; mutate: (path: str
         <DeploymentCards rows={data.deployments} />
       </Section>
       <Section title="Approval Gates" description="Release decisions waiting on a reviewer. Open a gate before approving or rejecting.">
-        <GateCards rows={data.deploymentGates} />
+        <GateCards rows={data.deploymentGates} total={totalOf(data, "deploymentGates", data.deploymentGates)} />
       </Section>
     </>
   );
@@ -777,17 +787,17 @@ function Monitoring({ data }: { data: DashboardData }) {
   return (
     <>
       <div className="metric-grid">
-        <MetricCard label="Traces" value={data.traces.length} />
-        <MetricCard label="Model Calls" value={data.modelCalls.length} />
-        <MetricCard label="Agent Runs" value={data.agents.length} />
-        <MetricCard label="Guardrails" value={data.guardrails.length} />
+        <MetricCard label="Traces" value={totalOf(data, "traces", data.traces)} />
+        <MetricCard label="Model Calls" value={totalOf(data, "modelCalls", data.modelCalls)} />
+        <MetricCard label="Agent Runs" value={totalOf(data, "agents", data.agents)} />
+        <MetricCard label="Guardrails" value={totalOf(data, "guardrails", data.guardrails)} />
       </div>
       <Section title="Trace Index">
-        <TraceCards rows={data.traces} />
+        <TraceCards rows={data.traces} total={totalOf(data, "traces", data.traces)} />
       </Section>
       <div className="two-column">
         <Section title="Agent Runs">
-          <AgentCards rows={data.agents} />
+          <AgentCards rows={data.agents} total={totalOf(data, "agents", data.agents)} />
         </Section>
         <Section title="Guardrails And Evals">
           <GuardrailEvalCards guardrails={data.guardrails} evals={data.evals} />
@@ -800,7 +810,7 @@ function Monitoring({ data }: { data: DashboardData }) {
 function Incidents({ data, mutate }: { data: DashboardData; mutate: (path: string, payload: unknown, success: string) => Promise<void> }) {
   return (
     <Section title="Incident Response" description="Open incidents and their closure actions. Review linked records before closing.">
-      <IncidentCards rows={data.incidents} />
+      <IncidentCards rows={data.incidents} total={totalOf(data, "incidents", data.incidents)} />
     </Section>
   );
 }
@@ -1180,9 +1190,9 @@ function MiniStat({ label, value }: { label: string; value: unknown }) {
   );
 }
 
-function ReviewCards({ rows }: { rows: Array<Record<string, any>> }) {
+function ReviewCards({ rows, total }: { rows: Array<Record<string, any>>; total?: number }) {
   return (
-    <RecordList empty="No review tasks are open.">
+    <RecordList total={total} empty="No review tasks are open.">
       {rows.map((task) => <ReviewCard key={task.task_id} task={task} />)}
     </RecordList>
   );
@@ -1205,9 +1215,9 @@ function ReviewCard({ task }: { task: Record<string, any> }) {
   );
 }
 
-function GateCards({ rows }: { rows: Array<Record<string, any>> }) {
+function GateCards({ rows, total }: { rows: Array<Record<string, any>>; total?: number }) {
   return (
-    <RecordList empty="No deployment approval gates have been generated.">
+    <RecordList total={total} empty="No deployment approval gates have been generated.">
       {rows.map((gate) => <GateCard key={gate.gate_id} gate={gate} />)}
     </RecordList>
   );
@@ -1233,9 +1243,9 @@ function GateCard({ gate }: { gate: Record<string, any> }) {
   );
 }
 
-function IncidentCards({ rows }: { rows: Array<Record<string, any>> }) {
+function IncidentCards({ rows, total }: { rows: Array<Record<string, any>>; total?: number }) {
   return (
-    <RecordList empty="No incidents have been reported.">
+    <RecordList total={total} empty="No incidents have been reported.">
       {rows.map((incident) => <IncidentCard key={incident.incident_id} incident={incident} />)}
     </RecordList>
   );
@@ -1253,9 +1263,9 @@ function IncidentCard({ incident }: { incident: Record<string, any> }) {
   );
 }
 
-function RiskCards({ rows }: { rows: Array<Record<string, any>> }) {
+function RiskCards({ rows, total }: { rows: Array<Record<string, any>>; total?: number }) {
   return (
-    <RecordList empty="No risk findings found for this tenant.">
+    <RecordList total={total} empty="No risk findings found for this tenant.">
       {rows.map((risk) => <RiskCard key={risk.finding_id || risk.rule_id} risk={risk} />)}
     </RecordList>
   );
@@ -1274,9 +1284,9 @@ function RiskCard({ risk }: { risk: Record<string, any> }) {
   );
 }
 
-function OwnerCards({ rows }: { rows: Array<Record<string, any>> }) {
+function OwnerCards({ rows, total }: { rows: Array<Record<string, any>>; total?: number }) {
   return (
-    <RecordList empty="No ownership records have been created.">
+    <RecordList total={total} empty="No ownership records have been created.">
       {rows.map((owner) => <OwnerCard key={owner.owner_assignment_id} owner={owner} />)}
     </RecordList>
   );
@@ -1530,9 +1540,9 @@ function IncidentClosurePanel({ incident, mutate }: { incident: Record<string, a
   );
 }
 
-function ControlCards({ rows }: { rows: Array<Record<string, any>> }) {
+function ControlCards({ rows, total }: { rows: Array<Record<string, any>>; total?: number }) {
   return (
-    <RecordList empty="No control assessments generated yet.">
+    <RecordList total={total} empty="No control assessments generated yet.">
       {rows.map((control) => (
         <article className="record-card" key={`${control.application_name}-${control.control_id}`}>
           <div className="record-main">
@@ -1597,9 +1607,9 @@ function DeploymentCards({ rows }: { rows: Array<Record<string, any>> }) {
   );
 }
 
-function AgentCards({ rows }: { rows: Array<Record<string, any>> }) {
+function AgentCards({ rows, total }: { rows: Array<Record<string, any>>; total?: number }) {
   return (
-    <RecordList empty="No agent run records found.">
+    <RecordList total={total} empty="No agent run records found.">
       {rows.map((agent) => (
         <article className="record-card" key={`${agent.trace_id}-${agent.agent_name}`}>
           <div className="record-main">
@@ -1633,9 +1643,9 @@ function GuardrailEvalCards({ guardrails, evals }: { guardrails: Array<Record<st
   );
 }
 
-function TraceCards({ rows }: { rows: Array<Record<string, any>> }) {
+function TraceCards({ rows, total }: { rows: Array<Record<string, any>>; total?: number }) {
   return (
-    <RecordList empty="No request traces found.">
+    <RecordList total={total} empty="No request traces found.">
       {rows.map((trace) => (
         <article className="record-card" key={trace.trace_id}>
           <div className="record-main">
@@ -1665,9 +1675,9 @@ function EventCards({ rows }: { rows: Array<Record<string, any>> }) {
   );
 }
 
-function DecisionCards({ rows }: { rows: Array<Record<string, any>> }) {
+function DecisionCards({ rows, total }: { rows: Array<Record<string, any>>; total?: number }) {
   return (
-    <RecordList empty="No decisions have been recorded.">
+    <RecordList total={total} empty="No decisions have been recorded.">
       {rows.map((decision) => (
         <article className="record-card" key={`${decision.target_id}-${decision.created_at}`}>
           <div className="record-main">

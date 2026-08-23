@@ -6,6 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.api.pagination import PageParams
 from app.dependencies import ActorContext, current_actor
 from app.schemas.events import ScopeFilter
 from app.services.auth import hash_password
@@ -19,7 +20,7 @@ from app.services.authorization import (
     would_violate_role_separation,
 )
 from app.services.governance import build_summary
-from app.storage.audit import list_audit_logs, record_audit, verify_audit_chain
+from app.storage.audit import count_audit_logs, list_audit_logs, record_audit, verify_audit_chain
 from app.storage.entities import tenant_application_stats
 from app.storage.migrations import schema_status
 from app.storage.organizations import (
@@ -431,23 +432,23 @@ def audit_logs(
     tenant_id: str | None = None,
     actor_ref: str | None = None,
     action: str | None = None,
-    limit: int = 200,
-) -> dict[str, list[dict[str, Any]]]:
+    page: PageParams = Depends(),
+) -> dict[str, Any]:
     # Super admins see the full platform trail and may filter across tenants;
     # everyone else is restricted to their own organization's entries and cannot
     # widen the scope by passing a tenant_id.
-    limit = max(1, min(limit, 500))
-    if actor.is_super_admin:
-        return {
-            "audit_logs": list_audit_logs(
-                tenant_id=tenant_id, actor_ref=actor_ref, action=action, limit=limit
-            )
-        }
-    own_tenant = _require_tenant(actor)
+    effective_tenant = tenant_id if actor.is_super_admin else _require_tenant(actor)
+    filters = {"tenant_id": effective_tenant, "actor_ref": actor_ref, "action": action}
+    entries = list_audit_logs(**filters, limit=page.limit, offset=page.offset)
+    total = count_audit_logs(**filters)
     return {
-        "audit_logs": list_audit_logs(
-            tenant_id=own_tenant, actor_ref=actor_ref, action=action, limit=limit
-        )
+        "audit_logs": entries,
+        "page": {
+            "offset": page.offset,
+            "limit": page.limit,
+            "total": total,
+            "has_more": page.offset + len(entries) < total,
+        },
     }
 
 
