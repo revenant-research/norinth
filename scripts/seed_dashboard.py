@@ -1,13 +1,14 @@
+import os
 import time
 import uuid
 
 import norinth_logger as norinth
 
 norinth.init(
-    api_key="dev",
-    endpoint="http://127.0.0.1:8001",
+    api_key=os.getenv("NORINTH_API_KEY", "dev"),
+    endpoint=os.getenv("NORINTH_ENDPOINT", "http://127.0.0.1:8001"),
     project="norinth-sandbox",
-    environment="production",
+    environment="sandbox",
     service="seed-script",
 )
 client = norinth.get_client()
@@ -20,7 +21,7 @@ client.record(norinth.schemas.NorinthEvent(
     trace_id=trace_id_1,
     span_id=span_id_1,
     service="support-copilot",
-    environment="production",
+    environment="sandbox",
     project="norinth-sandbox",
     system="fastapi",
     name="support.summary",
@@ -28,7 +29,7 @@ client.record(norinth.schemas.NorinthEvent(
     duration_ms=1450,
     attributes={
         "metadata": {
-            "tenant_id": "tenant-verify",
+            "synthetic": True,
             "user_id": "support-agent-42",
             "application_name": "Support Copilot",
             "workflow_name": "support.summary",
@@ -43,7 +44,7 @@ client.record(norinth.schemas.NorinthEvent(
     span_id=f"spn-{uuid.uuid4().hex[:8]}",
     parent_span_id=span_id_1,
     service="support-copilot",
-    environment="production",
+    environment="sandbox",
     project="norinth-sandbox",
     system="fastapi",
     name="responses.create",
@@ -57,7 +58,7 @@ client.record(norinth.schemas.NorinthEvent(
         "response": "Customer is experiencing login issues. Recommended action: Send password reset link.",
         "usage": {"input_tokens": 120, "output_tokens": 45, "total_tokens": 165},
         "metadata": {
-            "tenant_id": "tenant-verify",
+            "synthetic": True,
             "application_name": "Support Copilot",
             "workflow_name": "support.summary"
         }
@@ -74,7 +75,7 @@ client.deployment(
     provider="openai",
     model="gpt-4o-mini",
     prompt_version="v2.0",
-    metadata={"tenant_id": "tenant-verify"}
+    metadata={"synthetic": True}
 )
 
 client.incident(
@@ -86,7 +87,7 @@ client.incident(
     workflow_name="support.summary",
     description="Agents report that summaries are omitting key context regarding escalated tickets.",
     impacted_trace_id=trace_id_1,
-    metadata={"tenant_id": "tenant-verify"}
+    metadata={"synthetic": True}
 )
 
 # Seed Agentic Governance Assistant
@@ -97,7 +98,7 @@ client.record(norinth.schemas.NorinthEvent(
     trace_id=trace_id_2,
     span_id=span_id_2,
     service="agentic-governance-assistant",
-    environment="production",
+    environment="sandbox",
     project="norinth-sandbox",
     system="fastapi",
     name="agentic.governance.review",
@@ -105,7 +106,7 @@ client.record(norinth.schemas.NorinthEvent(
     duration_ms=4500,
     attributes={
         "metadata": {
-            "tenant_id": "tenant-verify",
+            "synthetic": True,
             "user_id": "governance-admin",
             "application_name": "Agentic Governance Assistant",
             "workflow_name": "agentic.governance.review",
@@ -121,7 +122,7 @@ client.guardrail(
     score=0.8,
     matched_rules=["customer_data"],
     metadata={
-        "tenant_id": "tenant-verify",
+        "synthetic": True,
         "application_name": "Agentic Governance Assistant",
         "workflow_name": "agentic.governance.review"
     }
@@ -133,7 +134,7 @@ client.eval_result(
     threshold=0.6,
     passed=True,
     metadata={
-        "tenant_id": "tenant-verify",
+        "synthetic": True,
         "application_name": "Agentic Governance Assistant",
         "workflow_name": "agentic.governance.review"
     }
@@ -152,7 +153,7 @@ client.agent_run(
     outcome="governance review completed",
     duration_ms=4200,
     metadata={
-        "tenant_id": "tenant-verify",
+        "synthetic": True,
         "application_name": "Agentic Governance Assistant",
         "workflow_name": "agentic.governance.review"
     }
@@ -168,9 +169,24 @@ client.deployment(
     provider="multiple",
     model="multiple",
     prompt_version="v1.0",
-    metadata={"tenant_id": "tenant-verify"}
+    metadata={"synthetic": True}
 )
 
 client.shutdown()
 time.sleep(1)
-print("Enterprise data seeded successfully!")
+
+# Report what actually happened rather than claiming success unconditionally.
+# Earlier this script stamped a tenant_id the dev ingestion key does not own, so
+# every batch was rejected 403 while it still printed "seeded successfully".
+stats = client.transport.stats
+if stats.sent > 0 and stats.dropped == 0 and stats.failed_sends == 0:
+    print(f"Seeded {stats.sent} synthetic sandbox events successfully.")
+    raise SystemExit(0)
+
+print(
+    f"Seeding did not fully succeed: sent={stats.sent} "
+    f"dropped={stats.dropped} failed_sends={stats.failed_sends}."
+)
+print("Check that the platform is running at the configured endpoint and that "
+      "the dev ingestion key is seeded (NORINTH_DEV_MODE).")
+raise SystemExit(1)

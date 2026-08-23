@@ -9,21 +9,29 @@
 #   3. Generates every secret into .env: PostgreSQL password, NORINTH_SECRET_KEY,
 #      a random administrator password. The platform therefore never boots with
 #      development defaults.
-#   4. Pulls the signed image from GHCR (or builds from source with --source).
+#   4. Pulls the image from GHCR and, if cosign is installed, verifies its
+#      keyless signature before running it (or builds from source with --source).
 #   5. Starts PostgreSQL and Norinth, waits for /health, prints the URL and the
 #      administrator login. The first visit opens the setup wizard.
 #
-# Flags:  --dir PATH   --port N   --source   --no-pull   --upgrade   --uninstall   --yes
+# Flags:  --dir PATH  --port N  --source  --no-pull  --no-verify  --upgrade  --uninstall  --yes
 # Re-running is safe: an existing .env is never overwritten.
+#
+# Uninstall deletes the database volume. --yes does NOT authorize that deletion;
+# a non-interactive uninstall additionally requires NORINTH_DELETE_DATA=1.
 set -euo pipefail
 
 REPO_RAW="${NORINTH_REPO_RAW:-https://raw.githubusercontent.com/revenant-research/norinth/main}"
 IMAGE="${NORINTH_IMAGE:-ghcr.io/revenant-research/norinth:latest}"
+# Keyless-signing identity for verification: the release workflow in this repo.
+COSIGN_IDENTITY_RE="${NORINTH_COSIGN_IDENTITY_RE:-^https://github.com/revenant-research/norinth/}"
+COSIGN_ISSUER="${NORINTH_COSIGN_ISSUER:-https://token.actions.githubusercontent.com}"
 DIR="${NORINTH_DIR:-$PWD/norinth}"
 PORT="${NORINTH_PORT:-8001}"
 MODE="install"
 FROM_SOURCE=0
 NO_PULL=0
+NO_VERIFY=0
 ASSUME_YES=0
 
 say()  { printf '\033[1m%s\033[0m\n' "$*"; }
@@ -36,6 +44,7 @@ while [ $# -gt 0 ]; do
     --port) PORT="$2"; shift 2 ;;
     --source) FROM_SOURCE=1; shift ;;
     --no-pull) NO_PULL=1; shift ;;
+    --no-verify) NO_VERIFY=1; shift ;;
     --upgrade) MODE="upgrade"; shift ;;
     --uninstall) MODE="uninstall"; shift ;;
     --yes|-y) ASSUME_YES=1; shift ;;
@@ -117,11 +126,45 @@ wait_healthy() {
   die "Norinth did not become healthy within two minutes. Logs above."
 }
 
+verify_image() {
+  # Building from source produces no signed image to verify.
+  [ "$FROM_SOURCE" = 1 ] && return 0
+  if [ "$NO_VERIFY" = 1 ]; then
+    info "Signature verification skipped (--no-verify)."
+    return 0
+  fi
+  if command -v cosign >/dev/null 2>&1; then
+    say "Verifying image signature with cosign"
+    if cosign verify \
+        --certificate-identity-regexp "$COSIGN_IDENTITY_RE" \
+        --certificate-oidc-issuer "$COSIGN_ISSUER" \
+        "$IMAGE" >/dev/null 2>&1; then
+      info "Signature verified (keyless, GitHub Actions OIDC)."
+    else
+      die "cosign could not verify $IMAGE. Refusing to run an unverified image. Pin a trusted digest via NORINTH_IMAGE, or pass --no-verify to skip (not recommended)."
+    fi
+  else
+    info "cosign not installed; skipping signature verification of $IMAGE."
+    info "Install cosign (https://docs.sigstore.dev) to verify, or use --source to build locally."
+  fi
+}
+
 case "$MODE" in
   uninstall)
     [ -d "$DIR" ] || die "Nothing to uninstall at $DIR."
     say "This stops Norinth and DELETES its database volume at $DIR."
-    if [ "$ASSUME_YES" = 1 ] || { [ -t 0 ] && read -r -p "  Type 'delete' to confirm: " a && [ "$a" = delete ]; }; then
+    # --yes deliberately does NOT authorize data deletion. Non-interactively,
+    # deleting the database requires the explicit NORINTH_DELETE_DATA=1, so a
+    # stray --yes in a script can never destroy a database (audit finding H16).
+    confirmed=0
+    if [ -t 0 ]; then
+      read -r -p "  Type 'delete' to confirm: " a && [ "$a" = delete ] && confirmed=1
+    elif [ "${NORINTH_DELETE_DATA:-0}" = 1 ]; then
+      confirmed=1
+    else
+      die "Refusing to delete the database non-interactively. Re-run with NORINTH_DELETE_DATA=1 to confirm."
+    fi
+    if [ "$confirmed" = 1 ]; then
       compose down -v
       info "Containers and data removed. $DIR/.env left in place; delete it yourself."
     else
@@ -134,6 +177,7 @@ case "$MODE" in
     say "Upgrading Norinth at $DIR"
     fetch_compose
     if [ "$FROM_SOURCE" = 1 ]; then compose build; else compose pull; fi
+    verify_image
     compose up -d
     wait_healthy
     say "Upgraded. Migrations ran on boot; check Console → Overview → Schema."
@@ -148,6 +192,7 @@ fetch_compose
 write_env
 say "Starting PostgreSQL and Norinth"
 if [ "$FROM_SOURCE" = 1 ]; then compose build; elif [ "$NO_PULL" = 0 ]; then compose pull; fi
+verify_image
 compose up -d
 wait_healthy
 

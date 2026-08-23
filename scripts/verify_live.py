@@ -31,6 +31,9 @@ REVIEW_QUEUE_POLICY = {
 }
 
 
+ROTATED_SUPER_ADMIN_PASSWORD = f"{SUPER_ADMIN_PASSWORD}-verified-1"
+
+
 def assert_condition(condition: bool, message: str) -> None:
     if not condition:
         raise AssertionError(message)
@@ -71,6 +74,43 @@ class Session:
             return {"status": http_error.code, "body": body}
 
 
+def login_super_admin(session: Session) -> dict[str, Any]:
+    """Log the super admin in, completing first-login rotation if required."""
+    try:
+        login = session.post(
+            "/api/auth/login",
+            {"email": SUPER_ADMIN_EMAIL, "password": SUPER_ADMIN_PASSWORD},
+        )
+    except AssertionError:
+        # The default password was already rotated by a previous run.
+        return session.post(
+            "/api/auth/login",
+            {"email": SUPER_ADMIN_EMAIL, "password": ROTATED_SUPER_ADMIN_PASSWORD},
+        )
+    if login["user"].get("must_change_password"):
+        session.post(
+            "/api/auth/change-password",
+            {"current_password": SUPER_ADMIN_PASSWORD, "new_password": ROTATED_SUPER_ADMIN_PASSWORD},
+        )
+    return login
+
+
+def login_and_activate(session: Session, email: str, password: str) -> dict[str, Any]:
+    """Log a freshly-provisioned user in, completing first-login rotation.
+
+    Every provisioned user is created with must_change_password=True, which the
+    server enforces (audit C-4); without rotating, the very next API call is
+    403'd. This is why the script failed against a fresh install (H16).
+    """
+    login = session.post("/api/auth/login", {"email": email, "password": password})
+    if login["user"].get("must_change_password"):
+        session.post(
+            "/api/auth/change-password",
+            {"current_password": password, "new_password": f"{password}-rotated1"},
+        )
+    return login
+
+
 def main() -> int:
     health = Session(PLATFORM_URL).get("/health")
     assert_condition(health["ok"], "platform health check failed")
@@ -81,8 +121,13 @@ def main() -> int:
     anon.get("/api/admin/organizations", expected_status=401)
 
     # 2. Super admin signs in and provisions an organization with its admin.
+    #    A super admin seeded from development defaults is created with
+    #    must_change_password=True; the server blocks the rest of the API until
+    #    the password is rotated, so on a fresh install this script must complete
+    #    that first-login step (audit finding H16). On a re-run the default no
+    #    longer works, so it falls back to the rotated password.
     superadmin = Session(PLATFORM_URL)
-    me = superadmin.post("/api/auth/login", {"email": SUPER_ADMIN_EMAIL, "password": SUPER_ADMIN_PASSWORD})
+    me = login_super_admin(superadmin)
     assert_condition(me["user"]["is_super_admin"], "seeded user is not a super admin")
 
     org = superadmin.post(
@@ -113,7 +158,7 @@ def main() -> int:
 
     # 3. Org admin signs in and provisions a reviewer in their organization.
     orgadmin = Session(PLATFORM_URL)
-    orgadmin.post("/api/auth/login", {"email": "orgadmin@verify-co.test", "password": "orgadminpass1"})
+    login_and_activate(orgadmin, "orgadmin@verify-co.test", "orgadminpass1")
     orgadmin.post(
         "/api/org/users",
         {"email": "reviewer@verify-co.test", "display_name": "Verify Reviewer", "password": "reviewerpass1"},
@@ -157,7 +202,7 @@ def main() -> int:
 
     # 7. An authenticated but unauthorized user cannot decide either.
     noroles = Session(PLATFORM_URL)
-    noroles.post("/api/auth/login", {"email": "noroles@verify-co.test", "password": "norolespass1"})
+    login_and_activate(noroles, "noroles@verify-co.test", "norolespass1")
     noroles.post(
         "/api/decisions",
         {"target_type": "review_task", "target_id": intake_task["task_id"], "decision": "approve", "rationale": "no permission"},
@@ -166,7 +211,7 @@ def main() -> int:
 
     # 8. The reviewer (a different user, with the role) records the decision.
     reviewer = Session(PLATFORM_URL)
-    reviewer.post("/api/auth/login", {"email": "reviewer@verify-co.test", "password": "reviewerpass1"})
+    login_and_activate(reviewer, "reviewer@verify-co.test", "reviewerpass1")
     reviewer.post(
         "/api/decisions",
         {"target_type": "review_task", "target_id": intake_task["task_id"], "decision": "approve", "rationale": "Evidence reviewed; approving intake."},
@@ -176,7 +221,7 @@ def main() -> int:
 
     # 9. Tenant isolation: the other org's admin cannot see verify-co records.
     other = Session(PLATFORM_URL)
-    other.post("/api/auth/login", {"email": "orgadmin@other-co.test", "password": "otheradminpass1"})
+    login_and_activate(other, "orgadmin@other-co.test", "otheradminpass1")
     other_intake = other.get("/api/intake")["intake"]
     assert_condition(all(record["tenant_id"] != "verify-co" for record in other_intake), "tenant isolation breach on intake")
     other_scopes = other.get("/api/scopes")
