@@ -85,7 +85,7 @@ Build to OpenTelemetry GenAI conventions so Norinth consumes the observability l
 
 ## 7. Sustainability (how Revenant Research benefits)
 
-There is no revenue in the product and none is planned inside it. Norinth is Revenant Research's open core IP: it establishes the runtime-evidence standard for AI governance, builds the reputation and relationships that feed the portfolio, and can support services the community asks for (implementation help, a healthcare or EU AI Act pack built with a design partner, training) without ever gating the software. If that changes, it changes here first, in public.
+There is no revenue in the product and none is planned inside it. Norinth is a Revenant Research product, released as open source: it establishes the runtime-evidence standard for AI governance, builds the reputation and relationships that feed the portfolio, and can support services the community asks for (implementation help, a healthcare or EU AI Act pack built with a design partner, training) without ever gating the software. If that changes, it changes here first, in public.
 
 ## 8. Proof and content
 

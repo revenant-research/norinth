@@ -7,7 +7,7 @@ audit packet your auditor, regulator and board ask for.
 
 Everything in this repository is licensed under [Apache-2.0](LICENSE) and is
 built to be run by you, on your infrastructure. There is no hosted version and
-no paid tier. Norinth is maintained by [Revenant Research](https://www.revenantresearch.com/).
+no paid tier. Norinth is a product of [Revenant Research](https://www.revenantresearch.com/).
 
 ## Get started in ten minutes
 

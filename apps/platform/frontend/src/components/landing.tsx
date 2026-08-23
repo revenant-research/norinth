@@ -403,7 +403,7 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
       <footer className={styles.footer}>
         <div className={styles.brand}>
           <span className={styles.brandName}>Norinth</span>
-          <span className={styles.brandBy}>A Revenant Research company</span>
+          <span className={styles.brandBy}>A Revenant Research product</span>
           <Text size="sm">Open-source AI governance from runtime evidence. Apache-2.0.</Text>
         </div>
         <div className={styles.footerLinks}>

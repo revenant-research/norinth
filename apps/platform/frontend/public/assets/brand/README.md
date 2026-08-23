@@ -1,4 +1,4 @@
-Brand streak images used as landing-page chrome. Drop the four abstract
+Brand streak images used as landing-page chrome (Norinth is a Revenant Research product). Drop the four abstract
 images here as:
 
   streak-1.jpg   indigo → magenta → amber diagonal streaks
