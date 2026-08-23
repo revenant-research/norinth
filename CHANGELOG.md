@@ -122,6 +122,15 @@ to Semantic Versioning once it reaches a tagged release.
   endpoints. Also: /api/decisions now returns 404 (not 500) for an unknown
   target.
 
+### Security
+- **Stored secrets encrypted at rest.** Tenant OIDC client secrets are now
+  encrypted with AES-256-GCM under a master key (`NORINTH_SECRET_KEY`, injected
+  from a KMS/secret manager in production), bound to the tenant via associated
+  data so a row cannot be transplanted between organizations. A database dump
+  or backup no longer yields usable credentials. Legacy plaintext values are
+  read transparently and re-encrypted on next write; a wrong key fails closed.
+  The design is envelope-ready for a KMS data key (BYOK).
+
 ### Added
 - **Versioned schema migrations (M1).** Schema changes are now an ordered,
   recorded history (`schema_migrations` table) instead of "run every CREATE/ALTER

@@ -13,6 +13,8 @@ import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from app.services.secrets import decrypt, encrypt
+
 from .raw_events import connect
 
 STATE_TTL_MINUTES = 10
@@ -90,7 +92,9 @@ def upsert_sso_configuration(
                 tenant_id,
                 issuer,
                 client_id,
-                client_secret,
+                # Encrypted at rest, bound to the tenant so a row cannot be
+                # transplanted to another organization.
+                encrypt(client_secret, associated_data=tenant_id),
                 authorization_endpoint,
                 token_endpoint,
                 jwks_uri,
@@ -102,13 +106,21 @@ def upsert_sso_configuration(
         return public_sso_configuration(load_sso_configuration(tenant_id, connection))
 
 
+def _decrypted(row: Any, tenant_id: str) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    record = dict(row)
+    record["client_secret"] = decrypt(record["client_secret"], associated_data=tenant_id)
+    return record
+
+
 def load_sso_configuration(tenant_id: str, connection=None) -> dict[str, Any] | None:
     if connection is not None:
         row = connection.execute("SELECT * FROM sso_configurations WHERE tenant_id = ?", (tenant_id,)).fetchone()
-        return None if row is None else dict(row)
+        return _decrypted(row, tenant_id)
     with connect() as conn:
         row = conn.execute("SELECT * FROM sso_configurations WHERE tenant_id = ?", (tenant_id,)).fetchone()
-        return None if row is None else dict(row)
+        return _decrypted(row, tenant_id)
 
 
 def public_sso_configuration(config: dict[str, Any] | None) -> dict[str, Any] | None:
