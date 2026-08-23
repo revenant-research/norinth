@@ -6,6 +6,10 @@ to Semantic Versioning once it reaches a tagged release.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-23
+
+First public release: the open-source, self-hosted AI governance platform, SDK, installer, Helm chart and signed images.
+
 ### Added
 - **Release pipeline** (`.github/workflows/release.yml`): on a `v*` tag, builds
   the multi-arch image to `ghcr.io/revenant-research/norinth` (`:<version>`,
