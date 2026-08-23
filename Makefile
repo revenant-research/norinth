@@ -34,6 +34,9 @@ test-frontend: ## Run frontend unit tests (vitest)
 test-cov: ## Run tests with coverage
 	pytest --cov=app --cov=norinth_logger --cov-report=term-missing
 
+migrate: ## Apply pending schema migrations and print schema status
+	cd apps/platform && python -m app.storage.migrations
+
 run: ## Run the platform locally on :8001
 	NORINTH_PLATFORM_DB=apps/platform/data/norinth.sqlite3 \
 	uvicorn app.main:app --app-dir apps/platform --reload --port 8001

@@ -20,22 +20,8 @@ from app.dependencies import SESSION_COOKIE
 from app.ingestion.routes import router as ingestion_router
 from app.services.auth import resolve_session
 from app.services.bootstrap import seed_dev_ingestion_key_if_dev, seed_super_admin
-from app.storage.agents import init_agents
-from app.storage.audit import init_audit
-from app.storage.deployments import init_deployments
-from app.storage.entities import init_entities
-from app.storage.governance_policy import init_governance_policy
-from app.storage.incidents import init_incidents
-from app.storage.ingestion_keys import init_ingestion_keys
-from app.storage.intake import init_intake
-from app.storage.lifecycle import init_lifecycle
-from app.storage.login_attempts import init_login_attempts
-from app.storage.organizations import init_organizations
-from app.storage.prompts import init_prompts
-from app.storage.raw_events import init_storage
-from app.storage.scim import init_scim
-from app.storage.sso import init_sso
-from app.storage.workflow import init_workflow, load_platform_user
+from app.storage.migrations import run_migrations
+from app.storage.workflow import load_platform_user
 
 STATIC_DIR = Path(__file__).resolve().parent / "dashboard" / "static"
 ASSETS_DIR = STATIC_DIR / "assets"
@@ -43,22 +29,7 @@ INDEX_FILE = STATIC_DIR / "index.html"
 
 app = FastAPI(title="Norinth Platform Sandbox")
 
-init_storage()
-init_entities()
-init_governance_policy()
-init_lifecycle()
-init_workflow()
-init_deployments()
-init_incidents()
-init_prompts()
-init_organizations()
-init_intake()
-init_audit()
-init_ingestion_keys()
-init_login_attempts()
-init_sso()
-init_scim()
-init_agents()
+run_migrations()
 seed_super_admin()
 seed_dev_ingestion_key_if_dev()
 app.include_router(ingestion_router)

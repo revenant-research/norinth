@@ -54,6 +54,16 @@ both backends in CI (`make test` for SQLite, `make test-postgres` with
 With Docker: `docker compose --profile postgres up` starts a PostgreSQL service;
 point `NORINTH_DATABASE_URL` at it in `docker-compose.yml`.
 
+## Schema migrations
+
+Schema changes are versioned (`app/storage/migrations.py`) and recorded in a
+`schema_migrations` table. Pending migrations run automatically at startup and
+can be applied explicitly with `make migrate` (prints the backend, applied
+versions, and anything pending). Super admins can inspect the same status at
+`GET /api/admin/schema`. Every migration runs identically on SQLite and
+PostgreSQL. Keep migrations additive (expand/contract) so a running release
+stays compatible with the next one's schema.
+
 ## Ingestion authentication
 
 Telemetry ingestion (`POST /v1/events/batch`) authenticates with a **per-tenant

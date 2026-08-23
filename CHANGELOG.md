@@ -123,6 +123,16 @@ to Semantic Versioning once it reaches a tagged release.
   target.
 
 ### Added
+- **Versioned schema migrations (M1).** Schema changes are now an ordered,
+  recorded history (`schema_migrations` table) instead of "run every CREATE/ALTER
+  on every boot and swallow the errors". Migration 1 is the baseline (the
+  storage modules' idempotent initializers), so existing and fresh databases
+  converge; subsequent changes are numbered migrations that run once, in a
+  transaction, identically on SQLite and PostgreSQL. `make migrate` applies and
+  prints status; `GET /api/admin/schema` exposes backend, applied, and pending
+  versions to platform admins.
+
+### Added
 - **Identity & Integrations UI.** Org admins can now self-serve enterprise
   identity from a new workspace view: configure **SSO** (issuer, client, JIT
   default role, optional email-domain restriction — with the exact redirect URI
