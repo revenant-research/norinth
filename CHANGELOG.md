@@ -6,6 +6,24 @@ to Semantic Versioning once it reaches a tagged release.
 
 ## [Unreleased]
 
+### Added
+- **One-command installer** (`scripts/install.sh`): checks for Docker (offers
+  to install it on Ubuntu/Debian), fetches the compose file, generates every
+  secret into a mode-600 `.env` (PostgreSQL password, `NORINTH_SECRET_KEY`,
+  administrator password — so the platform never boots in development mode),
+  pulls the image or builds from source, starts PostgreSQL + Norinth, waits for
+  `/health`, prints the URL and login. `--upgrade`, `--uninstall`, `--source`,
+  `--no-pull`, `--port`, `--dir`, `--yes`. Re-running never regenerates secrets.
+- `docker-compose.yml` is now production-shaped: PostgreSQL by default, secrets
+  from `.env`, named volume, healthchecks, restart policies; image from GHCR
+  with a local build fallback. `make docker-up` runs the installer from a checkout.
+- `scripts/backup.sh` / `scripts/restore.sh` (pg_dump based).
+- `docs/operations.md`: install, first run, full `NORINTH_*` configuration
+  reference, endpoints and network placement, backup/restore, upgrade,
+  hardening checklist.
+- CI: shellcheck on the scripts and an end-to-end installer run (generated
+  secrets, health, and proof that the well-known `dev` ingestion key is
+  rejected, i.e. the install is not in development mode).
 ### Changed
 - **Norinth is fully open source.** Root `LICENSE` is Apache-2.0 and covers the
   platform, SDK and demo apps (the platform's former proprietary license is
