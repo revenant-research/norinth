@@ -13,6 +13,10 @@ license-files = ["LICENSE", "NOTICE"]
 keywords = ["ai-governance", "telemetry", "aibom", "compliance", "observability"]
 dependencies = []
 
+[project.optional-dependencies]
+# Sign eval results in CI so the platform treats them as attested evidence.
+attest = ["cryptography>=42"]
+
 [project.urls]
 Documentation = "https://github.com/norinth/norinth-logger/blob/main/README.md"
 Protocol = "https://github.com/norinth/norinth-logger/blob/main/PROTOCOL.md"

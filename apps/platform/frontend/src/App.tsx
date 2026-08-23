@@ -1637,10 +1637,30 @@ function AgentCards({ rows, total }: { rows: Array<Record<string, any>>; total?:
   );
 }
 
+type EvidenceRow = {
+  id: string;
+  type: "Guardrail" | "Eval";
+  name: string;
+  result: string;
+  score?: number | null;
+  trace_id: string;
+  attested?: boolean;
+  attestedKeyId?: string;
+};
+
 function GuardrailEvalCards({ guardrails, evals }: { guardrails: Array<Record<string, any>>; evals: Array<Record<string, any>> }) {
-  const rows = [
-    ...guardrails.map((row) => ({ id: `${row.trace_id}-${row.guardrail_name}`, type: "Guardrail", name: row.guardrail_name, result: row.decision, score: row.score, trace_id: row.trace_id })),
-    ...evals.map((row) => ({ id: `${row.trace_id}-${row.eval_name}`, type: "Eval", name: row.eval_name, result: row.passed ? "passed" : "failed", score: row.score, trace_id: row.trace_id })),
+  const rows: EvidenceRow[] = [
+    ...guardrails.map((row) => ({ id: `${row.trace_id}-${row.guardrail_name}`, type: "Guardrail" as const, name: row.guardrail_name, result: row.decision, score: row.score, trace_id: row.trace_id })),
+    ...evals.map((row) => ({
+      id: `${row.trace_id}-${row.eval_name}`,
+      type: "Eval" as const,
+      name: row.eval_name,
+      result: row.passed ? "passed" : "failed",
+      score: row.score,
+      trace_id: row.trace_id,
+      attested: typeof row.attested === "boolean" ? row.attested : undefined,
+      attestedKeyId: typeof row.attested_key_id === "string" ? row.attested_key_id : undefined,
+    })),
   ];
   return (
     <RecordList empty="No guardrail or evaluation records found.">
@@ -1648,9 +1668,15 @@ function GuardrailEvalCards({ guardrails, evals }: { guardrails: Array<Record<st
         <article className="record-card" key={row.id}>
           <div className="record-main">
             <span className="record-title">{row.type}: {row.name}</span>
-            <Badge value={row.result} />
+            <span className="badge-row">
+              <Badge value={row.result} />
+              {row.attested !== undefined ? <Badge value={row.attested ? "attested" : "unattested"} /> : null}
+            </span>
           </div>
-          <p>Score: {row.score ?? "n/a"} / <a href={`#trace/${row.trace_id}`}>trace</a></p>
+          <p>
+            Score: {row.score ?? "n/a"} / <a href={`#trace/${row.trace_id}`}>trace</a>
+            {row.attestedKeyId ? <> · signed by <code>{row.attestedKeyId}</code></> : null}
+          </p>
         </article>
       ))}
     </RecordList>

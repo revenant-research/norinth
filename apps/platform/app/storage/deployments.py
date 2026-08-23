@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from . import db
+from .attestation_keys import tenant_requires_attestation
 from .entities import entity_id
 from .raw_events import connect
 
@@ -208,7 +209,11 @@ def upsert_deployment_gate(connection, version: dict[str, Any]) -> None:
     if evidence["prompt_evidence_status"] != "linked":
         reason_parts.append("missing linked prompt version")
     if evidence["passing_eval_count"] == 0:
-        reason_parts.append("missing passing eval evidence")
+        reason_parts.append(
+            "missing attested passing eval evidence"
+            if tenant_requires_attestation(version.get("tenant_id"), connection)
+            else "missing passing eval evidence"
+        )
     required_reason = "; ".join(reason_parts) if reason_parts else "No blocking governance evidence detected"
     connection.execute(
         """
@@ -310,14 +315,22 @@ def count_passing_eval_evidence(connection, params: dict[str, Any]) -> int:
         """,
         params,
     ).fetchall()
+    # Once an organization has registered an attestation key, only evals whose
+    # Ed25519 signature verified at ingestion count as gate evidence; a
+    # self-reported ``passed: true`` no longer satisfies the gate (C-2
+    # hardening, roadmap #20).
+    require_attested = tenant_requires_attestation(params.get("tenant_id"), connection)
     count = 0
     for row in rows:
         try:
             attrs = json.loads(row["attributes"])
         except json.JSONDecodeError:
             attrs = {}
-        if attrs.get("passed") is True:
-            count += 1
+        if attrs.get("passed") is not True:
+            continue
+        if require_attested and attrs.get("attested") is not True:
+            continue
+        count += 1
     return count
 
 
