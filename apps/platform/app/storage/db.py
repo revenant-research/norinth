@@ -270,6 +270,23 @@ class SqliteConnection:
         return False
 
 
+# Fixed 64-bit key for the audit-chain advisory lock (arbitrary constant).
+_AUDIT_LOCK_KEY = 4242000042420001
+
+
+def serialize_writer(connection) -> None:
+    """Serialize concurrent writers of an append-only chain across replicas.
+
+    On PostgreSQL, SQLite's ``BEGIN IMMEDIATE`` write lock does not survive the
+    translation to ``BEGIN`` (no lock under READ COMMITTED), so two workers can
+    read the same tail and fork the chain. A transaction-scoped advisory lock
+    restores single-writer ordering; it is released automatically at COMMIT.
+    On SQLite the caller's ``BEGIN IMMEDIATE`` already holds the write lock.
+    """
+    if is_postgres():
+        connection.execute("SELECT pg_advisory_xact_lock(%s)" % _AUDIT_LOCK_KEY)
+
+
 def connect():
     """Open a connection to the configured backend."""
     if is_postgres():
