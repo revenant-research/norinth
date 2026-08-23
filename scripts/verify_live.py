@@ -13,9 +13,9 @@ from urllib import error, request
 # review -> decision), and asserts that unauthenticated and unauthorized calls
 # are rejected and that maker-checker separation is enforced.
 #
-# The deployment-gate and incident flows are driven by SDK telemetry and are
-# verified by the demo-app pipeline; this script focuses on the human identity
-# and governance surface introduced by the platform.
+# The deployment-gate and incident flows are driven by SDK telemetry; this
+# script focuses on the human identity and governance surface: provisioning,
+# RBAC, routed reviews, and maker-checker decisions.
 
 PLATFORM_URL = os.getenv("NORINTH_PLATFORM_URL", "http://127.0.0.1:8001")
 SUPER_ADMIN_EMAIL = os.getenv("NORINTH_SUPER_ADMIN_EMAIL", "admin@norinth.local")

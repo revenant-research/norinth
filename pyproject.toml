@@ -32,4 +32,4 @@ ignore_missing_imports = true
 warn_unused_ignores = false
 warn_redundant_casts = true
 check_untyped_defs = false
-exclude = ["\\.venv", "node_modules", "apps/platform/app/dashboard/static", "demo-apps"]
+exclude = ["\\.venv", "node_modules", "apps/platform/app/dashboard/static"]

@@ -10,4 +10,3 @@ apps/platform/data
 .env.*
 tests
 docs
-demo-apps

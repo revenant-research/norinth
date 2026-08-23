@@ -44,7 +44,7 @@ jobs:
           pip install -r requirements-dev.txt
           pip install -e packages/python-sdk
       - name: Lint (ruff)
-        run: ruff check apps/platform/app packages/python-sdk/norinth_logger tests scripts demo-apps
+        run: ruff check apps/platform/app packages/python-sdk/norinth_logger tests scripts
       - name: Test (pytest)
         run: pytest
       - uses: actions/setup-node@v4

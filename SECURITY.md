@@ -15,7 +15,6 @@ for security reports.
   observe-only and fail-open by default; report any path that can (a) block or
   crash host application code, or (b) transmit raw prompt/response content when
   `NORINTH_CAPTURE_CONTENT` is not enabled.
-- **Demo apps** (`demo-apps/`) — test harness; lower priority.
 
 ## Hardening program
 
