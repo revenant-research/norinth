@@ -69,7 +69,7 @@ def purge_tenant_data(tenant_id: str) -> dict[str, int]:
             cur = connection.execute("DELETE FROM sessions WHERE user_ref = ?", (user_ref,))
             counts["sessions"] = counts.get("sessions", 0) + (cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0)
         for email in emails:
-            connection.execute("DELETE FROM login_attempts WHERE email = ?", (email,))
+            connection.execute("DELETE FROM login_throttle WHERE subject = ?", (f"email:{email.strip().lower()}",))
 
         for table in _TENANT_SCOPED_TABLES:
             cur = connection.execute(f"DELETE FROM {table} WHERE tenant_id = ?", (tenant_id,))

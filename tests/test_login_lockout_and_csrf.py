@@ -50,3 +50,44 @@ def test_csrf_allows_requests_without_origin(client):
     # victim's ambient cookies, so they are not a CSRF vector.
     resp = client.post("/api/auth/login", json=GOOD)
     assert resp.status_code == 200
+
+
+def test_password_spraying_across_accounts_trips_ip_throttle(client, monkeypatch):
+    # Lower the IP threshold for the test; per-account threshold (5) is never hit
+    # because every attempt targets a different email.
+    import app.storage.login_attempts as la
+
+    monkeypatch.setattr(la, "IP_THRESHOLD", 8)
+    for i in range(8):
+        resp = client.post("/api/auth/login", json={"email": f"user{i}@acme.test", "password": "Spring2026!"})
+        assert resp.status_code == 401
+    # The source IP is now throttled even for a brand-new, never-attempted email.
+    resp = client.post("/api/auth/login", json={"email": "fresh@acme.test", "password": "whatever"})
+    assert resp.status_code == 429
+
+
+def test_forwarded_for_is_ignored_unless_proxy_trusted(client, monkeypatch):
+    import app.storage.login_attempts as la
+
+    monkeypatch.setattr(la, "IP_THRESHOLD", 3)
+    monkeypatch.delenv("NORINTH_TRUST_PROXY", raising=False)
+    # Attacker rotates X-Forwarded-For to dodge the IP throttle: must not work,
+    # because the header is untrusted by default.
+    for i in range(3):
+        client.post("/api/auth/login", json={"email": f"u{i}@x.test", "password": "bad"}, headers={"X-Forwarded-For": f"10.0.0.{i}"})
+    resp = client.post("/api/auth/login", json={"email": "u9@x.test", "password": "bad"}, headers={"X-Forwarded-For": "10.0.0.99"})
+    assert resp.status_code == 429
+
+
+def test_forwarded_for_is_used_when_proxy_trusted(client, monkeypatch):
+    import app.storage.login_attempts as la
+
+    monkeypatch.setattr(la, "IP_THRESHOLD", 3)
+    monkeypatch.setenv("NORINTH_TRUST_PROXY", "1")
+    # Behind a trusted proxy, distinct real client IPs are throttled independently.
+    for i in range(3):
+        client.post("/api/auth/login", json={"email": f"u{i}@x.test", "password": "bad"}, headers={"X-Forwarded-For": "203.0.113.7"})
+    blocked = client.post("/api/auth/login", json={"email": "u9@x.test", "password": "bad"}, headers={"X-Forwarded-For": "203.0.113.7"})
+    assert blocked.status_code == 429
+    other = client.post("/api/auth/login", json={"email": "u9@x.test", "password": "bad"}, headers={"X-Forwarded-For": "203.0.113.8"})
+    assert other.status_code == 401  # different client, not throttled

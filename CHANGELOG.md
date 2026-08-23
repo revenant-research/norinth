@@ -122,6 +122,16 @@ to Semantic Versioning once it reaches a tagged release.
   endpoints. Also: /api/decisions now returns 404 (not 500) for an unknown
   target.
 
+### Security
+- **Per-IP login throttling (H-6 follow-up).** Failed logins are now throttled
+  per source IP as well as per account (separate, higher threshold so a shared
+  office NAT isn't blocked by a few typos). This closes the two gaps of
+  per-account lockout alone: an attacker deliberately locking a victim out
+  (targeted-lockout DoS) and spraying one password across many accounts from one
+  source. X-Forwarded-For is honoured only behind a declared trusted proxy
+  (`NORINTH_TRUST_PROXY=1`), so the header cannot be spoofed to dodge the
+  throttle. Schema moves to a namespaced `login_throttle` table (migration 4).
+
 ### Added
 - **SSO via SAML 2.0** (with an Identity & Integrations UI panel showing the SP metadata URL and ACS URL to import into the IdP). Alongside OIDC, organizations can now federate with
   SAML-only identity providers (ADFS, Okta/Entra SAML apps): SP-initiated Web

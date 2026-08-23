@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Response
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 
 from app.dependencies import SESSION_COOKIE, ActorContext, current_actor
 from app.schemas.auth import ChangePasswordRequest, LoginRequest
@@ -18,7 +18,7 @@ from app.services.auth import (
 from app.services.authorization import effective_permissions
 from app.services.bootstrap import using_development_defaults
 from app.storage.audit import record_audit
-from app.storage.login_attempts import clear_attempts, is_locked, register_failure
+from app.storage.login_attempts import clear_attempts, email_subject, ip_subject, is_locked, register_failure
 from app.storage.workflow import (
     get_user_by_email,
     load_platform_user,
@@ -68,19 +68,35 @@ def _actor_profile(actor: ActorContext) -> dict[str, Any]:
     }
 
 
+def client_ip(request: Request) -> str | None:
+    """Source address for throttling. X-Forwarded-For is honoured only when the
+    deployment declares a trusted proxy (NORINTH_TRUST_PROXY=1); otherwise a
+    client could spoof the header to dodge the IP throttle."""
+    if os.getenv("NORINTH_TRUST_PROXY", "0").lower() in {"1", "true", "yes"}:
+        forwarded = request.headers.get("x-forwarded-for")
+        if forwarded:
+            return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else None
+
+
 @router.post("/api/auth/login")
-def login(payload: LoginRequest, response: Response) -> dict[str, Any]:
-    # Throttle credential stuffing / password spraying (audit H-6).
-    if is_locked(payload.email):
+def login(payload: LoginRequest, request: Request, response: Response) -> dict[str, Any]:
+    # Throttle credential stuffing / password spraying per account AND per
+    # source IP (audit H-6 + follow-up: targeted-lockout DoS and cross-account
+    # spraying).
+    account = email_subject(payload.email)
+    source = ip_subject(client_ip(request))
+    if is_locked(account) or is_locked(source):
         raise HTTPException(
             status_code=429,
             detail="Too many failed login attempts. Try again later.",
         )
     user = get_user_by_email(payload.email)
     if user is None or user.get("status") != "active" or not verify_password(payload.password, user.get("password_hash")):
-        register_failure(payload.email)
+        register_failure(account)
+        register_failure(source)
         raise HTTPException(status_code=401, detail="Invalid email or password")
-    clear_attempts(payload.email)
+    clear_attempts(account)
     token = create_session(user["user_ref"])
     _set_session_cookie(response, token)
     record_audit(actor_ref=user["user_ref"], action="auth.login", tenant_id=user.get("tenant_id"))
