@@ -99,10 +99,19 @@ def _0003_saml(connection) -> None:
     ensure_saml_tables(connection)
 
 
+def _0004_login_throttle(connection) -> None:
+    """Per-IP + per-account login throttling table (replaces login_attempts)."""
+    from app.storage.login_attempts import ensure_login_throttle_table
+
+    ensure_login_throttle_table(connection)
+    connection.execute("DROP TABLE IF EXISTS login_attempts")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
     Migration(3, "SAML 2.0 configuration and request state", _0003_saml),
+    Migration(4, "per-IP login throttling", _0004_login_throttle),
 ]
 
 
