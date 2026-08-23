@@ -75,7 +75,6 @@ ASSIGNABLE_ORG_ROLES = [
     "risk_owner",
     "control_owner",
     "governance_reviewer",
-    "enterprise_subscriber",
 ]
 
 # Roles a healthy governance program must keep staffed. The org admin overview

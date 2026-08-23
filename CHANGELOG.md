@@ -6,6 +6,24 @@ to Semantic Versioning once it reaches a tagged release.
 
 ## [Unreleased]
 
+### Changed
+- **Norinth is fully open source.** Root `LICENSE` is Apache-2.0 and covers the
+  platform, SDK and demo apps (the platform's former proprietary license is
+  replaced). `NOTICE` credits Revenant Research. README, platform README,
+  CONTRIBUTING, SECURITY and the SDK README no longer describe an open-core /
+  commercial split. `docs/GTM_STRATEGY.md` is rewritten around the new thesis:
+  undercut the closed, costly governance suites with a free, self-hosted,
+  evidence-first platform installed in ten minutes.
+- **Landing page** is now the project site: "install in ten minutes, never pay
+  for", three get-started paths (one-command installer, Helm, OpenTelemetry),
+  a question-by-question comparison with closed governance suites, and "Talk
+  to the maintainers" in place of the sales funnel. Pricing removed.
+
+### Removed
+- **Enterprise Network** (`/api/network/vendors`, the `enterprise_subscriber`
+  role and `network.read` permission). Cross-organization vendor data only
+  makes sense when one party hosts everyone; it does not in a self-hosted model.
+
 ### Added
 - **Revenant Research design system.** `apps/platform/frontend/src/design/`:
   tokens (`tokens.css`) derived from revenantresearch.com — parchment ground,

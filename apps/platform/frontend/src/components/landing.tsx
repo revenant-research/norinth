@@ -25,10 +25,10 @@ import {
 import styles from "./landing.module.css";
 
 /**
- * Public landing page, structured on docs/GTM_STRATEGY.md:
- *   §1 thesis → hero;  §2 ICP → "Built for";  §3 wedge → "Start with";
- *   §4 motion → "How it works";  §5 positioning → "Why Norinth";
- *   §6 trust program → "Security";  §7 pricing → "Pricing";  §9 proof → pilot CTA.
+ * Project site, structured on docs/GTM_STRATEGY.md (open source, self-hosted):
+ *   §1 thesis → hero + "What you are not paying for";  §4 motion → "Get started";
+ *   §2 ICP → "Built for";  §3 wedge → "Start here";  §5 → "Why Norinth";
+ *   §6 → "Security";  docs;  "Get help" replaces the sales funnel.
  * Visual language follows the Revenant Research identity via src/design.
  */
 
@@ -104,38 +104,34 @@ const POSITIONING = [
 
 const FRAMEWORKS = ["NIST AI RMF 1.0", "ISO/IEC 42001", "EU AI Act", "OWASP LLM Top 10", "OWASP Agentic", "HIPAA", "SOC 2", "CHAI / RUAIH"];
 
-const PLANS = [
+const GET_STARTED = [
   {
-    name: "Open SDK",
-    price: "Free, forever",
-    body: "Apache-2.0 Python SDK and OpenTelemetry ingestion. Run the platform locally to evaluate.",
-    items: ["Fail-open instrumentation", "Auto-instrumented OpenAI and Anthropic clients", "Privacy-safe by default"],
-    cta: "Read the quickstart",
-    href: "#docs",
+    eyebrow: "Laptop or one VM",
+    title: "One command",
+    body: "Generates every secret, starts PostgreSQL and the platform, waits for /health, and prints the URL and your administrator login. The first visit opens the setup wizard.",
+    code: "curl -fsSL https://raw.githubusercontent.com/revenant-research/norinth/main/scripts/install.sh | bash",
   },
   {
-    name: "Team",
-    price: "Self-serve",
-    body: "One platform team getting its AI estate under control.",
-    items: ["Live inventory and shadow-AI discovery", "One framework (NIST AI RMF or ISO 42001)", "Risk register, review queue, release gates", "Up to 10 governed AI systems"],
-    cta: "Start a pilot",
-    href: "#contact",
-    featured: true,
+    eyebrow: "Kubernetes",
+    title: "Helm",
+    body: "Signed image from GHCR, external PostgreSQL or the bundled subchart, ingress and secrets from a values file the installer can write for you.",
+    code: "helm install norinth oci://ghcr.io/revenant-research/charts/norinth \\\n  --set postgres.url=$DATABASE_URL",
   },
   {
-    name: "Enterprise",
-    price: "Per governed AI system",
-    body: "Organizations that answer to regulators, auditors and a board.",
-    items: ["All frameworks, crosswalks and audit packets", "SSO (OIDC, SAML), SCIM, RBAC with separation of duties", "Signed eval evidence, tamper-evident audit, retention and legal hold", "PostgreSQL, HA, residency, SIEM export"],
-    cta: "Book a demo",
-    href: "#contact",
+    eyebrow: "Already on OpenTelemetry",
+    title: "Point your collector at it",
+    body: "GenAI semantic-convention spans are accepted as-is from any collector or LLM gateway. No application code changes.",
+    code: "exporters:\n  otlphttp/norinth:\n    endpoint: https://norinth.internal/v1/otel\n    headers:\n      Authorization: \"Bearer $NORINTH_API_KEY\"",
   },
 ];
 
-const ADDONS = [
-  "Healthcare pack: CHAI model-card intake, RUAIH evidence, 21 CFR Part 11 e-signatures, HIPAA BAA",
-  "EU AI Act pack: FRIA templates, Article 12 logging retention, Article 73 incident timers",
-  "Vendor network: cross-organization AI vendor risk signals",
+const UNDERCUT = [
+  { q: "What does it cost?", them: "Six-figure annual contracts, per seat or per use case.", us: "Nothing. Your infrastructure and a part-time platform engineer." },
+  { q: "Where does my data go?", them: "Their cloud, after a vendor security questionnaire.", us: "Nowhere. It runs in your network; prompt text never leaves by default." },
+  { q: "How does it know what I run?", them: "You fill in an intake form.", us: "Your SDK, gateway or OpenTelemetry pipeline tells it, including the systems nobody registered." },
+  { q: "Can I read the code my evidence depends on?", them: "No.", us: "Every line, including the evidence engine and the audit chain." },
+  { q: "Does it enforce anything?", them: "Dashboards and workflows.", us: "Release gates fail your pipeline; admins cannot approve; evidence must be signed by CI." },
+  { q: "What if the vendor pivots or is acquired?", them: "Your evidence is in their database.", us: "It is in your PostgreSQL." },
 ];
 
 function Section({ id, eyebrow, title, lede, children }: { id: string; eyebrow: string; title: string; lede?: string; children: React.ReactNode }) {
@@ -160,35 +156,36 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
           <span className={styles.brandBy}>Revenant Research</span>
         </div>
         <nav aria-label="Landing" className={styles.nav}>
+          <a href="#start">Get started</a>
           <a href="#how">How it works</a>
           <a href="#capabilities">Platform</a>
-          <a href="#pricing">Pricing</a>
           <a href="#trust">Security</a>
           <a href="#docs">Docs</a>
+          <a href="https://github.com/revenant-research/norinth">GitHub</a>
         </nav>
         <div className={styles.actions}>
           <Button variant="secondary" size="sm" onClick={onClientSignIn}>Sign in</Button>
-          <ButtonLink size="sm" href="#contact">Start a pilot</ButtonLink>
+          <ButtonLink size="sm" href="#start">Install</ButtonLink>
         </div>
       </header>
 
       <Container>
         <div className={styles.hero}>
-          <Eyebrow>Runtime → evidence → assurance</Eyebrow>
-          <Heading level={1}>Know every AI system you run. Prove nothing shipped without review.</Heading>
+          <Eyebrow>Open source · Apache-2.0 · Runs in your network</Eyebrow>
+          <Heading level={1}>AI governance you can install in ten minutes and never pay for.</Heading>
           <Lede>
             Norinth turns the telemetry your AI applications already produce into a live inventory, routes reviews to
-            named owners, blocks releases that lack evidence, and packages the result for the auditor, the regulator and
-            the board.
+            named owners, blocks releases that lack evidence, and produces the audit packet your auditor, regulator and
+            board ask for. Free, open source, self-hosted. The closed governance suites become unnecessary.
           </Lede>
           <div className={styles.actions}>
-            <ButtonLink size="lg" href="#contact">Start a pilot</ButtonLink>
-            <ButtonLink variant="link" href="#how">See how it works</ButtonLink>
+            <ButtonLink size="lg" href="#start">Install it</ButtonLink>
+            <ButtonLink variant="link" href="https://github.com/revenant-research/norinth">Read the source on GitHub</ButtonLink>
           </div>
           <ul className={styles.proof} aria-label="Key facts">
-            <li>Open-source, fail-open SDK</li>
+            <li>No hosted tier, no paid tier, no vendor in the data path</li>
             <li>Evidence from what ran, not a questionnaire</li>
-            <li>Gates need a named human and signed eval evidence</li>
+            <li>Release gates need a named human and CI-signed evidence</li>
           </ul>
         </div>
 
@@ -197,6 +194,39 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
             <Stat key={c.label} label={c.label} value={c.value} note={c.note} />
           ))}
         </StatGroup>
+
+        <Section id="start" eyebrow="Get started" title="Ten minutes, three ways in." lede="Pick the path that matches where you are. Each ends in the same place: the setup wizard, your first ingestion key, and the first AI system appearing in the inventory.">
+          <Grid min="300px" gap={4}>
+            {GET_STARTED.map((g) => (
+              <Card key={g.title} as="article" padding="lg">
+                <Eyebrow>{g.eyebrow}</Eyebrow>
+                <Heading level={3}>{g.title}</Heading>
+                <Text size="sm">{g.body}</Text>
+                <CodeBlock label={`${g.title} command`}>{g.code}</CodeBlock>
+              </Card>
+            ))}
+          </Grid>
+          <Text size="sm">
+            Requirements: Docker (the installer can install it on Ubuntu LTS), 2 CPU, 4 GB RAM, PostgreSQL for production. Python 3.11+ for the SDK.
+          </Text>
+        </Section>
+
+        <Section id="undercut" eyebrow="What you are not paying for" title="The questions you would ask a governance vendor, answered.">
+          <div className={styles.compare} role="table" aria-label="Closed governance suites compared with Norinth">
+            <div className={styles.compareHead} role="row">
+              <span role="columnheader">Question</span>
+              <span role="columnheader">Closed governance suites</span>
+              <span role="columnheader">Norinth</span>
+            </div>
+            {UNDERCUT.map((row) => (
+              <div className={styles.compareRow} role="row" key={row.q}>
+                <strong role="cell">{row.q}</strong>
+                <Text size="sm" role="cell">{row.them}</Text>
+                <Text size="sm" tone="ink" role="cell">{row.us}</Text>
+              </div>
+            ))}
+          </div>
+        </Section>
 
         <Section id="who" eyebrow="Who it is for" title="Built for teams that answer to regulators.">
           <Grid min="320px" gap={4}>
@@ -277,32 +307,7 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
       </div>
 
       <Container>
-        <Section id="pricing" eyebrow="Pricing" title="Pricing you can read." lede="The SDK is free and open. The platform is priced per governed AI system, so cost tracks the estate you are actually governing.">
-          <Grid min="260px" gap={4}>
-            {PLANS.map((p) => (
-              <Card key={p.name} as="article" padding="lg" className={p.featured ? styles.planFeatured : undefined}>
-                <Eyebrow tone={p.featured ? "signal" : "dim"}>{p.name}</Eyebrow>
-                <span className={styles.planPrice}>{p.price}</span>
-                <Text size="sm">{p.body}</Text>
-                <ul className={styles.planItems}>
-                  {p.items.map((i) => (
-                    <li key={i}>{i}</li>
-                  ))}
-                </ul>
-                <div>
-                  <ButtonLink variant={p.featured ? "primary" : "secondary"} size="sm" href={p.href}>{p.cta}</ButtonLink>
-                </div>
-              </Card>
-            ))}
-          </Grid>
-          <ul className={styles.addons} aria-label="Add-ons">
-            {ADDONS.map((a) => (
-              <li key={a}>{a}</li>
-            ))}
-          </ul>
-        </Section>
-
-        <Section id="trust" eyebrow="Security" title="The trust program is the product." lede="Regulated buyers gate on security before features. Every control below is shipped and verified in CI, not promised.">
+        <Section id="trust" eyebrow="Security" title="The trust program is the product." lede="Your AppSec team reviews source, SBOM and CI instead of a vendor questionnaire. Every control below is shipped and verified in CI.">
           <Grid min="300px" gap={4}>
             <Card as="article">
               <Heading level={3} size="lg">Your data</Heading>
@@ -322,8 +327,13 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
           </Grid>
         </Section>
 
-        <Section id="docs" eyebrow="Documentation" title="Read it before you buy it.">
-          <Grid min="260px" gap={4}>
+        <Section id="docs" eyebrow="Documentation" title="Read it before you run it.">
+          <Grid min="240px" gap={4}>
+            <Card as="article">
+              <Heading level={3} size="lg">Operations</Heading>
+              <Text size="sm">Deploy with Docker Compose or Helm, configure every NORINTH_* variable, back up and restore PostgreSQL, upgrade with versioned migrations.</Text>
+              <div><ButtonLink variant="link" href="https://github.com/revenant-research/norinth/blob/main/docs/operations.md">Operations guide</ButtonLink></div>
+            </Card>
             <Card as="article">
               <Heading level={3} size="lg">SDK quickstart</Heading>
               <Text size="sm">Install, initialize, and see your first AI system appear. Auto-instrumentation for OpenAI and Anthropic; explicit events for prompts, deployments, evals, incidents and agent runs.</Text>
@@ -349,9 +359,11 @@ export function LandingPage({ onClientSignIn, onAdminSignIn }: { onClientSignIn:
         <div className={styles.brand}>
           <span className={styles.brandName}>Norinth</span>
           <span className={styles.brandBy}>A Revenant Research company</span>
-          <Text size="sm">The system of record for AI governance evidence.</Text>
+          <Text size="sm">Open-source AI governance from runtime evidence. Apache-2.0.</Text>
         </div>
         <div className={styles.footerLinks}>
+          <ButtonLink variant="link" href="https://github.com/revenant-research/norinth">GitHub</ButtonLink>
+          <ButtonLink variant="link" href="https://github.com/revenant-research/norinth/blob/main/LICENSE">Apache-2.0</ButtonLink>
           <ButtonLink variant="link" href="https://www.revenantresearch.com/">revenantresearch.com</ButtonLink>
           <Button variant="secondary" size="sm" onClick={onClientSignIn}>Sign in</Button>
           <Button variant="link" size="sm" onClick={onAdminSignIn}>Platform administrator access</Button>
@@ -382,12 +394,12 @@ export function ContactSection() {
   return (
     <Section
       id="contact"
-      eyebrow="Next step"
-      title="Start a pilot or book a demo."
-      lede="A pilot takes one service line and one platform team: instrument it, see the inventory and the first gaps within a day, and leave with an audit packet. Tell us what you run and we will reply within one business day."
+      eyebrow="Get help"
+      title="Talk to the maintainers."
+      lede="Stuck on an install, reviewing it for your security team, or want to be a design partner for a healthcare or EU AI Act pack? Tell us what you run. Bugs and feature requests belong on GitHub issues; everything else here."
     >
       {state === "sent" ? (
-        <Callout tone="success" title="Thanks.">We have your request and will reply within one business day.</Callout>
+        <Callout tone="success" title="Thanks.">We have your message and will reply within a few business days.</Callout>
       ) : (
         <form className={styles.contactForm} onSubmit={submit} aria-label="Contact">
           <Stack gap={4}>
@@ -400,10 +412,10 @@ export function ContactSection() {
                 value={form.interest}
                 onChange={(e) => setForm({ ...form, interest: e.target.value })}
                 options={[
-                  { value: "pilot", label: "Start a pilot" },
-                  { value: "demo", label: "Book a demo" },
-                  { value: "pricing", label: "Get enterprise pricing" },
-                  { value: "security", label: "Review security documentation" },
+                  { value: "pilot", label: "Get help with a deployment" },
+                  { value: "demo", label: "Become a design partner" },
+                  { value: "pricing", label: "Ask about implementation services" },
+                  { value: "security", label: "Security review questions" },
                 ]}
               />
             </FormGrid>

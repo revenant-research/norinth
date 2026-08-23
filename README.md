@@ -1,54 +1,80 @@
 # Norinth
 
-Norinth is an AI governance system split into three independently licensed
-components with a clean separation of concerns. The split mirrors the product
-strategy: an **open client** for trust and adoption, a **closed platform** that
-holds the commercial value, and a **test harness** that simulates real traffic.
+**Open-source AI governance from runtime evidence.** Norinth turns the
+telemetry your AI applications already produce into a live inventory, routes
+reviews to named owners, blocks releases that lack evidence, and produces the
+audit packet your auditor, regulator and board ask for.
+
+Everything in this repository is licensed under [Apache-2.0](LICENSE) and is
+built to be run by you, on your infrastructure. There is no hosted version and
+no paid tier. Norinth is maintained by [Revenant Research](https://www.revenantresearch.com/).
+
+## Get started in ten minutes
+
+Laptop or single VM (Docker required):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/revenant-research/norinth/main/scripts/install.sh | bash
+```
+
+The installer generates every secret, starts PostgreSQL and the platform,
+waits for `/health`, and prints the URL and the administrator login. The first
+visit opens the setup wizard: claim the admin account, name your organization,
+create an ingestion key, instrument one application, watch the first event
+arrive.
+
+Instrument a Python service:
+
+```bash
+pip install norinth-logger
+```
+
+```python
+import os
+import norinth_logger as norinth
+
+norinth.init(api_key=os.environ["NORINTH_API_KEY"], endpoint="https://norinth.internal", project="claims")
+# OpenAI and Anthropic clients are auto-instrumented from here.
+```
+
+Already on OpenTelemetry? Point any collector or LLM gateway at
+`POST /v1/otel/traces` with the same key. See
+[`packages/python-sdk/README.md`](packages/python-sdk/README.md) for the SDK and
+[`docs/operations.md`](docs/operations.md) for production deployment
+(Kubernetes, backups, upgrades, configuration reference).
 
 ## Key documents
 
-- [`AUDIT_AND_ROADMAP_2026.md`](AUDIT_AND_ROADMAP_2026.md) — security/architecture audit and phased remediation roadmap.
-- [`docs/GTM_STRATEGY.md`](docs/GTM_STRATEGY.md) — go-to-market strategy (ICP, wedge, motion, pricing, competitive positioning).
-- [`CHANGELOG.md`](CHANGELOG.md) — hardening history.
+- [`docs/operations.md`](docs/operations.md) — deploy, configure, upgrade, back up.
+- [`SECURITY.md`](SECURITY.md) — security model and disclosure.
+- [`AUDIT_AND_ROADMAP_2026.md`](AUDIT_AND_ROADMAP_2026.md) — security/architecture audit and remediation roadmap.
+- [`docs/GTM_STRATEGY.md`](docs/GTM_STRATEGY.md) — adoption strategy (ICP, wedge, open-source motion).
+- [`CHANGELOG.md`](CHANGELOG.md) — change history.
 
-## Repository layout and licensing
+## Repository layout
 
-| Zone | Path | License | Role |
-|---|---|---|---|
-| **Open SDK (client)** | `packages/python-sdk/` | Apache-2.0 | Runs inside a vendor's infra. Captures, redacts, signs, and ships telemetry. Auditable by design. Contains no moat. |
-| **Platform (server)** | `apps/platform/` | Proprietary (commercial) | Ingests telemetry, maps it to governance frameworks, and serves the Enterprise Network. The commercial product. |
-| **Demo apps (harness)** | `demo-apps/` | Apache-2.0 | Simulated customer services for end-to-end testing. Not part of the Platform. |
-
-Each zone has its own `LICENSE` and `README.md`. See:
-- `packages/python-sdk/README.md` and `packages/python-sdk/PROTOCOL.md`
-- `apps/platform/README.md`
-- `demo-apps/README.md`
+| Path | What it is |
+|---|---|
+| `apps/platform/` | The platform: FastAPI server, storage (SQLite for evaluation, PostgreSQL for production), governance engine, React dashboard. |
+| `packages/python-sdk/` | `norinth-logger`: the zero-dependency, fail-open Python SDK and the wire protocol (`PROTOCOL.md`). |
+| `demo-apps/` | Sample services that exercise the platform end to end. |
+| `scripts/` | `install.sh`, backup/restore, seeding and verification helpers. |
+| `docs/` | Operations, threat model, strategy. |
 
 ## The one seam: the wire protocol
 
-The only coupling between the open client and the closed platform is the
-documented HTTP wire format (`POST /v1/events/batch`), specified in
-`packages/python-sdk/PROTOCOL.md`. The boundary rules are enforced by
-convention and verified to hold today:
+The SDK and the platform are separate programs that meet only at a published,
+versioned HTTP protocol (`POST /v1/events/batch`, `POST /v1/otel/traces`),
+specified in `packages/python-sdk/PROTOCOL.md`:
 
-- The **SDK** imports nothing from the Platform.
-- The **Platform** imports nothing from the SDK (`app/schemas/events.py` is its
-  own server-side validator for the protocol, intentionally duplicated rather
-  than imported).
-- The **demo apps** import only the open SDK and their own local observability
-  adapter — never the Platform.
+- The **SDK** imports nothing from the platform.
+- The **platform** imports nothing from the SDK (`app/schemas/events.py` is its
+  own server-side validator, intentionally duplicated rather than imported).
+- The **demo apps** import only the SDK.
 
-This is what makes the SDK safe to open while the Platform stays closed: they
-are separate programs that meet only at a published, versioned protocol.
-
-## Future repo split
-
-Because there are no cross-imports, these zones can be lifted into separate
-repositories with no code changes:
-
-- `norinth-sdk` (public, Apache-2.0) ← `packages/python-sdk/` + the protocol spec
-- `norinth-platform` (private, commercial) ← `apps/platform/`
-- `norinth-demo-apps` (public, Apache-2.0) ← `demo-apps/`
+This keeps the SDK tiny and auditable, lets other languages implement the
+protocol, and lets the platform consume OpenTelemetry GenAI spans from any
+gateway or collector.
 
 ## Run Locally
 

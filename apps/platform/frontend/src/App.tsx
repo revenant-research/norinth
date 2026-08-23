@@ -441,7 +441,6 @@ function roleLabel(user: User): string {
   if (user.permissions.includes("gate.decide")) return "Governance administrator";
   if (user.permissions.includes("risk.accept")) return "Risk owner";
   if (user.permissions.includes("review.decide")) return "Reviewer";
-  if (user.permissions.includes("network.read")) return "Enterprise subscriber";
   return "Member";
 }
 
