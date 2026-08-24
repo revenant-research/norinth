@@ -28,6 +28,7 @@ COSIGN_IDENTITY_RE="${NORINTH_COSIGN_IDENTITY_RE:-^https://github.com/revenant-r
 COSIGN_ISSUER="${NORINTH_COSIGN_ISSUER:-https://token.actions.githubusercontent.com}"
 DIR="${NORINTH_DIR:-$PWD/norinth}"
 PORT="${NORINTH_PORT:-8001}"
+PORT_EXPLICIT=0
 MODE="install"
 FROM_SOURCE=0
 NO_PULL=0
@@ -41,7 +42,7 @@ die()  { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --dir) DIR="$2"; shift 2 ;;
-    --port) PORT="$2"; shift 2 ;;
+    --port) PORT="$2"; PORT_EXPLICIT=1; shift 2 ;;
     --source) FROM_SOURCE=1; shift ;;
     --no-pull) NO_PULL=1; shift ;;
     --no-verify) NO_VERIFY=1; shift ;;
@@ -52,6 +53,14 @@ while [ $# -gt 0 ]; do
     *) die "unknown flag: $1" ;;
   esac
 done
+
+# an existing install keeps the port it was installed on. without this an
+# upgrade of anything not on the default port polls 8001, times out, and reports
+# a failure for an upgrade that worked
+if [ "$PORT_EXPLICIT" = 0 ] && [ -f "$DIR/.env" ]; then
+  existing_port=$(sed -n 's/^NORINTH_PORT=//p' "$DIR/.env" | head -1)
+  [ -n "$existing_port" ] && PORT="$existing_port"
+fi
 
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required. $2"; }
 
