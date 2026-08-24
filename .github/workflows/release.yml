@@ -92,7 +92,7 @@ jobs:
       # failing scan can never leave a vulnerable image at a tag the installer
       # pulls (audit finding H18).
       - id: build
-        uses: docker/build-push-action@v7.3.0
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: apps/platform/Dockerfile
