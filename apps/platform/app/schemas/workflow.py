@@ -83,6 +83,11 @@ class RiskRuleRequest(BaseModel):
     rationale: str = Field(min_length=1)
 
 
+class RetentionPolicyRequest(BaseModel):
+    # null keeps everything; the floor is enforced in storage, where the delete runs
+    retention_days: int | None = None
+
+
 class OwnerPolicyRequest(BaseModel):
     policy_id: str = Field(min_length=1)
     subject_type: str = Field(min_length=1)

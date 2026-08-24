@@ -21,7 +21,9 @@ import time
 from typing import Any
 
 from app.storage import db
+from app.storage.audit import record_audit
 from app.storage.raw_events import connect
+from app.storage.retention import purge_events_older_than, tenants_with_retention_window
 from app.storage.workflow import expire_due_exceptions, refresh_workflow_state
 
 log = logging.getLogger(__name__)
@@ -71,7 +73,34 @@ def _pass() -> dict[str, Any]:
     # recomputes review queue due/overdue/escalated state, which also raises the
     # overdue and escalation notifications
     refresh_workflow_state()
-    return {"skipped": False, "expired_exceptions": expired}
+    return {"skipped": False, "expired_exceptions": expired, "purged_events": _enforce_retention()}
+
+
+def _enforce_retention() -> dict[str, int]:
+    """age out telemetry for organizations that configured a retention window
+
+    only organizations that set one are touched; the deletion is irreversible so
+    it is recorded in the audit log, which is itself never purged
+    """
+    purged: dict[str, int] = {}
+    for policy in tenants_with_retention_window():
+        tenant_id = policy["tenant_id"]
+        try:
+            deleted = purge_events_older_than(policy["retention_days"], tenant_id=tenant_id)
+        except Exception:  # noqa: BLE001 - one organization must not stop the rest
+            log.exception("retention purge failed for tenant %s", tenant_id)
+            continue
+        if deleted:
+            purged[tenant_id] = deleted
+            record_audit(
+                actor_ref="system:retention",
+                action="retention.purge_events",
+                tenant_id=tenant_id,
+                target_type="retention",
+                target_id=str(policy["retention_days"]),
+                detail={"deleted_events": deleted, "retention_days": policy["retention_days"]},
+            )
+    return purged
 
 
 _worker_started = False

@@ -38,13 +38,15 @@ norinth.init(
     environment="prod",
     service="my-service",
 )
-# OpenAI and Anthropic clients are auto-instrumented from here.`;
+
+# records every call your OpenAI and Anthropic clients make
+norinth.autoinstrument()`;
 }
 
 function otelSnippet(endpoint: string): string {
   return `exporters:
   otlphttp/norinth:
-    endpoint: ${endpoint}/v1/otel
+    traces_endpoint: ${endpoint}/v1/otel/traces
     headers:
       Authorization: "Bearer $NORINTH_API_KEY"`;
 }

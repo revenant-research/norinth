@@ -257,6 +257,9 @@ class TenantPurgeRequest(BaseModel):
 
 class RetentionPurgeRequest(BaseModel):
     retention_days: int = Field(ge=1)
+    tenant_id: str | None = None
+    # deleting across every organization at once has to be asked for
+    all_tenants: bool = False
 
 
 @router.get("/api/admin/organizations/{tenant_id}/data")
@@ -290,17 +293,34 @@ def purge_organization(
 
 @router.post("/api/admin/retention/purge-events")
 def purge_old_events(payload: RetentionPurgeRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
-    """age out raw events older than retention window"""
+    """age out raw events older than a retention window, one-off
+
+    organizations normally set their own window (POST /api/retention-policy) and
+    the maintenance worker applies it. this is the operator's manual equivalent,
+    and the scope has to be stated: deleting across every organization at once
+    is not something to arrive at by leaving a field out
+    """
     _guard_super_admin(actor)
-    deleted = purge_events_older_than(payload.retention_days)
+    if bool(payload.tenant_id) == payload.all_tenants:
+        raise HTTPException(
+            status_code=400,
+            detail="specify tenant_id, or set all_tenants true to age out every organization",
+        )
+    deleted = purge_events_older_than(payload.retention_days, tenant_id=payload.tenant_id)
     record_audit(
         actor_ref=actor.user_ref,
         action="retention.purge_events",
+        tenant_id=payload.tenant_id,
         target_type="retention",
         target_id=str(payload.retention_days),
-        detail={"deleted": deleted, "retention_days": payload.retention_days},
+        detail={
+            "deleted": deleted,
+            "retention_days": payload.retention_days,
+            "scope": payload.tenant_id or "all_tenants",
+        },
     )
-    return {"deleted": deleted, "retention_days": payload.retention_days}
+    return {"deleted": deleted, "retention_days": payload.retention_days,
+            "scope": payload.tenant_id or "all_tenants"}
 
 
 @router.get("/api/admin/schema")

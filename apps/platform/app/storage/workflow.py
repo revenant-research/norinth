@@ -53,6 +53,12 @@ def init_workflow() -> None:
             )
             """
         )
+        # what a role may do is deliberately platform-wide, not per-organization:
+        # one install carries one definition of "governance admin" so the same
+        # decision means the same thing in every organization on it. only a
+        # platform administrator can change it, so no organization can widen its
+        # own permissions. an organization that needs different rules runs its
+        # own install. who holds a role is per-organization (role_assignments)
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS role_permissions (

@@ -106,13 +106,13 @@ const GET_STARTED = [
     eyebrow: "Kubernetes",
     title: "Helm",
     body: "Signed image from GHCR, external PostgreSQL or the bundled subchart, ingress and secrets from a values file the installer can write for you.",
-    code: "helm install norinth oci://ghcr.io/revenant-research/charts/norinth \\\n  --set postgres.url=$DATABASE_URL",
+    code: "helm install norinth oci://ghcr.io/revenant-research/charts/norinth \\\n  --set database.url=$DATABASE_URL \\\n  --set secrets.secretKey=$(openssl rand -base64 32) \\\n  --set secrets.superAdminPassword=$ADMIN_PASSWORD",
   },
   {
     eyebrow: "Already on OpenTelemetry",
     title: "Point your collector at it",
     body: "GenAI semantic-convention spans are accepted as-is from any collector or LLM gateway. No application code changes.",
-    code: "exporters:\n  otlphttp/norinth:\n    endpoint: https://norinth.internal/v1/otel\n    headers:\n      Authorization: \"Bearer $NORINTH_API_KEY\"",
+    code: "exporters:\n  otlphttp/norinth:\n    traces_endpoint: https://norinth.internal/v1/otel/traces\n    headers:\n      Authorization: \"Bearer $NORINTH_API_KEY\"",
   },
 ];
 

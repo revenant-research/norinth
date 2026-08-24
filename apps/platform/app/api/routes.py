@@ -12,6 +12,7 @@ from app.schemas.workflow import (
     ExceptionRequest,
     OwnerAssignmentRequest,
     OwnerPolicyRequest,
+    RetentionPolicyRequest,
     ReviewQueuePolicyRequest,
     RiskRuleRequest,
 )
@@ -74,6 +75,7 @@ from app.storage.governance_policy import upsert_control_definition, upsert_risk
 from app.storage.incidents import load_incident, set_incident_status
 from app.storage.intake import intake_submitter
 from app.storage.raw_events import connect, count_scoped_events, list_events, list_scopes
+from app.storage.retention import MIN_RETENTION_DAYS, retention_days_for, set_retention_days
 from app.storage.workflow import (
     assign_owner,
     create_exception,
@@ -271,6 +273,35 @@ def configure_risk_rule(payload: RiskRuleRequest, actor: ActorContext = Depends(
         raise_forbidden(error)
     tenant_id = _require_tenant_for_config(actor)
     return {"risk_rule": upsert_risk_rule(payload.model_dump(), tenant_id)}
+
+
+@router.get("/api/retention-policy")
+def retention_policy(actor: ActorContext = Depends(current_actor)):
+    tenant_id = _require_tenant_for_config(actor)
+    return {"tenant_id": tenant_id, "retention_days": retention_days_for(tenant_id),
+            "minimum_retention_days": MIN_RETENTION_DAYS}
+
+
+@router.post("/api/retention-policy")
+def configure_retention_policy(payload: RetentionPolicyRequest, actor: ActorContext = Depends(current_actor)):
+    """set how long this organization keeps raw telemetry
+
+    the maintenance worker deletes raw events past the window; derived
+    governance records and the audit log are kept. null keeps everything
+    """
+    try:
+        require_config_write(actor)
+    except AuthorizationError as error:
+        raise_forbidden(error)
+    tenant_id = _require_tenant_for_config(actor)
+    try:
+        policy = set_retention_days(tenant_id, payload.retention_days)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    record_audit(actor_ref=actor.user_ref, action="retention.configure", tenant_id=tenant_id,
+                 target_type="retention", target_id=tenant_id,
+                 detail={"retention_days": payload.retention_days})
+    return {"retention_policy": policy}
 
 
 @router.get("/api/owner-policies")

@@ -89,13 +89,60 @@ def purge_tenant_data(tenant_id: str) -> dict[str, int]:
     return counts
 
 
-def purge_events_older_than(retention_days: int) -> int:
+def purge_events_older_than(retention_days: int, tenant_id: str | None = None) -> int:
     """delete raw sdk events older than the retention window, returning the count;
-    derived governance entities are retained, only the raw stream is aged out"""
+    derived governance entities are retained, only the raw stream is aged out
+
+    scoped to one organization when tenant_id is given; without it every
+    organization's events are aged out, which is only ever what a platform
+    operator running a single-tenant install wants
+    """
     cutoff = (datetime.now(UTC) - timedelta(days=retention_days)).isoformat()
     with connect() as connection:
-        cur = connection.execute("DELETE FROM sdk_events WHERE timestamp < ?", (cutoff,))
+        if tenant_id is None:
+            cur = connection.execute("DELETE FROM sdk_events WHERE timestamp < ?", (cutoff,))
+        else:
+            cur = connection.execute(
+                "DELETE FROM sdk_events WHERE timestamp < ? AND tenant_id = ?", (cutoff, tenant_id)
+            )
         return cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+
+
+# a window this short is almost always a typo (days vs hours) and the deletion
+# cannot be undone, so it is rejected rather than honoured
+MIN_RETENTION_DAYS = 7
+
+
+def set_retention_days(tenant_id: str, retention_days: int | None) -> dict[str, Any]:
+    """set or clear an organization's retention window; None keeps everything"""
+    if retention_days is not None and retention_days < MIN_RETENTION_DAYS:
+        raise ValueError(f"retention_days must be at least {MIN_RETENTION_DAYS}, or null to keep everything")
+    with connect() as connection:
+        cur = connection.execute(
+            "UPDATE organizations SET retention_days = ?, updated_at = datetime('now') WHERE tenant_id = ?",
+            (retention_days, tenant_id),
+        )
+        if not cur.rowcount:
+            raise ValueError("organization not found")
+    return {"tenant_id": tenant_id, "retention_days": retention_days}
+
+
+def retention_days_for(tenant_id: str) -> int | None:
+    with connect() as connection:
+        row = connection.execute(
+            "SELECT retention_days FROM organizations WHERE tenant_id = ?", (tenant_id,)
+        ).fetchone()
+    return None if row is None or row["retention_days"] is None else int(row["retention_days"])
+
+
+def tenants_with_retention_window() -> list[dict[str, Any]]:
+    """organizations that have opted into ageing their telemetry out"""
+    with connect() as connection:
+        rows = connection.execute(
+            "SELECT tenant_id, retention_days FROM organizations "
+            "WHERE retention_days IS NOT NULL AND status = 'active'"
+        ).fetchall()
+    return [{"tenant_id": row["tenant_id"], "retention_days": int(row["retention_days"])} for row in rows]
 
 
 def tenant_data_summary(tenant_id: str) -> dict[str, Any]:
