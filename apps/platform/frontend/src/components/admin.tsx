@@ -12,7 +12,7 @@ const AUTONOMY = ["assistive", "supervised", "autonomous"];
 
 // deep-link handoff from org overview into people & access without threading
 // router state through both consoles: overview stashes the role, team console
-// reads it on mount, pre-selects the role and scrolls to the assign form.
+// reads it on mount, pre-selects the role and scrolls to the assign form
 // consumed once so a later manual visit starts clean
 let pendingRoleToStaff: string | null = null;
 

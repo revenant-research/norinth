@@ -1,8 +1,8 @@
-"""per-tenant openid connect (sso) configuration and login-flow state.
+"""per-tenant openid connect (sso) configuration and login-flow state
 
 stores each org's oidc provider settings and the short-lived state for in-flight
 authorization-code logins (state + nonce + pkce verifier), protecting the flow
-against csrf, replay, and code interception.
+against csrf, replay, and code interception
 """
 
 from __future__ import annotations

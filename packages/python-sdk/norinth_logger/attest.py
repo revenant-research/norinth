@@ -19,9 +19,9 @@ register the public half under Identity & Integrations -> Evidence attestation):
 
     python -m norinth_logger.attest keygen
 
-Requires the optional ``cryptography`` package (``pip install norinth-logger[attest]``).
+Requires the optional ``cryptography`` package (``pip install norinth-logger[attest]``)
 
-The signed statement must stay byte-identical to what the platform verifies.
+The signed statement must stay byte-identical to what the platform verifies
 """
 
 from __future__ import annotations

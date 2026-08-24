@@ -1,9 +1,9 @@
-"""agent registry and runtime posture derivation.
+"""agent registry and runtime posture derivation
 
 registry: each agent has an owner, autonomy level, tool allow-list, and a
 capability profile (untrusted input, sensitive data, external action). posture:
 observed agent.run / tool.call telemetry is reconciled against the registry to
-derive risk findings, which flow into the risk register like any other risk.
+derive risk findings, which flow into the risk register like any other risk
 """
 
 from __future__ import annotations

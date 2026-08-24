@@ -1,8 +1,8 @@
-"""per-tenant scim 2.0 provisioning tokens.
+"""per-tenant scim 2.0 provisioning tokens
 
 an idp calls the scim endpoints with a bearer token to provision/deprovision
 users. each token is bound to one org; only its sha-256 hash is stored and the
-plaintext is shown once at creation, like ingestion keys.
+plaintext is shown once at creation, like ingestion keys
 """
 
 from __future__ import annotations

@@ -3,13 +3,13 @@
 ``emit`` is called from request handlers and storage routines with the caller's
 connection and only writes outbox rows. ``deliver_pending`` runs in the
 background worker (``start_worker``) and in tests; it sends email over smtp and
-posts signed webhooks.
+posts signed webhooks
 
 env config:
   NORINTH_SMTP_HOST, NORINTH_SMTP_PORT (587), NORINTH_SMTP_USER,
   NORINTH_SMTP_PASSWORD, NORINTH_SMTP_FROM, NORINTH_SMTP_STARTTLS (1)
   NORINTH_PUBLIC_BASE_URL -- builds links in emails
-  NORINTH_NOTIFICATIONS_WORKER=0 disables the worker thread (tests).
+  NORINTH_NOTIFICATIONS_WORKER=0 disables the worker thread (tests)
 without smtp configured, email rows are recorded with status
 ``skipped_no_smtp`` so an admin can see what would have been sent
 """

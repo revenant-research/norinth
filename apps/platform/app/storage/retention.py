@@ -1,8 +1,8 @@
-"""data retention and right-to-erasure.
+"""data retention and right-to-erasure
 
-purge a tenant's data on offboarding and enforce a retention window on telemetry.
+purge a tenant's data on offboarding and enforce a retention window on telemetry
 audit_logs is intentionally not purged: it is retained under records-retention,
-and deleting rows would break the hash chain that proves its integrity.
+and deleting rows would break the hash chain that proves its integrity
 """
 
 from __future__ import annotations
@@ -60,10 +60,10 @@ _TENANT_SCOPED_TABLES = (
 
 
 def purge_tenant_data(tenant_id: str) -> dict[str, int]:
-    """permanently delete all data for a tenant, returning per-table row counts.
+    """permanently delete all data for a tenant, returning per-table row counts
 
     also removes sessions and login-attempt records for the tenant's users, then
-    the organization record; the audit log is preserved.
+    the organization record; the audit log is preserved
     """
     counts: dict[str, int] = {}
     with connect() as connection:

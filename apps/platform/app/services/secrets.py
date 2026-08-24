@@ -2,13 +2,13 @@
 
 secrets the platform must keep recoverable (today: each tenant's oidc client
 secret) are encrypted at rest with aes-256-gcm under a master key from the env,
-so a db dump or backup does not yield usable credentials.
+so a db dump or backup does not yield usable credentials
 
 key material:
   NORINTH_SECRET_KEY   base64 (urlsafe) 32-byte key. generate with
-                       `python -c "import os,base64;print(base64.urlsafe_b64encode(os.urandom(32)).decode())"`.
+                       `python -c "import os,base64;print(base64.urlsafe_b64encode(os.urandom(32)).decode())"`
                        in production inject from a kms/secret manager; envelope-
-                       ready: swap `master_key()` for a kms data key.
+                       ready: swap `master_key()` for a kms data key
 
 stored value format: ``enc:v1:<base64 nonce>:<base64 ciphertext+tag>``. values
 without the prefix are legacy plaintext, re-encrypted next write. with no key in

@@ -1,9 +1,9 @@
-"""notification outbox, webhooks and invites.
+"""notification outbox, webhooks and invites
 
 no request path talks to smtp or a webhook url: events are written to
 notification_outbox in the caller's transaction and a background worker delivers
 them with retries, so a slow mail server can't slow governance actions and
-nothing is lost on failure. every row keeps its status and last error.
+nothing is lost on failure. every row keeps its status and last error
 """
 
 from __future__ import annotations
@@ -131,12 +131,12 @@ def ensure_claim_columns(connection) -> None:
 
 
 def claim_pending(limit: int = 50, *, worker_id: str) -> list[dict[str, Any]]:
-    """atomically claim up to limit due rows for this worker.
+    """atomically claim up to limit due rows for this worker
 
     each replica runs a delivery worker; the claim is one update flipping status
     to 'delivering' for still-'pending' rows, so two replicas can't both deliver
     a row. rows claimed by a dead worker return to 'pending' after
-    STALE_CLAIM_MINUTES.
+    STALE_CLAIM_MINUTES
     """
     now_dt = datetime.now(UTC)
     now = now_dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -149,7 +149,7 @@ def claim_pending(limit: int = 50, *, worker_id: str) -> list[dict[str, Any]]:
         )
         # on postgres, FOR UPDATE SKIP LOCKED makes this a work queue: a selector
         # skips rows another replica locked, so two workers never select the same
-        # batch. sqlite serializes writers and doesn't support the clause.
+        # batch. sqlite serializes writers and doesn't support the clause
         skip_locked = " FOR UPDATE SKIP LOCKED" if is_postgres() else ""
         connection.execute(
             f"""
@@ -205,7 +205,7 @@ def list_outbox(tenant_id: str, limit: int = 100) -> list[dict[str, Any]]:
 
 def mask_url(url: str) -> str:
     """hide a webhook url's path; a slack incoming-webhook carries its auth
-    token there, so exposing it leaks a bearer secret. keep scheme and host only."""
+    token there, so exposing it leaks a bearer secret. keep scheme and host only"""
     try:
         parsed = urllib.parse.urlsplit(url)
     except ValueError:

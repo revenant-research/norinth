@@ -1,9 +1,9 @@
-"""failed-login throttling, per account and per source ip.
+"""failed-login throttling, per account and per source ip
 
 per-account lockout alone misses two cases: deliberate targeted lockout, and
 password spraying across many accounts from one source. the ip threshold is
 higher so a shared office nat isn't blocked by a few typos. subjects are
-namespaced strings ("email:<addr>", "ip:<addr>") in one table.
+namespaced strings ("email:<addr>", "ip:<addr>") in one table
 """
 
 from __future__ import annotations
@@ -71,11 +71,11 @@ def is_locked(subject: str) -> bool:
 
 
 def register_failure(subject: str) -> None:
-    """record one failed attempt, atomic so concurrent failures aren't lost.
+    """record one failed attempt, atomic so concurrent failures aren't lost
 
     the increment is a single upsert; a separate guarded update first resets an
     expired, unlocked window. both compare iso timestamps, which sort
-    lexicographically since every value is utc in the same format.
+    lexicographically since every value is utc in the same format
     """
     threshold, window_minutes, lockout_minutes = _policy(subject)
     now = _now()

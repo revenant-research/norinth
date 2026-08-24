@@ -1,9 +1,9 @@
-"""per-tenant ingestion api keys.
+"""per-tenant ingestion api keys
 
 each key is bound to one tenant; the ingestion endpoint derives the tenant from
 the presented key, not from a client-supplied tenant_id in the payload. only a
 sha-256 hash of the token is stored and the plaintext is shown once at creation,
-so a db read never yields a usable key.
+so a db read never yields a usable key
 """
 
 from __future__ import annotations

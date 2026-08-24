@@ -13,7 +13,7 @@ from . import db
 # on). with NORINTH_ENCRYPT_RAW_EVENTS=1 the raw_event column is encrypted at
 # rest while the extracted governance columns stay queryable in plaintext. reads
 # decrypt transparently and legacy plaintext rows pass through, so the flag can
-# be turned on without a migration.
+# be turned on without a migration
 _RAW_EVENT_AAD = "sdk_event"
 
 
@@ -95,8 +95,8 @@ def init_storage() -> None:
             "ON sdk_events(project, environment, application_name, tenant_id)"
         )
         # idempotency: a retried batch re-sends the same (trace_id, span_id)
-        # spans; a unique index plus INSERT OR IGNORE prevents double-counting.
-        # guarded because a legacy db may already hold duplicates.
+        # spans; a unique index plus INSERT OR IGNORE prevents double-counting
+        # guarded because a legacy db may already hold duplicates
         try:
             connection.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_sdk_events_span_tenant "
@@ -107,10 +107,10 @@ def init_storage() -> None:
 
 
 def insert_events(events: list[dict[str, Any]]) -> int:
-    """insert events idempotently, returning the number newly accepted.
+    """insert events idempotently, returning the number newly accepted
 
     INSERT OR IGNORE against the unique (trace_id, span_id) index so a retried
-    batch doesn't double-count; the return is the count inserted, not batch size.
+    batch doesn't double-count; the return is the count inserted, not batch size
     """
     rows = [event_to_row(event) for event in events]
     with connect() as connection:
@@ -275,10 +275,10 @@ def aggregate_traces(
     limit: int = 200,
     offset: int = 0,
 ) -> tuple[list[dict[str, Any]], int]:
-    """trace list with per-trace event counts, grouped and paged in sql.
+    """trace list with per-trace event counts, grouped and paged in sql
 
     returns (rows, total_distinct_traces) so the route never materializes every
-    event to count and slice in python."""
+    event to count and slice in python"""
     where, params = _event_filters(tenant_id, project, environment, None)
     with connect() as connection:
         total_row = connection.execute(

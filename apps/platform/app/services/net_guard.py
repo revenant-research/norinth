@@ -4,7 +4,7 @@ webhook urls and oidc endpoints are configured by org admins and then fetched by
 the server, so a malicious or compromised org admin could point them at internal
 services or the cloud metadata endpoint (169.254.169.254). before any such fetch
 we resolve the host and refuse loopback, private, link-local, reserved and
-multicast addresses.
+multicast addresses
 
 set NORINTH_ALLOW_PRIVATE_EGRESS=1 to disable the check (local dev where a
 webhook receiver runs on 127.0.0.1)

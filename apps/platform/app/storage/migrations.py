@@ -1,4 +1,4 @@
-"""versioned schema migrations.
+"""versioned schema migrations
 
 * schema_migrations records every applied version with a timestamp
 * each migration runs once, in its own transaction, in version order
@@ -8,7 +8,7 @@
   identically on sqlite and postgres
 
 keep migrations additive and backward-compatible (expand/contract): add
-columns/tables in one release, remove in a later one.
+columns/tables in one release, remove in a later one
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from .raw_events import connect
 
 # session-scoped advisory lock so only one replica migrates at a time; without
 # it, two replicas booting against an empty postgres both CREATE TABLE and one
-# crashes on a duplicate-object error. sqlite is single-process, so it's a no-op.
+# crashes on a duplicate-object error. sqlite is single-process, so it's a no-op
 _MIGRATION_LOCK_KEY = 4242000042420002
 
 
@@ -54,15 +54,15 @@ class Migration:
 
 
 def _baseline(connection) -> None:
-    """baseline schema: every storage module's idempotent initializer.
+    """baseline schema: every storage module's idempotent initializer
 
     runs outside the passed connection since the init functions open their own;
-    all CREATE IF NOT EXISTS / guarded ALTERs, safe on fresh and existing dbs.
+    all CREATE IF NOT EXISTS / guarded ALTERs, safe on fresh and existing dbs
 
     warning: the baseline is recorded once per db, so editing an init_* to add a
     column or table won't reach dbs that already recorded migration 1 - it would
     apply only to fresh installs. every schema change after the baseline must be
-    a new Migration(...) appended to MIGRATIONS, never an edit to an init_*.
+    a new Migration(...) appended to MIGRATIONS, never an edit to an init_*
     """
     from app.storage.agents import init_agents
     from app.storage.audit import init_audit
@@ -113,7 +113,7 @@ def _0002_event_ingest_indexes(connection) -> None:
 
 
 def _0003_saml(connection) -> None:
-    """SAML 2.0 SSO: per-tenant IdP configuration and in-flight request ids."""
+    """SAML 2.0 SSO: per-tenant IdP configuration and in-flight request ids"""
     from app.storage.saml import ensure_saml_tables
 
     ensure_saml_tables(connection)
@@ -128,28 +128,28 @@ def _0004_login_throttle(connection) -> None:
 
 
 def _0005_attestation_keys(connection) -> None:
-    """Per-tenant Ed25519 public keys for signed eval evidence."""
+    """Per-tenant Ed25519 public keys for signed eval evidence"""
     from app.storage.attestation_keys import ensure_attestation_tables
 
     ensure_attestation_tables(connection)
 
 
 def _0006_leads(connection) -> None:
-    """Inbound pilot/demo requests captured by the public landing page."""
+    """Inbound pilot/demo requests captured by the public landing page"""
     from app.storage.leads import ensure_leads_table
 
     ensure_leads_table(connection)
 
 
 def _0007_notifications(connection) -> None:
-    """Notification outbox, webhooks, invites."""
+    """Notification outbox, webhooks, invites"""
     from app.storage.notifications import ensure_notification_tables
 
     ensure_notification_tables(connection)
 
 
 def _0008_outbox_claims(connection) -> None:
-    """Delivery claim columns so multiple replicas never deliver the same row."""
+    """Delivery claim columns so multiple replicas never deliver the same row"""
     from app.storage.notifications import ensure_claim_columns
 
     ensure_claim_columns(connection)
@@ -297,10 +297,10 @@ def pending_migrations() -> list[Migration]:
 
 
 def run_migrations() -> list[int]:
-    """apply all pending migrations in order, returning the versions applied.
+    """apply all pending migrations in order, returning the versions applied
 
     guarded by a cross-replica advisory lock: a replica that loses the race
-    waits, then re-reads schema_migrations and finds nothing pending.
+    waits, then re-reads schema_migrations and finds nothing pending
     """
     with _migration_lock():
         return _apply_pending()

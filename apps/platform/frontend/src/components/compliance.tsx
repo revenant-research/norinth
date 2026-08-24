@@ -7,7 +7,7 @@ import { useResource } from "./useResource";
 
 // per-framework coverage and the audit-evidence packet. coverage shows, for
 // each standard the control library cites, how many mapped requirements are
-// satisfied by passing or waived evidence and which are still outstanding.
+// satisfied by passing or waived evidence and which are still outstanding
 // the packet is downloaded as json from the browser
 
 export type FrameworkCoverage = {

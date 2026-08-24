@@ -205,7 +205,7 @@ def upsert_deployment_gate(connection, version: dict[str, Any]) -> None:
     # approves or rejects via the guarded /approve|/reject endpoints; an existing
     # human decision is preserved. approvability (linked prompt + passing eval, no
     # open blockers) is enforced at approval time by set_deployment_gate_status;
-    # the reasons below tell the reviewer what is still outstanding.
+    # the reasons below tell the reviewer what is still outstanding
     gate_status = current_status if current_status in {"approved", "rejected"} else "pending_review"
     reason_parts = []
     if evidence["risk_count"]:
@@ -341,7 +341,7 @@ def count_passing_eval_evidence(connection, params: dict[str, Any]) -> int:
             continue
         # the eval must be about this release: prefer artifact_ref (what the
         # attestation signs), fall back to prompt_version. neither or a mismatch
-        # doesn't count, so an earlier version's evals can't pass an untested build.
+        # doesn't count, so an earlier version's evals can't pass an untested build
         eval_artifact = attrs.get("artifact_ref")
         eval_prompt = attrs.get("prompt_version")
         if eval_artifact is not None:

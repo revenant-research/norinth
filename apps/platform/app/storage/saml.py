@@ -1,7 +1,7 @@
-"""per-tenant saml 2.0 configuration and in-flight request state.
+"""per-tenant saml 2.0 configuration and in-flight request state
 
 the platform is the service provider; the idp's signing certificate is stored
-so assertions can be verified.
+so assertions can be verified
 """
 
 from __future__ import annotations

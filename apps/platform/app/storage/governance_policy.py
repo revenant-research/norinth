@@ -7,7 +7,7 @@ from . import db
 from .entities import as_object, decode_json, encode_json, entity_id
 from .raw_events import connect, deserialize_raw_event
 
-# whole-word agentic terms; substring matching false-positives (e.g.
+# whole-word agentic terms; substring matching false-positives (e.g
 # "stool-sample-tracker" matching "tool"), and this is secondary to real
 # tool.call telemetry
 _AGENTIC_TERMS = re.compile(r"\b(agent|agents|agentic|tool|tools|orchestrat\w+)\b")
@@ -159,10 +159,10 @@ def _preserve_decided_status(
     computed_status: str,
     computed_statuses: set[str],
 ) -> str:
-    """status to write, preserving a human decision.
+    """status to write, preserving a human decision
 
     if the existing status is not one of the recomputed values it was set by a
-    reviewer (accepted, waived, ...) and is kept; otherwise use the computed one.
+    reviewer (accepted, waived, ...) and is kept; otherwise use the computed one
     """
     existing = connection.execute(
         f"SELECT status FROM {table} WHERE {id_column} = ?", (row_id,)

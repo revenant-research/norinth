@@ -23,7 +23,7 @@ _RATIONALE_PLACEHOLDERS = {
 _MIN_RATIONALE_CHARS = 12
 
 # fixed labels the dashboard prepends to each packet line; only these are
-# stripped before the content check, so a colon in a reviewer's own prose (e.g.
+# stripped before the content check, so a colon in a reviewer's own prose (e.g
 # "evidence bound to sha256:abc") isn't mistaken for a scaffold label
 _SCAFFOLD_LABELS = {
     "evidence reviewed",

@@ -1,4 +1,4 @@
-"""database backend abstraction: sqlite (default) or postgres.
+"""database backend abstraction: sqlite (default) or postgres
 
 set NORINTH_DATABASE_URL=postgresql://... to run on postgres; unset keeps
 zero-config sqlite for local dev. the storage layer is written against the
@@ -14,7 +14,7 @@ translates sqlite idioms at execution time:
     PRAGMA ...      -> no-op
     BEGIN IMMEDIATE -> BEGIN
 
-rows are dict-like on both backends (row["col"], dict(row)).
+rows are dict-like on both backends (row["col"], dict(row))
 """
 
 from __future__ import annotations
@@ -144,11 +144,11 @@ class _Cursor:
 
 
 class PostgresConnection:
-    """psycopg connection with the sqlite3-style interface and sql translation.
+    """psycopg connection with the sqlite3-style interface and sql translation
 
     the raw connection is autocommit; transactions are explicit. `with connect()
     as c:` issues BEGIN on entry and COMMIT/ROLLBACK on exit, and code that runs
-    BEGIN IMMEDIATE ... COMMIT itself works since those pass straight through.
+    BEGIN IMMEDIATE ... COMMIT itself works since those pass straight through
     """
 
     def __init__(self, raw):
@@ -171,9 +171,9 @@ class PostgresConnection:
             cursor.execute(translated, params if params else None)
             return _Cursor(cursor)
         # sqlite has statement-level atomicity: a failed statement doesn't abort
-        # the transaction, which the idempotent try/except migrations rely on.
+        # the transaction, which the idempotent try/except migrations rely on
         # postgres aborts the whole transaction on any error, so wrap each
-        # statement in a savepoint and roll back to it on failure.
+        # statement in a savepoint and roll back to it on failure
         self._raw.execute("SAVEPOINT norinth_stmt")
         try:
             cursor.execute(translated, params if params else None)
@@ -273,12 +273,12 @@ _AUDIT_LOCK_KEY = 4242000042420001
 
 
 def serialize_writer(connection) -> None:
-    """serialize concurrent writers of an append-only chain across replicas.
+    """serialize concurrent writers of an append-only chain across replicas
 
     on postgres, BEGIN IMMEDIATE's write lock is lost in translation to BEGIN,
     so two workers could read the same tail and fork the chain; a txn-scoped
     advisory lock restores single-writer ordering, released at COMMIT. on sqlite
-    the caller's BEGIN IMMEDIATE already holds the write lock.
+    the caller's BEGIN IMMEDIATE already holds the write lock
     """
     if is_postgres():
         connection.execute(f"SELECT pg_advisory_xact_lock({_AUDIT_LOCK_KEY})")

@@ -1,9 +1,9 @@
-"""append-only, tamper-evident audit log.
+"""append-only, tamper-evident audit log
 
 each entry carries a hash chaining it to the previous
 (row_hash = SHA-256(prev_hash || canonical(entry))), so any insertion, deletion,
 reordering, or field change breaks the chain and is caught by
-verify_audit_chain().
+verify_audit_chain()
 """
 
 from __future__ import annotations
@@ -94,10 +94,10 @@ def record_audit(
     target_id: str | None = None,
     detail: dict[str, Any] | None = None,
 ) -> None:
-    """append a tamper-evident audit entry, chained to the prior one.
+    """append a tamper-evident audit entry, chained to the prior one
 
     the last-hash read and the insert run in one IMMEDIATE transaction so
-    concurrent writes can't fork the chain; append-only, no update path.
+    concurrent writes can't fork the chain; append-only, no update path
     """
     detail_json = encode_json(detail) if detail is not None else None
     connection = connect()
@@ -126,12 +126,12 @@ def record_audit(
 
 
 def verify_audit_chain(*, tenant_id: str | None = None) -> dict[str, Any]:
-    """recompute the hash chain and report integrity.
+    """recompute the hash chain and report integrity
 
     returns {ok, entries, broken_at}; broken_at is the first entry whose hash or
     prev-link doesn't match a recomputation. the chain is global (ordered by id);
     tenant_id is accepted for symmetry but a per-tenant view can't prove nothing
-    was removed, so verification always covers the whole chain.
+    was removed, so verification always covers the whole chain
     """
     with connect() as connection:
         rows = connection.execute(

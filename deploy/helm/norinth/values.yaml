@@ -1,4 +1,4 @@
-# Norinth Helm values. The platform is stateless; all state is in PostgreSQL.
+# Norinth Helm values. The platform is stateless; all state is in PostgreSQL
 
 image:
   repository: ghcr.io/revenant-research/norinth
@@ -10,7 +10,7 @@ replicaCount: 2
 
 # --- Database -----------------------------------------------------------------
 # Bring your own PostgreSQL (recommended). Provide the URL directly, or via an
-# existing Secret holding the NORINTH_DATABASE_URL key.
+# existing Secret holding the NORINTH_DATABASE_URL key
 database:
   url: ""                       # postgresql://norinth:password@host:5432/norinth
   existingSecret: ""            # name of a Secret with key NORINTH_DATABASE_URL
@@ -18,7 +18,7 @@ database:
 
 # --- Secrets --------------------------------------------------------------------
 # Either set values here (rendered into a chart-managed Secret) or point at an
-# existing Secret with keys NORINTH_SECRET_KEY and NORINTH_SUPER_ADMIN_PASSWORD.
+# existing Secret with keys NORINTH_SECRET_KEY and NORINTH_SUPER_ADMIN_PASSWORD
 secrets:
   existingSecret: ""
   secretKey: ""                 # 32-byte base64; generate: openssl rand -base64 32
@@ -33,7 +33,7 @@ config:
   sessionTtlHours: "12"
   extraEnv: []                  # - {name: NORINTH_LOGIN_IP_THRESHOLD, value: "100"}
   # Email for invites and notifications. Put the password in secrets.existingSecret
-  # under NORINTH_SMTP_PASSWORD or pass it via extraEnv from your own Secret.
+  # under NORINTH_SMTP_PASSWORD or pass it via extraEnv from your own Secret
   smtp:
     host: ""
     port: "587"

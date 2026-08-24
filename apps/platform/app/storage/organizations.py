@@ -73,7 +73,7 @@ def organization_is_active(tenant_id: str | None) -> bool:
 
 
 def organization_is_suspended(tenant_id: str | None) -> bool:
-    """true only when an org row exists and is not active; a missing row (e.g.
+    """true only when an org row exists and is not active; a missing row (e.g
     the dev tenant) is not suspended, the ingestion key is the authority there"""
     if not tenant_id:
         return False

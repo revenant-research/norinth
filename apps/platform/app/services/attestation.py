@@ -3,7 +3,7 @@
 the statement format is the contract between the signer (CI via the SDK's
 ``norinth_logger.attest``) and the platform. duplicated on both sides rather than
 imported across the SDK/platform boundary, like the wire schema;
-``tests/test_evidence_attestation.py`` pins both to the same bytes.
+``tests/test_evidence_attestation.py`` pins both to the same bytes
 
 statement v1 = canonical json (sorted keys, no whitespace, ascii). tenant,
 application, workflow, trace and span are included so a signature can't be

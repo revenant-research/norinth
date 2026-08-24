@@ -27,7 +27,7 @@ def _messages(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
 
 
 def instrument_openai(client) -> None:
-    # Responses API (sync + async).
+    # Responses API (sync + async)
     try:
         from openai.resources.responses.responses import Responses
 
@@ -83,7 +83,7 @@ def instrument_openai(client) -> None:
 
 
 def instrument_anthropic(client) -> None:
-    # Messages API (sync + async).
+    # Messages API (sync + async)
     try:
         from anthropic.resources.messages.messages import Messages
 

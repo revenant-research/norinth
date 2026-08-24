@@ -1,10 +1,10 @@
-"""per-tenant evidence attestation keys.
+"""per-tenant evidence attestation keys
 
 an eval.result is client-authored: whoever holds an ingestion key can send
 passed: true. attestation binds passing evals to a CI identity: the org
 registers an Ed25519 public key its CI uses to sign eval results, verified at
 ingestion. once a tenant has an active key, unattested evals no longer satisfy
-its gates. only public keys are stored.
+its gates. only public keys are stored
 """
 
 from __future__ import annotations

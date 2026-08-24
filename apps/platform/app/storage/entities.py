@@ -184,7 +184,7 @@ def process_events(events: list[dict[str, Any]]) -> None:
     # ingest two batches could each read the old set and the second write clobber
     # the first, dropping a provider/model. run the batch in one IMMEDIATE
     # transaction so a concurrent ingest waits for the write lock, then reads the
-    # committed state, making the merge safe.
+    # committed state, making the merge safe
     connection = connect()
     connection.isolation_level = None
     try:

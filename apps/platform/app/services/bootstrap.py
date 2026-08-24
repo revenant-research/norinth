@@ -35,7 +35,7 @@ def seed_dev_ingestion_key_if_dev() -> None:
 def seed_super_admin() -> None:
     """create a platform super admin on boot if none exists
 
-    root of the provisioning chain (super admin -> orgs -> org admins -> users).
+    root of the provisioning chain (super admin -> orgs -> org admins -> users)
     credentials come from the env, falling back to dev defaults that force a
     password change on first login
     """

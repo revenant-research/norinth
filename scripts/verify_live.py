@@ -7,11 +7,11 @@ from http.cookiejar import CookieJar
 from typing import Any
 from urllib import error, request
 
-# live check of identity, multi-tenancy, rbac, intake, and decision paths.
+# live check of identity, multi-tenancy, rbac, intake, and decision paths
 # exercises provisioning (super admin -> org -> org admin -> user -> role) and the
 # governance workflow (intake -> routed review -> decision), and asserts that
-# unauthenticated/unauthorized calls are rejected and maker-checker is enforced.
-# deployment-gate and incident flows are telemetry-driven and not covered here.
+# unauthenticated/unauthorized calls are rejected and maker-checker is enforced
+# deployment-gate and incident flows are telemetry-driven and not covered here
 
 PLATFORM_URL = os.getenv("NORINTH_PLATFORM_URL", "http://127.0.0.1:8001")
 SUPER_ADMIN_EMAIL = os.getenv("NORINTH_SUPER_ADMIN_EMAIL", "admin@norinth.local")
@@ -114,7 +114,7 @@ def main() -> int:
     # 2. super admin signs in and provisions an org with its admin. the seeded
     #    super admin has must_change_password=True, so the first-login password
     #    must be rotated before the rest of the api works; a re-run falls back to
-    #    the rotated password.
+    #    the rotated password
     superadmin = Session(PLATFORM_URL)
     me = login_super_admin(superadmin)
     assert_condition(me["user"]["is_super_admin"], "seeded user is not a super admin")

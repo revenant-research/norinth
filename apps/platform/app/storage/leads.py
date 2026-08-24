@@ -1,6 +1,6 @@
-"""inbound interest from the public landing page.
+"""inbound interest from the public landing page
 
-pilot/demo requests are stored here and shown to platform admins in the console.
+pilot/demo requests are stored here and shown to platform admins in the console
 """
 
 from __future__ import annotations
