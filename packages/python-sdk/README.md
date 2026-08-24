@@ -75,8 +75,13 @@ norinth scan [DIR]              # static inventory of AI providers/models in a c
 norinth path/to/your/codebase
 ```
 
-Scans a codebase for AI provider/model usage and writes a CycloneDX-style
-`ai-manifest.json`. Runs entirely locally; no server required.
+Scans a codebase for AI provider/model usage and writes `ai-manifest.json`:
+the providers, models and files it found, as plain JSON. Runs entirely locally;
+no server required.
+
+This is a static source scan, so it sees only what is written in the code; a
+model chosen at runtime shows up as `<dynamic_from_var:...>`. It is not the
+CycloneDX AI-BOM — the platform builds that from telemetry, under Compliance.
 
 ## Signed eval evidence (CI attestation)
 

@@ -136,3 +136,31 @@ def test_cli_init_writes_env_and_scan_compat(tmp_path, monkeypatch):
     with redirect_stdout(io.StringIO()):
         assert cli.main([str(tmp_path), "-o", str(tmp_path / "m.json")]) == 0
     assert (tmp_path / "m.json").exists()
+
+
+def test_unreachable_platform_is_a_configuration_error_not_a_rejection(monkeypatch):
+    """exit 3, not exit 1, when the platform cannot be reached
+
+    exit 1 means the gate was rejected. reporting a refused connection that way
+    tells ci a release was turned down when nothing was ever asked. this drives
+    the real _http, since stubbing it is what hid the missing error handling
+    """
+    import socket
+
+    from norinth_logger import cli
+
+    # a port nothing is listening on: bind one, read it back, release it
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        closed_port = probe.getsockname()[1]
+
+    monkeypatch.setenv("NORINTH_ENDPOINT", f"http://127.0.0.1:{closed_port}")
+    monkeypatch.setenv("NORINTH_API_KEY", "nrk_unused")
+
+    out = io.StringIO()
+    with redirect_stdout(out):
+        assert cli.main(["gate", "check", "--deployment", "dep-1", "--version", "v1"]) == 3
+        assert cli.main(["doctor"]) == 1
+    printed = out.getvalue()
+    assert "could not reach" in printed, printed
+    assert "Traceback" not in printed
