@@ -5,7 +5,7 @@
 # source in the image and reviewers never have to trust a minified blob. (The
 # base images below are pinned by tag, not digest, so the build is repeatable
 # from source but not bit-for-bit reproducible.)
-FROM node:20-alpine AS frontend
+FROM node:26-alpine AS frontend
 WORKDIR /src/frontend
 COPY apps/platform/frontend/package.json apps/platform/frontend/package-lock.json ./
 RUN npm ci --no-audit --no-fund
