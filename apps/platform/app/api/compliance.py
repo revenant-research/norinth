@@ -224,9 +224,6 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
                 "bom-ref": ref,
                 "name": model,
                 "publisher": provider,
-                "modelCard": {
-                    "modelParameters": {"task": "text-generation"},
-                },
             })
 
     for sys_key, data in sorted(systems.items()):
