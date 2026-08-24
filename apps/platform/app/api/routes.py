@@ -63,7 +63,12 @@ from app.services.governance import (
 from app.services.notifications import emit as notify
 from app.services.notifications import public_base_url
 from app.storage.audit import record_audit
-from app.storage.deployments import gate_deployer, load_deployment_gate, set_deployment_gate_status
+from app.storage.deployments import (
+    gate_deployer,
+    load_deployment_gate,
+    refresh_deployment_gates,
+    set_deployment_gate_status,
+)
 from app.storage.errors import RecordNotFound
 from app.storage.governance_policy import upsert_control_definition, upsert_risk_rule
 from app.storage.incidents import load_incident, set_incident_status
@@ -500,6 +505,15 @@ def create_decision(payload: DecisionRequest, actor: ActorContext = Depends(curr
     enforce_segregation_of_duties(actor, payload.target_type, target)
     decision = record_decision(payload.target_type, payload.target_id, payload.decision, payload.rationale, actor.user_ref)
     record_audit(actor_ref=actor.user_ref, action="review.decide", tenant_id=target.get("tenant_id"), target_type=payload.target_type, target_id=payload.target_id, detail={"decision": payload.decision})
+    # these targets are gate blockers; without this the gate keeps reporting the
+    # findings the reviewer just cleared until the next batch of telemetry
+    if payload.target_type in {"risk_finding", "control_assessment", "change_event"} and target.get("application_name"):
+        refresh_deployment_gates([{
+            "tenant_id": target.get("tenant_id"),
+            "project": target.get("project"),
+            "environment": target.get("environment"),
+            "application_name": target.get("application_name"),
+        }])
     return {"decision": decision}
 
 
