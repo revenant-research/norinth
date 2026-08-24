@@ -113,7 +113,79 @@ SDK-side variables (in your applications): `NORINTH_API_KEY`, `NORINTH_ENDPOINT`
 `NORINTH_CAPTURE_CONTENT` (off by default; prompts and completions are hashed).
 See `packages/python-sdk/README.md`.
 
-## 4. Networking and endpoints
+## 4. Connecting your identity provider
+
+Set `NORINTH_PUBLIC_BASE_URL` to the URL your users reach Norinth on before you
+start. The redirect URI, SAML entity ID and ACS URL are all built from it, and an
+identity provider rejects a login whose URLs do not match what you registered.
+
+Everything below is configured by an **organization administrator**, inside the
+organization, under Identity & Integrations. Each organization connects its own
+provider; there is no platform-wide identity configuration.
+
+### OpenID Connect (Okta, Entra ID, Auth0, Keycloak)
+
+Register Norinth as a web application in your provider and give it this redirect
+URI, substituting your own host:
+
+```
+https://norinth.example.com/api/auth/sso/callback
+```
+
+Then in Norinth, `POST /api/org/sso` (or the Identity & Integrations screen) with
+the `issuer`, `client_id` and `client_secret` your provider issued. Two optional
+fields are worth setting: `allowed_email_domain` refuses sign-ins from outside
+your domain, and `default_role` is the role a first-time user is provisioned with
+(`governance_viewer` unless you change it).
+
+Users sign in at `/api/auth/sso/<your-organization-id>/start`.
+
+Just-in-time provisioning creates a user on first successful sign-in. It never
+grants an administration role, whatever the provider asserts, and a user created
+this way cannot fall back to a local password.
+
+### SAML 2.0
+
+Import the service-provider metadata into your identity provider:
+
+```
+https://norinth.example.com/api/auth/saml/metadata
+```
+
+It declares the entity ID (the metadata URL itself), the assertion consumer
+service at `/api/auth/saml/acs` over HTTP-POST, an `emailAddress` NameID, and
+that assertions must be signed. Norinth does not sign authentication requests.
+
+In Norinth, configure the organization with your provider's SSO URL, entity ID
+and signing certificate in PEM form. Users sign in at
+`/api/auth/saml/<your-organization-id>/start`.
+
+Assertions are rejected unless the signature verifies against the certificate you
+configured, the audience and recipient match the URLs above, the assertion is
+inside its validity window, and it answers an authentication request this browser
+actually started. A replayed or rewritten `InResponseTo` is refused.
+
+### SCIM 2.0 provisioning
+
+Create a token under Identity & Integrations (`POST /api/org/scim-tokens`). It is
+shown once, is prefixed `nrs_`, and is scoped to the organization that made it.
+
+Point your provider at:
+
+```
+Base URL: https://norinth.example.com/scim/v2
+Token:    the nrs_… value, sent as `Authorization: Bearer`
+```
+
+`/scim/v2/Users` supports create, read, replace, patch and delete. Unlike the
+usual SCIM discovery convention, `/scim/v2/ServiceProviderConfig` requires the
+token as well, so a provider that probes it anonymously will see a 401.
+
+What earns SCIM its place is the leaver case: deactivating a user through SCIM
+also revokes their live sessions, so access ends when your directory says it
+does rather than whenever their session happens to expire.
+
+## 5. Networking and endpoints
 
 | Path | Auth | Purpose |
 |---|---|---|
@@ -130,7 +202,7 @@ Terminate TLS at your load balancer or ingress; set `NORINTH_PUBLIC_BASE_URL`,
 the only ones applications need to reach; the dashboard and SCIM can be
 restricted to your corporate network.
 
-## 5. Backup and restore
+## 6. Backup and restore
 
 ```bash
 scripts/backup.sh                                   # -> backups/norinth-<utc>.sql.gz
@@ -142,7 +214,7 @@ hash-chained audit log, encrypted integration secrets). Back up `.env` too:
 without `NORINTH_SECRET_KEY` the stored integration secrets cannot be decrypted.
 With a managed PostgreSQL, use its point-in-time recovery instead.
 
-## 6. Upgrade
+## 7. Upgrade
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/revenant-research/norinth/main/scripts/install.sh | bash -s -- --upgrade --dir ./norinth
@@ -154,7 +226,7 @@ applied on boot and recorded in `schema_migrations`; Console → Overview shows
 the applied versions. Migrations are forward-only: take a backup first.
 Releases follow semantic versioning; the changelog lists breaking changes.
 
-## 7. Hardening checklist
+## 8. Hardening checklist
 
 - `NORINTH_SUPER_ADMIN_PASSWORD` and `NORINTH_SECRET_KEY` set (never development mode).
 - TLS everywhere; `NORINTH_COOKIE_SECURE=1`; `NORINTH_TRUST_PROXY=1` only behind a header-rewriting proxy.
@@ -165,7 +237,7 @@ Releases follow semantic versioning; the changelog lists breaking changes.
 - Schedule `scripts/backup.sh`; test `restore.sh` once.
 - Verify the audit chain periodically: `GET /api/admin/audit-logs/verify`.
 
-## 8. Notifications
+## 9. Notifications
 
 Email (SMTP) and signed webhooks. Organization administrators add webhooks
 under Identity & Integrations → Notifications: JSON for SIEM/ticketing or
@@ -179,7 +251,7 @@ Events: `user.invited`, `review.assigned`, `review.overdue`,
 `review.escalated`, `gate.approved`, `gate.rejected`, `incident.opened`,
 `incident.closed`.
 
-## 9. Observability
+## 10. Observability
 
 `/health` for liveness. Application logs go to stdout (uvicorn). The platform
 itself emits no telemetry to anyone.
