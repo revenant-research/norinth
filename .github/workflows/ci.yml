@@ -109,7 +109,7 @@ jobs:
       - name: Without a bundle the root route is an explicit 503, never a stale UI
         run: pytest tests/test_dashboard_bundle.py -q -k "not_built"
       - name: Download dashboard bundle
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: dashboard-bundle
           path: apps/platform/app/dashboard/static
