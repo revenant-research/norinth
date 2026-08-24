@@ -106,7 +106,7 @@ const GET_STARTED = [
     eyebrow: "Kubernetes",
     title: "Helm",
     body: "Signed image from GHCR, external PostgreSQL or the bundled subchart, ingress and secrets from a values file the installer can write for you.",
-    code: "helm install norinth oci://ghcr.io/revenant-research/charts/norinth \\\n  --set postgres.url=$DATABASE_URL",
+    code: "helm install norinth oci://ghcr.io/revenant-research/charts/norinth \\\n  --set database.url=$DATABASE_URL \\\n  --set secrets.secretKey=$(openssl rand -base64 32) \\\n  --set secrets.superAdminPassword=$ADMIN_PASSWORD",
   },
   {
     eyebrow: "Already on OpenTelemetry",

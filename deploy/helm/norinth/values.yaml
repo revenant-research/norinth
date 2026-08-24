@@ -70,7 +70,9 @@ podSecurityContext:
   seccompProfile: {type: RuntimeDefault}
 securityContext:
   allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: false
+  # the platform writes only to the mounted /tmp and /app/data emptyDirs, so the
+  # image runs with an immutable root filesystem
+  readOnlyRootFilesystem: true
   capabilities: {drop: [ALL]}
 
 podDisruptionBudget:
