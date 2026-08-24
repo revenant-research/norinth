@@ -38,7 +38,9 @@ norinth.init(
     environment="prod",
     service="my-service",
 )
-# OpenAI and Anthropic clients are auto-instrumented from here.`;
+
+# records every call your OpenAI and Anthropic clients make
+norinth.autoinstrument()`;
 }
 
 function otelSnippet(endpoint: string): string {

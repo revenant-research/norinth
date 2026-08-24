@@ -55,8 +55,25 @@ done
 
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required. $2"; }
 
+# set to "plugin" (docker compose) or "standalone" (docker-compose) by ensure_docker
+COMPOSE_KIND=""
+
+detect_compose() {
+  command -v docker >/dev/null 2>&1 || return 1
+  if docker compose version >/dev/null 2>&1; then
+    COMPOSE_KIND="plugin"
+    return 0
+  fi
+  # older installs, and some desktop setups, only have the standalone binary
+  if command -v docker-compose >/dev/null 2>&1 && docker-compose version >/dev/null 2>&1; then
+    COMPOSE_KIND="standalone"
+    return 0
+  fi
+  return 1
+}
+
 ensure_docker() {
-  if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+  if detect_compose; then
     docker info >/dev/null 2>&1 || die "Docker is installed but the daemon is not running (or you lack permission). Start Docker and re-run."
     return
   fi
@@ -64,14 +81,20 @@ ensure_docker() {
     say "Docker is not installed."
     if [ "$ASSUME_YES" = 1 ] || { [ -t 0 ] && read -r -p "  Install Docker Engine with Docker's official script? [y/N] " a && [ "${a:-n}" = y ]; }; then
       curl -fsSL https://get.docker.com | sh
-      command -v docker >/dev/null 2>&1 || die "Docker installation failed."
+      detect_compose || die "Docker installation failed."
       return
     fi
   fi
-  die "Docker with the compose plugin is required. Install it from https://docs.docker.com/get-docker/ and re-run."
+  die "Docker with Compose is required (either 'docker compose' or 'docker-compose'). Install it from https://docs.docker.com/get-docker/ and re-run."
 }
 
-compose() { (cd "$DIR" && docker compose "$@"); }
+compose() {
+  if [ "$COMPOSE_KIND" = "standalone" ]; then
+    (cd "$DIR" && docker-compose "$@")
+  else
+    (cd "$DIR" && docker compose "$@")
+  fi
+}
 
 random_secret() { openssl rand -base64 32 | tr -d '\n=+/' | cut -c1-40; }
 
@@ -205,5 +228,6 @@ info ""
 info "Next: open the URL. The setup wizard walks you through naming your organization,"
 info "creating an ingestion key, and instrumenting your first application."
 info ""
-info "Manage:  cd $DIR && docker compose logs -f | docker compose down | scripts/backup.sh"
+compose_cmd() { [ "$COMPOSE_KIND" = "standalone" ] && printf 'docker-compose' || printf 'docker compose'; }
+info "Manage:  cd $DIR && $(compose_cmd) logs -f | $(compose_cmd) down | scripts/backup.sh"
 info "Upgrade: curl -fsSL $REPO_RAW/scripts/install.sh | bash -s -- --upgrade --dir $DIR"

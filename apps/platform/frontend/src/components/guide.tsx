@@ -34,11 +34,11 @@ norinth.init(
     project="claims",                           # any grouping you like
     environment="prod",
     service="claims-api",
+    application_name="Claims Copilot",          # how it appears in your inventory
 )
-# OpenAI and Anthropic clients are now auto-instrumented.
-# Governance context (application, workflow, tenant) is inferred from request
-# context, or set explicitly:
-norinth.set_context(application_name="Claims Copilot", workflow_name="claims.triage")`;
+
+# records every call your OpenAI and Anthropic clients make
+norinth.autoinstrument()`;
 
 const OTEL_SNIPPET = `# OpenTelemetry GenAI semantic conventions are accepted as-is.
 exporters:
