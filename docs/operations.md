@@ -84,6 +84,8 @@ secret manager; the installer writes them to `.env` for Compose.
 | `NORINTH_DEV_INGEST_TENANT` | no | `tenant-local` | Tenant bound to the dev `dev` key (development mode only). |
 | `NORINTH_SMTP_HOST` / `_PORT` / `_USER` / `_PASSWORD` / `_FROM` / `_STARTTLS` | for email | — / `587` / — / — / user / `1` | Outbound email for invites and notifications (review assigned/overdue/escalated, gate decisions, incidents). Without a host, emails are recorded as `skipped_no_smtp` in the delivery log and invite links are shown to the administrator instead. |
 | `NORINTH_NOTIFICATIONS_WORKER` | no | `1` | `0` disables the background delivery thread (tests). |
+| `NORINTH_MAINTENANCE_WORKER` | no | `1` | `0` disables the governance maintenance thread. It lapses expired exceptions and ages the review queue (overdue, escalated) on a timer, so those transitions do not wait for the next batch of telemetry. Leave it on unless you schedule the work yourself. |
+| `NORINTH_MAINTENANCE_INTERVAL_SECONDS` | no | `300` | Seconds between maintenance passes. On PostgreSQL a try-lock keeps concurrent replicas from running a pass at the same time. |
 
 SDK-side variables (in your applications): `NORINTH_API_KEY`, `NORINTH_ENDPOINT`,
 `NORINTH_PROJECT`, `NORINTH_ENVIRONMENT`, `NORINTH_SERVICE`,

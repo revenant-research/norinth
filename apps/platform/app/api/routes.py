@@ -63,7 +63,12 @@ from app.services.governance import (
 from app.services.notifications import emit as notify
 from app.services.notifications import public_base_url
 from app.storage.audit import record_audit
-from app.storage.deployments import gate_deployer, load_deployment_gate, set_deployment_gate_status
+from app.storage.deployments import (
+    gate_deployer,
+    load_deployment_gate,
+    refresh_deployment_gates,
+    set_deployment_gate_status,
+)
 from app.storage.errors import RecordNotFound
 from app.storage.governance_policy import upsert_control_definition, upsert_risk_rule
 from app.storage.incidents import load_incident, set_incident_status
@@ -72,6 +77,7 @@ from app.storage.raw_events import connect, count_scoped_events, list_events, li
 from app.storage.workflow import (
     assign_owner,
     create_exception,
+    expire_due_exceptions,
     load_decision_target,
     load_owner_assignment,
     record_decision,
@@ -226,6 +232,9 @@ def agents(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = D
 
 @router.get("/api/risk-register")
 def risk_register(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
+    # a lapsed exception reopens the finding it waived; without this the register
+    # keeps reporting it as accepted until the next batch of telemetry
+    expire_due_exceptions()
     return paginate(build_risk_register(scope), "risks", page)
 
 
@@ -390,6 +399,9 @@ def close_incident(incident_id: str, payload: DeploymentGateDecisionRequest, act
 
 @router.post("/api/deployment-gates/{gate_id}/approve")
 def approve_deployment_gate(gate_id: str, payload: DeploymentGateDecisionRequest, actor: ActorContext = Depends(current_actor)):
+    # a risk accepted under an exception that has since lapsed is not remediated;
+    # expire first so the reopened finding blocks this release
+    expire_due_exceptions()
     gate = load_deployment_gate(gate_id)
     gate["target_type"] = "deployment_gate"
     try:
@@ -500,11 +512,22 @@ def create_decision(payload: DecisionRequest, actor: ActorContext = Depends(curr
     enforce_segregation_of_duties(actor, payload.target_type, target)
     decision = record_decision(payload.target_type, payload.target_id, payload.decision, payload.rationale, actor.user_ref)
     record_audit(actor_ref=actor.user_ref, action="review.decide", tenant_id=target.get("tenant_id"), target_type=payload.target_type, target_id=payload.target_id, detail={"decision": payload.decision})
+    # these targets are gate blockers; without this the gate keeps reporting the
+    # findings the reviewer just cleared until the next batch of telemetry
+    if payload.target_type in {"risk_finding", "control_assessment", "change_event"} and target.get("application_name"):
+        refresh_deployment_gates([{
+            "tenant_id": target.get("tenant_id"),
+            "project": target.get("project"),
+            "environment": target.get("environment"),
+            "application_name": target.get("application_name"),
+        }])
     return {"decision": decision}
 
 
 @router.get("/api/exceptions")
 def exceptions(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
+    # never show a lapsed exception as still active
+    expire_due_exceptions()
     return paginate(build_exceptions(scope), "exceptions", page)
 
 

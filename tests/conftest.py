@@ -10,6 +10,7 @@ import tempfile
 import pytest
 
 os.environ.setdefault("NORINTH_NOTIFICATIONS_WORKER", "0")  # deliver synchronously in tests
+os.environ.setdefault("NORINTH_MAINTENANCE_WORKER", "0")  # run maintenance passes explicitly in tests
 os.environ.setdefault("NORINTH_ALLOW_PRIVATE_EGRESS", "1")  # test webhook receivers run on 127.0.0.1
 # secret storage fails closed without a key; give the suite a real key so secrets are encrypted at rest
 os.environ.setdefault("NORINTH_SECRET_KEY", "bm9yaW50aC10ZXN0LW9ubHktbWFzdGVyLWtleS0zMmI")

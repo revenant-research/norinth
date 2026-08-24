@@ -196,6 +196,52 @@ def refresh_deployment_gates(scopes: list[dict[str, Any]] | None = None) -> None
             upsert_deployment_gate(connection, record)
 
 
+def gate_required_reason(connection, evidence: dict[str, Any], tenant_id: str | None) -> str:
+    """what is still blocking this gate, for the reviewer"""
+    parts = []
+    if evidence["risk_count"]:
+        parts.append(f"{evidence['risk_count']} open risk findings")
+    if evidence["missing_control_count"]:
+        parts.append(f"{evidence['missing_control_count']} missing controls")
+    if evidence["material_change_count"]:
+        parts.append(f"{evidence['material_change_count']} material changes")
+    if evidence["prompt_evidence_status"] != "linked":
+        parts.append("missing linked prompt version")
+    if evidence["passing_eval_count"] == 0:
+        parts.append(
+            "missing attested passing eval evidence"
+            if tenant_requires_attestation(tenant_id, connection)
+            else "missing passing eval evidence"
+        )
+    return "; ".join(parts) if parts else "No blocking governance evidence detected"
+
+
+def live_gate_evidence(connection, gate: dict[str, Any]) -> dict[str, Any]:
+    """recompute a gate's blockers from current state
+
+    the stored counts are only refreshed when telemetry arrives, so a reviewer
+    who accepts the open risks or waives the missing controls does not change
+    them. approval reads these live values instead, otherwise the remediation
+    the gate asks for cannot actually clear it
+    """
+    row = connection.execute(
+        "SELECT * FROM deployment_versions WHERE version_id = ?", (gate.get("version_id"),)
+    ).fetchone()
+    version = dict(row) if row is not None else {}
+    return gate_evidence_counts(
+        connection,
+        {
+            "tenant_id": gate.get("tenant_id"),
+            "project": gate["project"],
+            "environment": gate["environment"],
+            "application_name": gate["application_name"],
+            "workflow_name": gate["workflow_name"],
+            "prompt_version": version.get("prompt_version"),
+            "artifact_ref": version.get("artifact_ref"),
+        },
+    )
+
+
 def upsert_deployment_gate(connection, version: dict[str, Any]) -> None:
     evidence = gate_evidence_counts(connection, version)
     gate_id = entity_id("deployment-gate", version["version_id"])
@@ -207,22 +253,7 @@ def upsert_deployment_gate(connection, version: dict[str, Any]) -> None:
     # open blockers) is enforced at approval time by set_deployment_gate_status;
     # the reasons below tell the reviewer what is still outstanding
     gate_status = current_status if current_status in {"approved", "rejected"} else "pending_review"
-    reason_parts = []
-    if evidence["risk_count"]:
-        reason_parts.append(f"{evidence['risk_count']} open risk findings")
-    if evidence["missing_control_count"]:
-        reason_parts.append(f"{evidence['missing_control_count']} missing controls")
-    if evidence["material_change_count"]:
-        reason_parts.append(f"{evidence['material_change_count']} material changes")
-    if evidence["prompt_evidence_status"] != "linked":
-        reason_parts.append("missing linked prompt version")
-    if evidence["passing_eval_count"] == 0:
-        reason_parts.append(
-            "missing attested passing eval evidence"
-            if tenant_requires_attestation(version.get("tenant_id"), connection)
-            else "missing passing eval evidence"
-        )
-    required_reason = "; ".join(reason_parts) if reason_parts else "No blocking governance evidence detected"
+    required_reason = gate_required_reason(connection, evidence, version.get("tenant_id"))
     connection.execute(
         """
         INSERT INTO deployment_approval_gates (
@@ -378,15 +409,42 @@ def set_deployment_gate_status(gate_id: str, status: str, actor_ref: str, ration
         if row is None:
             raise RecordNotFound("deployment gate not found")
         gate = dict(row)
+        evidence = None
         if status == "approved":
-            if gate.get("prompt_evidence_status") != "linked" or int(gate.get("passing_eval_count") or 0) == 0:
+            # recompute from current state: accepting a finding or waiving a
+            # control does not touch the stored counts, only ingestion refreshes
+            # them, so approving on the stored values would ignore the very
+            # remediation this gate asks for
+            evidence = live_gate_evidence(connection, gate)
+            if evidence["prompt_evidence_status"] != "linked" or int(evidence["passing_eval_count"] or 0) == 0:
                 raise ValueError("deployment gate requires a linked prompt version and passing eval evidence bound to this version")
-            if int(gate.get("risk_count") or 0) > 0:
+            if int(evidence["risk_count"] or 0) > 0:
                 raise ValueError("deployment gate cannot be approved while risk findings are open; mitigate or accept them first")
-            if int(gate.get("missing_control_count") or 0) > 0:
+            if int(evidence["missing_control_count"] or 0) > 0:
                 raise ValueError("deployment gate cannot be approved while controls are missing evidence")
         if not (rationale or "").strip():
             raise ValueError("a decision rationale is required")
+        if evidence is not None:
+            # the decision is recorded against the evidence that was actually checked
+            connection.execute(
+                """
+                UPDATE deployment_approval_gates
+                SET risk_count = ?, missing_control_count = ?, material_change_count = ?,
+                    prompt_version_id = ?, prompt_evidence_status = ?, passing_eval_count = ?,
+                    required_reason = ?
+                WHERE gate_id = ?
+                """,
+                (
+                    evidence["risk_count"],
+                    evidence["missing_control_count"],
+                    evidence["material_change_count"],
+                    evidence["prompt_version_id"],
+                    evidence["prompt_evidence_status"],
+                    evidence["passing_eval_count"],
+                    gate_required_reason(connection, evidence, gate.get("tenant_id")),
+                    gate_id,
+                ),
+            )
         connection.execute(
             """
             UPDATE deployment_approval_gates
