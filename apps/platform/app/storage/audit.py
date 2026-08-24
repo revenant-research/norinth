@@ -37,12 +37,13 @@ def init_audit() -> None:
                 detail TEXT,
                 prev_hash TEXT,
                 row_hash TEXT,
-                row_hmac TEXT
+                row_hmac TEXT,
+                hash_version INTEGER NOT NULL DEFAULT 1
             )
             """
         )
         # idempotent migration for pre-existing databases
-        for column in ("prev_hash TEXT", "row_hash TEXT", "row_hmac TEXT"):
+        for column in ("prev_hash TEXT", "row_hash TEXT", "row_hmac TEXT", "hash_version INTEGER NOT NULL DEFAULT 1"):
             try:
                 connection.execute(f"ALTER TABLE audit_logs ADD COLUMN {column}")
             except Exception:
@@ -58,7 +59,14 @@ def _audit_hmac_key() -> bytes | None:
     return key.encode("utf-8") if key else None
 
 
-def _compute_row_hash(
+# each row records the hash algorithm that produced it (hash_version), and
+# verification dispatches on it. a future change to the algorithm is a new
+# version that leaves existing rows verifiable under the one that wrote them,
+# so the chain can evolve without every prior entry reading as tampered
+CURRENT_HASH_VERSION = 1
+
+
+def _hash_v1(
     prev_hash: str,
     created_at: str,
     actor_ref: str,
@@ -76,6 +84,26 @@ def _compute_row_hash(
         ensure_ascii=True,
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+_HASHERS = {1: _hash_v1}
+
+
+def _compute_row_hash(
+    version: int,
+    prev_hash: str,
+    created_at: str,
+    actor_ref: str,
+    tenant_id: str | None,
+    action: str,
+    target_type: str | None,
+    target_id: str | None,
+    detail_json: str | None,
+) -> str | None:
+    hasher = _HASHERS.get(version)
+    if hasher is None:
+        return None
+    return hasher(prev_hash, created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json)
 
 
 def _compute_row_hmac(row_hash: str) -> str | None:
@@ -109,16 +137,16 @@ def record_audit(
         prev_hash = last["row_hash"] if last and last["row_hash"] else GENESIS_HASH
         created_at = connection.execute("SELECT datetime('now') AS now").fetchone()["now"]
         row_hash = _compute_row_hash(
-            prev_hash, created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json
+            CURRENT_HASH_VERSION, prev_hash, created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json
         )
         row_hmac = _compute_row_hmac(row_hash)
         connection.execute(
             """
             INSERT INTO audit_logs
-                (created_at, actor_ref, tenant_id, action, target_type, target_id, detail, prev_hash, row_hash, row_hmac)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (created_at, actor_ref, tenant_id, action, target_type, target_id, detail, prev_hash, row_hash, row_hmac, hash_version)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json, prev_hash, row_hash, row_hmac),
+            (created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json, prev_hash, row_hash, row_hmac, CURRENT_HASH_VERSION),
         )
         connection.execute("COMMIT")
     finally:
@@ -136,14 +164,16 @@ def verify_audit_chain(*, tenant_id: str | None = None) -> dict[str, Any]:
     with connect() as connection:
         rows = connection.execute(
             """
-            SELECT id, created_at, actor_ref, tenant_id, action, target_type, target_id, detail, prev_hash, row_hash, row_hmac
+            SELECT id, created_at, actor_ref, tenant_id, action, target_type, target_id, detail, prev_hash, row_hash, row_hmac, hash_version
             FROM audit_logs ORDER BY id
             """
         ).fetchall()
     key = _audit_hmac_key()
     expected_prev = GENESIS_HASH
     for row in rows:
+        version = int(row["hash_version"]) if row["hash_version"] is not None else CURRENT_HASH_VERSION
         recomputed = _compute_row_hash(
+            version,
             expected_prev,
             row["created_at"],
             row["actor_ref"],
@@ -153,6 +183,8 @@ def verify_audit_chain(*, tenant_id: str | None = None) -> dict[str, Any]:
             row["target_id"],
             row["detail"],
         )
+        if recomputed is None:
+            return {"ok": False, "entries": len(rows), "broken_at": row["id"], "reason": f"unknown hash version {version}"}
         if row["prev_hash"] != expected_prev or row["row_hash"] != recomputed:
             return {"ok": False, "entries": len(rows), "broken_at": row["id"], "reason": "hash chain"}
         # a row written with an hmac must verify under the current key; without

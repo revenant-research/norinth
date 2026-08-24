@@ -284,6 +284,16 @@ def _0013_drop_leads(connection) -> None:
     connection.execute("DROP TABLE IF EXISTS leads")
 
 
+def _0015_audit_hash_version(connection) -> None:
+    """record the audit hash algorithm per row so the chain can evolve
+
+    existing rows were written by the current algorithm, so default 1; a later
+    algorithm is a new version and leaves these verifiable under version 1
+    """
+    if not _has_column(connection, "audit_logs", "hash_version"):
+        connection.execute("ALTER TABLE audit_logs ADD COLUMN hash_version INTEGER NOT NULL DEFAULT 1")
+
+
 def _0014_org_retention_window(connection) -> None:
     """per-organization telemetry retention window
 
@@ -309,6 +319,7 @@ MIGRATIONS: list[Migration] = [
     Migration(12, "drop fabricated confidence score from risk tables", _0012_drop_risk_confidence),
     Migration(13, "drop leads table (landing-page lead capture removed)", _0013_drop_leads),
     Migration(14, "per-organization telemetry retention window", _0014_org_retention_window),
+    Migration(15, "versioned audit-chain hash algorithm", _0015_audit_hash_version),
 ]
 
 
