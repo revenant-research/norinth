@@ -44,6 +44,12 @@ JWKS, SAML) and Google Fonts for the dashboard's typeface.
 - **CI**: holds an Ed25519 private key; its signatures make eval results *attested* (`services/attestation.py`). Cannot approve a gate.
 - **Identity provider**: asserts who a user is (OIDC/SAML) and whether they still exist (SCIM). Cannot grant administration roles (JIT provisioning caps at non-admin roles).
 
+What a role is permitted to do is defined once for the whole install, not per
+organization, so a decision carries the same meaning in every organization on it.
+Only a platform administrator can change those definitions, so no organization can
+widen its own permissions. Who holds a role is per-organization. An organization
+that needs different rules from the rest runs its own install.
+
 ## 4. Adversaries and what stops them
 
 | Threat | Control |
