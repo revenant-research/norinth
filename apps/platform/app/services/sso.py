@@ -53,13 +53,31 @@ def http_post_form(url: str, data: dict[str, str], timeout: float = 10.0) -> dic
 # --- discovery -------------------------------------------------------------------
 
 
+def _normalize_issuer(issuer: str) -> str:
+    parsed = parse.urlsplit(issuer.strip())
+    if parsed.scheme.lower() != "https":
+        raise SsoError("Issuer URL must use https")
+    if not parsed.hostname:
+        raise SsoError("Issuer URL must include a hostname")
+    if parsed.username or parsed.password:
+        raise SsoError("Issuer URL must not include credentials")
+    if parsed.query or parsed.fragment:
+        raise SsoError("Issuer URL must not include query or fragment")
+    netloc = parsed.hostname
+    if parsed.port is not None:
+        netloc = f"{netloc}:{parsed.port}"
+    path = parsed.path.rstrip("/")
+    return parse.urlunsplit(("https", netloc, path, "", ""))
+
+
 def discover(issuer: str) -> dict[str, str]:
     """fetch the provider's openid configuration and return the endpoints we need"""
-    url = issuer.rstrip("/") + "/.well-known/openid-configuration"
+    normalized_issuer = _normalize_issuer(issuer)
+    url = normalized_issuer + "/.well-known/openid-configuration"
     doc = http_get_json(url)
     try:
         return {
-            "issuer": doc.get("issuer", issuer),
+            "issuer": doc.get("issuer", normalized_issuer),
             "authorization_endpoint": doc["authorization_endpoint"],
             "token_endpoint": doc["token_endpoint"],
             "jwks_uri": doc["jwks_uri"],
