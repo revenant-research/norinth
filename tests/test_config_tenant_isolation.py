@@ -47,7 +47,7 @@ def test_config_customizations_are_tenant_isolated(super_admin_client):
     # risk rules: acme downgrades a rule, beta unaffected
     beta_rules_before = {r["rule_id"]: r for r in beta.get("/api/risk-rules").json()["risk_rules"]}
     a_rule = sorted(beta_rules_before)[0]
-    assert acme.post("/api/risk-rules", json={"rule_id": a_rule, "name": "downgraded", "signal": beta_rules_before[a_rule]["signal"], "severity": "low", "confidence": 0.1, "framework_refs": [], "rationale": "r"}).status_code == 200
+    assert acme.post("/api/risk-rules", json={"rule_id": a_rule, "name": "downgraded", "signal": beta_rules_before[a_rule]["signal"], "severity": "low", "framework_refs": [], "rationale": "r"}).status_code == 200
     beta_rules_after = {r["rule_id"]: r for r in beta.get("/api/risk-rules").json()["risk_rules"]}
     assert beta_rules_after[a_rule]["severity"] == beta_rules_before[a_rule]["severity"]  # beta unchanged
 

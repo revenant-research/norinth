@@ -167,9 +167,9 @@ def _0009_config_table_tenancy(connection) -> None:
         ),
         "risk_rules": (
             "tenant_id TEXT NOT NULL DEFAULT '', rule_id TEXT NOT NULL, name TEXT NOT NULL, signal TEXT NOT NULL, "
-            "severity TEXT NOT NULL, confidence REAL NOT NULL, framework_refs TEXT NOT NULL, rationale TEXT NOT NULL, "
+            "severity TEXT NOT NULL, framework_refs TEXT NOT NULL, rationale TEXT NOT NULL, "
             "PRIMARY KEY (tenant_id, rule_id)",
-            "rule_id, name, signal, severity, confidence, framework_refs, rationale",
+            "rule_id, name, signal, severity, framework_refs, rationale",
         ),
         "review_queue_policies": (
             "tenant_id TEXT NOT NULL DEFAULT '', policy_id TEXT NOT NULL, task_type TEXT NOT NULL, "
@@ -253,6 +253,30 @@ def _0011_audit_hmac(connection) -> None:
         pass
 
 
+def _has_column(connection, table: str, column: str) -> bool:
+    from app.storage.db import is_postgres
+
+    if is_postgres():
+        rows = connection.execute(
+            f"SELECT column_name FROM information_schema.columns WHERE table_name = '{table}'"
+        ).fetchall()
+        return any(row["column_name"] == column for row in rows)
+    rows = connection.execute(f"PRAGMA table_info({table})").fetchall()
+    return any(row["name"] == column for row in rows)
+
+
+def _0012_drop_risk_confidence(connection) -> None:
+    """drop the per-rule confidence score from the risk tables
+
+    risk detections are deterministic (a signal condition is met or it isn't),
+    so a fixed 0-1 confidence was never computed from anything; it was a constant
+    riding into the api and audit exports as if it were evidence. remove it
+    """
+    for table in ("risk_findings", "risk_rules", "governance_risks"):
+        if _has_column(connection, table, "confidence"):
+            connection.execute(f"ALTER TABLE {table} DROP COLUMN confidence")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
@@ -265,6 +289,7 @@ MIGRATIONS: list[Migration] = [
     Migration(9, "tenant-scoped config tables (control library, risk rules, routing, owner policies)", _0009_config_table_tenancy),
     Migration(10, "tenant-scoped record keys (deployments, incidents, prompts, event dedup)", _0010_cross_tenant_keys),
     Migration(11, "audit-chain HMAC anchor column", _0011_audit_hmac),
+    Migration(12, "drop fabricated confidence score from risk tables", _0012_drop_risk_confidence),
 ]
 
 

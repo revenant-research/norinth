@@ -14,8 +14,8 @@ def test_expired_exception_reopens_the_finding(fresh_db):
 
     with connect() as connection:
         connection.execute(
-            "INSERT INTO risk_findings (finding_id, tenant_id, project, environment, application_name, rule_id, risk, severity, confidence, status, rationale, framework_refs, evidence_trace_ids, evidence_summary, evaluated_at) "
-            "VALUES ('f1', 'acme', 'p', 'prod', 'A', 'r1', 'no guardrail', 'high', 0.9, 'waived', 'r', '[]', '[]', 's', 'x')"
+            "INSERT INTO risk_findings (finding_id, tenant_id, project, environment, application_name, rule_id, risk, severity, status, rationale, framework_refs, evidence_trace_ids, evidence_summary, evaluated_at) "
+            "VALUES ('f1', 'acme', 'p', 'prod', 'A', 'r1', 'no guardrail', 'high', 'waived', 'r', '[]', '[]', 's', 'x')"
         )
         connection.execute(
             "INSERT INTO governance_exceptions (exception_id, tenant_id, project, environment, application_name, target_type, target_id, reason, compensating_control, expires_at, status, actor_ref, created_at, updated_at) "
