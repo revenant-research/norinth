@@ -966,6 +966,11 @@ function IncidentDetail({ detail, mutate }: { detail: Record<string, any>; mutat
         <MetricCard label="Missing Controls" value={incident.missing_control_count} />
       </div>
       <div className="detail-stack">
+        {incident.description ? (
+          <Section title="What Was Reported" description="The account given when the incident was raised.">
+            <p>{incident.description}</p>
+          </Section>
+        ) : null}
         <Section title="Incident Closure" description="Close only when the linked request records, controls, risks, and decisions support the rationale.">
           <IncidentCards rows={[incident]} />
           <IncidentClosurePanel incident={incident} mutate={mutate} />
