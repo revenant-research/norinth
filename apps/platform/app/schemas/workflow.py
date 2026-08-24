@@ -79,7 +79,6 @@ class RiskRuleRequest(BaseModel):
     name: str = Field(min_length=1)
     signal: str = Field(min_length=1)
     severity: str = Field(min_length=1)
-    confidence: float = Field(ge=0, le=1)
     framework_refs: list[str] = Field(default_factory=list)
     rationale: str = Field(min_length=1)
 

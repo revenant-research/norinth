@@ -48,7 +48,6 @@ def _run_rule(app_name: str, events: list[dict]) -> bool:
         "name": "Agentic workflow without agent run evidence",
         "signal": "missing_agent_run",
         "severity": "high",
-        "confidence": 0.8,
         "rationale": "Agentic usage without agent.run telemetry.",
         "framework_refs": [],
     }

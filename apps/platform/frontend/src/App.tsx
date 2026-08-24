@@ -18,7 +18,6 @@ import {
   postJson,
 } from "./api";
 import { LandingPage } from "./components/landing";
-import { LeadsView } from "./components/leads";
 import { SetupWizard } from "./components/setup";
 import { InviteScreen } from "./components/invite";
 import { Home } from "./components/home";
@@ -171,7 +170,6 @@ const PLATFORM_ROUTES: RouteDef[] = [
   { id: "organizations", label: "Organizations", description: "Create an organization and its first administrator; suspend or reactivate it." },
   { id: "platform-users", label: "Accounts", description: "Every account on the platform. Suspend access or issue a one-time password." },
   { id: "rbac", label: "Roles", description: "What each role is allowed to do, in every organization." },
-  { id: "leads", label: "Pilot requests", description: "Inbound pilot and demo requests from the landing page, worked as a funnel." },
   { id: "audit", label: "Audit Log", description: "Who did what, when, across every organization. Hash-chained and verifiable." },
 ];
 
@@ -216,7 +214,6 @@ function PlatformConsole({ user, onSignOut }: { user: User; onSignOut: () => voi
           {active === "organizations" ? <AdminConsole /> : null}
           {active === "platform-users" ? <PlatformUsers /> : null}
           {active === "rbac" ? <RbacMatrixEditor /> : null}
-          {active === "leads" ? <LeadsView /> : null}
           {active === "audit" ? <AuditLog superAdmin /> : null}
         </div>
       </main>

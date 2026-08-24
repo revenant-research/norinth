@@ -1,4 +1,4 @@
-"""public lead capture into the console and the org getting-started checklist"""
+"""the org getting-started checklist reflects real state"""
 
 from __future__ import annotations
 
@@ -8,41 +8,6 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "apps" / "platform"))
 
 from tests.helpers import login_and_activate  # noqa: E402
-
-
-def test_public_lead_is_captured_validated_rate_limited_and_visible_to_super_admin(super_admin_client):
-    from app.main import app
-    from fastapi.testclient import TestClient
-
-    client = TestClient(app)  # anonymous visitor, super_admin_client is a separate signed-in session
-    lead = {"name": "Dr. Test", "email": "Buyer@Example-Health.org", "organization": "Example Health", "interest": "pilot", "message": "ambient scribes"}
-    created = client.post("/api/public/leads", json=lead)
-    assert created.status_code == 201, created.text
-    assert created.json()["lead_id"].startswith("lead_")
-
-    # validate email shape and interest enum
-    assert client.post("/api/public/leads", json={**lead, "email": "nope"}).status_code == 422
-    assert client.post("/api/public/leads", json={**lead, "interest": "spam"}).status_code == 400
-
-    # only platform admins see leads, tenant users and public do not
-    assert client.get("/api/admin/leads").status_code in (401, 403)
-    listing = super_admin_client.get("/api/admin/leads").json()
-    assert listing["page"]["total"] == 1
-    entry = listing["leads"][0]
-    assert entry["email"] == "buyer@example-health.org"  # normalised
-    assert entry["status"] == "new"
-
-    # status moves through the funnel and is audit-logged
-    moved = super_admin_client.post(f"/api/admin/leads/{entry['lead_id']}/status", json={"status": "contacted"})
-    assert moved.status_code == 200 and moved.json()["lead"]["status"] == "contacted"
-    assert super_admin_client.post(f"/api/admin/leads/{entry['lead_id']}/status", json={"status": "bogus"}).status_code == 400
-    logs = super_admin_client.get("/api/audit-logs", params={"action": "lead.status"}).json()
-    assert logs["page"]["total"] == 1
-
-    # rate limit, one source address cannot flood the inbox
-    for _ in range(9):
-        client.post("/api/public/leads", json=lead)
-    assert client.post("/api/public/leads", json=lead).status_code == 429
 
 
 def test_onboarding_checklist_reflects_real_state(super_admin_client):

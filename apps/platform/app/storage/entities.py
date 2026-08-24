@@ -140,7 +140,6 @@ def init_entities() -> None:
                 application_name TEXT NOT NULL,
                 risk TEXT NOT NULL,
                 severity TEXT NOT NULL,
-                confidence REAL NOT NULL,
                 evidence TEXT NOT NULL,
                 evidence_trace_ids TEXT NOT NULL,
                 status TEXT NOT NULL,
@@ -465,7 +464,6 @@ def upsert_model_risks(connection, event: dict[str, Any], attrs: dict[str, Any],
             metadata,
             risk="Third-party AI dependency",
             severity="Medium",
-            confidence=0.8,
             evidence=f"Observed provider: {provider}",
             source="model.call",
         )
@@ -476,7 +474,6 @@ def upsert_model_risks(connection, event: dict[str, Any], attrs: dict[str, Any],
             metadata,
             risk="Operational reliability failures",
             severity="High",
-            confidence=0.9,
             evidence="Failed model call observed",
             source="model.call",
         )
@@ -487,7 +484,6 @@ def upsert_model_risks(connection, event: dict[str, Any], attrs: dict[str, Any],
             metadata,
             risk="High-volume model usage",
             severity="Medium",
-            confidence=0.7,
             evidence="Single model call exceeded 1000 total tokens",
             source="model.call",
         )
@@ -499,7 +495,6 @@ def upsert_model_risks(connection, event: dict[str, Any], attrs: dict[str, Any],
             metadata,
             risk="Potential sensitive business process",
             severity="Medium",
-            confidence=0.7,
             evidence=f"Observed use case: {use_case}",
             source="model.call",
         )
@@ -513,7 +508,6 @@ def upsert_guardrail_risk(connection, event: dict[str, Any], attrs: dict[str, An
             metadata,
             risk="Guardrail warning",
             severity="High" if attrs.get("decision") == "block" else "Medium",
-            confidence=0.85,
             evidence=f"{attrs.get('guardrail_name', event.get('name'))} decision: {attrs.get('decision')}",
             source="guardrail.decision",
         )
@@ -527,7 +521,6 @@ def upsert_eval_risk(connection, event: dict[str, Any], attrs: dict[str, Any], m
             metadata,
             risk="Evaluation failed",
             severity="High",
-            confidence=0.9,
             evidence=f"{attrs.get('eval_name', event.get('name'))} scored {attrs.get('score')} below {attrs.get('threshold')}",
             source="eval.result",
         )
@@ -540,7 +533,6 @@ def upsert_risk(
     *,
     risk: str,
     severity: str,
-    confidence: float,
     evidence: str,
     source: str,
 ) -> None:
@@ -552,13 +544,12 @@ def upsert_risk(
     connection.execute(
         """
         INSERT INTO governance_risks (
-            entity_id, tenant_id, project, environment, application_name, risk, severity, confidence,
+            entity_id, tenant_id, project, environment, application_name, risk, severity,
             evidence, evidence_trace_ids, status, source, first_seen, last_seen
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(entity_id) DO UPDATE SET
             severity=excluded.severity,
-            confidence=excluded.confidence,
             evidence=excluded.evidence,
             evidence_trace_ids=excluded.evidence_trace_ids,
             status=excluded.status,
@@ -572,7 +563,6 @@ def upsert_risk(
             application_name,
             risk,
             severity,
-            confidence,
             evidence,
             encode_json(sorted(trace_ids)),
             "open",

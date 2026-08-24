@@ -107,7 +107,6 @@ DEFAULT_RISK_RULES = [
         "name": "Third-party AI dependency",
         "signal": "provider_dependency",
         "severity": "Medium",
-        "confidence": 0.85,
         "framework_refs": ["NIST AI RMF MAP 3.2", "NIST AI RMF GOVERN 6.1"],
         "rationale": "Observed external model provider usage creates vendor and third-party AI dependency risk.",
     },
@@ -116,7 +115,6 @@ DEFAULT_RISK_RULES = [
         "name": "Missing guardrail evidence",
         "signal": "missing_guardrail",
         "severity": "High",
-        "confidence": 0.8,
         "framework_refs": ["NIST AI RMF MANAGE 1.3"],
         "rationale": "Applications with model usage but no guardrail evidence lack runtime safety-control support.",
     },
@@ -125,7 +123,6 @@ DEFAULT_RISK_RULES = [
         "name": "Missing evaluation evidence",
         "signal": "missing_eval",
         "severity": "High",
-        "confidence": 0.8,
         "framework_refs": ["NIST AI RMF MEASURE 2.1"],
         "rationale": "Applications with model usage but no eval results lack measurable quality evidence.",
     },
@@ -134,7 +131,6 @@ DEFAULT_RISK_RULES = [
         "name": "Agentic workflow without agent run evidence",
         "signal": "missing_agent_run",
         "severity": "High",
-        "confidence": 0.75,
         "framework_refs": ["NIST AI RMF MAP 5.1", "NIST AI RMF MANAGE 2.4"],
         "rationale": "Agentic use cases require agent run evidence and step traceability.",
     },
@@ -143,7 +139,6 @@ DEFAULT_RISK_RULES = [
         "name": "Operational reliability failures",
         "signal": "operational_errors",
         "severity": "High",
-        "confidence": 0.9,
         "framework_refs": ["NIST AI RMF MANAGE 4.1", "SOC 2 CC7.2"],
         "rationale": "Failed model or workflow events are operational reliability evidence.",
     },
@@ -196,7 +191,6 @@ def init_governance_policy() -> None:
                 name TEXT NOT NULL,
                 signal TEXT NOT NULL,
                 severity TEXT NOT NULL,
-                confidence REAL NOT NULL,
                 framework_refs TEXT NOT NULL,
                 rationale TEXT NOT NULL,
                 PRIMARY KEY (tenant_id, rule_id)
@@ -239,7 +233,6 @@ def init_governance_policy() -> None:
                 rule_id TEXT NOT NULL,
                 risk TEXT NOT NULL,
                 severity TEXT NOT NULL,
-                confidence REAL NOT NULL,
                 status TEXT NOT NULL,
                 rationale TEXT NOT NULL,
                 framework_refs TEXT NOT NULL,
@@ -277,15 +270,14 @@ def init_governance_policy() -> None:
             connection.execute(
                 """
                 INSERT OR IGNORE INTO risk_rules (
-                    rule_id, name, signal, severity, confidence, framework_refs, rationale
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    rule_id, name, signal, severity, framework_refs, rationale
+                ) VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
                     rule["rule_id"],
                     rule["name"],
                     rule["signal"],
                     rule["severity"],
-                    rule["confidence"],
                     encode_json(rule["framework_refs"]),
                     rule["rationale"]
                 )
@@ -526,9 +518,9 @@ def upsert_rule_finding(
         """
         INSERT OR REPLACE INTO risk_findings (
             finding_id, tenant_id, project, environment, application_name, rule_id, risk, severity,
-            confidence, status, rationale, framework_refs, evidence_trace_ids, evidence_summary, evaluated_at
+            status, rationale, framework_refs, evidence_trace_ids, evidence_summary, evaluated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
         """,
         (
             finding_id,
@@ -539,7 +531,6 @@ def upsert_rule_finding(
             rule["rule_id"],
             rule["name"],
             rule["severity"],
-            rule["confidence"],
             status,
             rule["rationale"],
             encode_json(rule["framework_refs"]),
@@ -588,12 +579,12 @@ def upsert_risk_rule(rule: dict[str, Any], tenant_id: str) -> dict[str, Any]:
         connection.execute(
             """
             INSERT INTO risk_rules (
-                tenant_id, rule_id, name, signal, severity, confidence, framework_refs, rationale
+                tenant_id, rule_id, name, signal, severity, framework_refs, rationale
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (tenant_id, rule_id) DO UPDATE SET
                 name=excluded.name, signal=excluded.signal, severity=excluded.severity,
-                confidence=excluded.confidence, framework_refs=excluded.framework_refs, rationale=excluded.rationale
+                framework_refs=excluded.framework_refs, rationale=excluded.rationale
             """,
             (
                 tenant_id,
@@ -601,7 +592,6 @@ def upsert_risk_rule(rule: dict[str, Any], tenant_id: str) -> dict[str, Any]:
                 rule["name"],
                 rule["signal"],
                 rule["severity"],
-                rule["confidence"],
                 encode_json(rule["framework_refs"]),
                 rule["rationale"],
             ),
