@@ -87,6 +87,26 @@ secret manager; the installer writes them to `.env` for Compose.
 | `NORINTH_MAINTENANCE_WORKER` | no | `1` | `0` disables the governance maintenance thread. It lapses expired exceptions and ages the review queue (overdue, escalated) on a timer, so those transitions do not wait for the next batch of telemetry. Leave it on unless you schedule the work yourself. |
 | `NORINTH_MAINTENANCE_INTERVAL_SECONDS` | no | `300` | Seconds between maintenance passes. On PostgreSQL a try-lock keeps concurrent replicas from running a pass at the same time. |
 
+### Telemetry retention
+
+Each organization sets its own retention window under **Settings → retention**, or
+`POST /api/retention-policy` with `{"retention_days": 90}`. The maintenance worker
+then deletes that organization's raw events once they pass the window. A window of
+`null` — the default, including after an upgrade — keeps everything, so no install
+starts deleting because it was upgraded. The floor is 7 days; shorter values are
+rejected rather than honoured, because the deletion cannot be undone.
+
+Only raw events are aged out. Derived governance records (inventory, findings,
+assessments, decisions, gates) are kept, and the audit log is never purged: deleting
+from it would break the hash chain that proves its integrity. Every purge is written
+to the audit log with the number of events deleted.
+
+Offboarding an organization entirely is a separate, irreversible operation
+(`POST /api/admin/organizations/{tenant_id}/purge`, super administrator, requires
+`confirm_tenant_id`). The one-off operator equivalent of a retention sweep is
+`POST /api/admin/retention/purge-events`, which requires an explicit `tenant_id` or
+`all_tenants: true`.
+
 SDK-side variables (in your applications): `NORINTH_API_KEY`, `NORINTH_ENDPOINT`,
 `NORINTH_PROJECT`, `NORINTH_ENVIRONMENT`, `NORINTH_SERVICE`,
 `NORINTH_APPLICATION_NAME`, `NORINTH_USE_CASE`, `NORINTH_MODE`,
