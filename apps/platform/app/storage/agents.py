@@ -29,7 +29,6 @@ AGENT_RISK_RULES = [
         "name": "Unregistered (shadow) agent observed at runtime",
         "signal": "unregistered_agent",
         "severity": "High",
-        "confidence": 0.9,
         "framework_refs": ["OWASP Agentic ASI10", "NIST AI RMF MAP 1.1", "ISO/IEC 42001 A.6.2.6"],
         "rationale": "An agent acting in production that no one registered has no accountable owner, "
         "autonomy bound, or tool allow-list — rogue-agent risk.",
@@ -39,7 +38,6 @@ AGENT_RISK_RULES = [
         "name": "Agent used a tool outside its allow-list",
         "signal": "unauthorized_tool",
         "severity": "High",
-        "confidence": 0.9,
         "framework_refs": ["OWASP Agentic ASI02", "OWASP Agentic ASI03", "NIST AI RMF MANAGE 2.3"],
         "rationale": "Tool use beyond the sanctioned allow-list is the primary agentic privilege-escalation "
         "and tool-misuse vector.",
@@ -49,7 +47,6 @@ AGENT_RISK_RULES = [
         "name": "Agent holds the lethal trifecta without a human checkpoint",
         "signal": "agent_trifecta",
         "severity": "Critical",
-        "confidence": 0.85,
         "framework_refs": ["OWASP Agentic ASI01", "OWASP Agentic ASI09", "NIST AI RMF MANAGE 1.3"],
         "rationale": "Untrusted input + sensitive data access + external action in one agent lets a single "
         "injected instruction exfiltrate data; Meta's Rule of Two says no more than two of the three "
@@ -60,7 +57,6 @@ AGENT_RISK_RULES = [
         "name": "High-autonomy agent without human oversight checkpoint",
         "signal": "autonomy_without_oversight",
         "severity": "High",
-        "confidence": 0.8,
         "framework_refs": ["OWASP Agentic ASI09", "EU AI Act Art 14", "NIST AI RMF GOVERN 1.5"],
         "rationale": "Agents at autonomy level 3+ act within bounds on their own; without a declared human "
         "checkpoint there is no way to interrupt or override (EU AI Act Art 14 human oversight).",
