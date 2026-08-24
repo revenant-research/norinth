@@ -163,6 +163,13 @@ def _http(method: str, url: str, *, key: str | None = None, body: dict | None = 
             return error.code, json.loads(raw)
         except json.JSONDecodeError:
             return error.code, raw
+    except urllib.error.URLError as error:
+        # unreachable host, dns failure, refused connection, tls problem. status 0
+        # keeps this a configuration error for callers instead of an exception that
+        # escapes as exit 1, which for `gate check` means "rejected"
+        return 0, {"error": f"could not reach {url}: {error.reason}"}
+    except OSError as error:
+        return 0, {"error": f"could not reach {url}: {error}"}
 
 
 def _settings(args: argparse.Namespace) -> dict[str, str]:
@@ -274,6 +281,10 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     status, body = _http("GET", f"{endpoint}/health")
     if status == 200 and isinstance(body, dict) and body.get("ok"):
         _ok(f"platform reachable at {endpoint}/health")
+    elif status == 0:
+        _bad(str(body.get("error")) if isinstance(body, dict) else f"could not reach {endpoint}")
+        print("    check DNS/TLS, the port, and whether a proxy or egress policy blocks this host")
+        return 1
     else:
         _bad(f"{endpoint}/health returned {status}: {str(body)[:120]}")
         print("    check DNS/TLS, the port, and whether a proxy or egress policy blocks this host")
@@ -292,7 +303,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     }
     status, body = _http("POST", f"{endpoint}/v1/events/batch", key=key, body={"events": [event]})
     if status == 200 and isinstance(body, dict) and body.get("accepted", 0) >= 1:
-        _ok(f"ingestion key accepted; test event stored (platform now holds {body.get('total')} events)")
+        _ok("ingestion key accepted; test event stored")
     elif status == 401:
         failures += 1
         _bad("ingestion key rejected (401): wrong key, revoked, or issued by a different organization")
@@ -343,6 +354,9 @@ def cmd_gate_check(args: argparse.Namespace) -> int:
             return 2
         if status == 401:
             _bad("ingestion key rejected (401)")
+            return 3
+        if status == 0:
+            _bad(str(body.get("error")) if isinstance(body, dict) else f"could not reach {endpoint}")
             return 3
         _bad(f"{url} returned {status}: {str(body)[:160]}")
         return 3
