@@ -481,7 +481,12 @@ class NorinthClient:
                     "title": title,
                     "severity": severity,
                     "incident_status": status,
-                    "description": summarize_value(description, self.config.capture_content, self.config.signing_secret),
+                    # an incident description is written by a person for the governance
+                    # record, not model input or output. hashing it leaves the reviewer
+                    # and the auditor holding a digest instead of an account of what
+                    # happened, so it is always captured; redaction still masks
+                    # anything secret-shaped that was pasted in
+                    "description": summarize_value(description, True, self.config.signing_secret),
                     "detected_by": detected_by,
                     "impacted_trace_id": impacted_trace_id,
                     "provider": provider,

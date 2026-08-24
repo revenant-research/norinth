@@ -216,7 +216,23 @@ def load_incident(incident_id: str) -> dict[str, Any]:
         row = connection.execute("SELECT * FROM governance_incidents WHERE incident_id = ?", (incident_id,)).fetchone()
     if row is None:
         raise RecordNotFound("incident not found")
-    return dict(row)
+    return readable_description(dict(row))
+
+
+def readable_description(record: dict[str, Any]) -> dict[str, Any]:
+    """surface the reported description as text
+
+    description_summary holds the sdk's summarized value: a type, a hash, and the
+    redacted content when it was captured. an incident record is meant to be read,
+    so expose the content as ``description`` and leave the digest for the cases
+    where an older client only sent a hash
+    """
+    try:
+        summary = json.loads(record.get("description_summary") or "{}")
+    except (TypeError, ValueError):
+        summary = {}
+    record["description"] = summary.get("content") if isinstance(summary, dict) else None
+    return record
 
 
 def list_incidents(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
@@ -259,8 +275,8 @@ def list_incidents(*, tenant_id: str | None = None, project: str | None = None, 
             """,
             params,
         ).fetchall()
-    return [dict(row) for row in rows]
+    return [readable_description(dict(row)) for row in rows]
 
 
 def row_to_dict(row) -> dict[str, Any] | None:
-    return None if row is None else dict(row)
+    return None if row is None else readable_description(dict(row))
