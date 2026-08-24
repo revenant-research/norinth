@@ -54,8 +54,8 @@ client.record(norinth.schemas.NorinthEvent(
         "provider": "openai",
         "model": "gpt-4o-mini",
         "operation": "responses.create",
-        "prompt": "Summarize the ticket: Customer cannot login.",
-        "response": "Customer is experiencing login issues. Recommended action: Send password reset link.",
+        "prompt": {"content": "Summarize the ticket: Customer cannot login."},
+        "response": {"content": "Customer is experiencing login issues. Recommended action: Send password reset link."},
         "usage": {"input_tokens": 120, "output_tokens": 45, "total_tokens": 165},
         "metadata": {
             "synthetic": True,
