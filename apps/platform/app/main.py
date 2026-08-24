@@ -17,7 +17,6 @@ from app.api.ingestion_keys import router as ingestion_keys_router
 from app.api.intake import router as intake_router
 from app.api.notifications import router as notifications_router
 from app.api.onboarding import router as onboarding_router
-from app.api.public import router as public_router
 from app.api.routes import router as api_router
 from app.api.saml import router as saml_router
 from app.api.scim import router as scim_router
@@ -65,7 +64,6 @@ app.include_router(saml_router)
 app.include_router(scim_router)
 app.include_router(agents_router)
 app.include_router(attestation_keys_router)
-app.include_router(public_router)
 app.include_router(onboarding_router)
 app.include_router(setup_router)
 app.include_router(notifications_router)

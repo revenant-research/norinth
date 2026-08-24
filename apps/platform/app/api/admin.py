@@ -24,7 +24,6 @@ from app.services.notifications import emit as notify
 from app.services.notifications import public_base_url, smtp_configured
 from app.storage.audit import count_audit_logs, list_audit_logs, record_audit, verify_audit_chain
 from app.storage.entities import tenant_application_stats
-from app.storage.leads import list_leads, set_lead_status
 from app.storage.migrations import schema_status
 from app.storage.notifications import INVITE_TTL_DAYS, create_invite
 from app.storage.organizations import (
@@ -671,35 +670,3 @@ def change_org_role_assignment(payload: RoleAssignmentChange, actor: ActorContex
         detail={"role": payload.role, "status": payload.status},
     )
     return {"role_assignment": assignment}
-
-
-# --- leads (inbound interest from the landing page) ------------------------------
-
-
-@router.get("/api/admin/leads")
-def admin_leads(
-    actor: ActorContext = Depends(current_actor), status: str | None = None, page: PageParams = Depends()
-) -> dict[str, Any]:
-    _guard_super_admin(actor)
-    leads, total = list_leads(status=status, limit=page.limit, offset=page.offset)
-    return {
-        "leads": leads,
-        "page": {"offset": page.offset, "limit": page.limit, "total": total, "has_more": page.offset + len(leads) < total},
-    }
-
-
-LEAD_STATUSES = {"new", "contacted", "qualified", "won", "lost"}
-
-
-@router.post("/api/admin/leads/{lead_id}/status")
-def admin_lead_status(lead_id: str, payload: dict[str, Any], actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
-    _guard_super_admin(actor)
-    status = str(payload.get("status") or "")
-    if status not in LEAD_STATUSES:
-        raise HTTPException(status_code=400, detail=f"status must be one of {sorted(LEAD_STATUSES)}")
-    try:
-        lead = set_lead_status(lead_id, status)
-    except ValueError as error:
-        raise HTTPException(status_code=404, detail=str(error)) from error
-    record_audit(actor_ref=actor.user_ref, action="lead.status", tenant_id=None, target_type="lead", target_id=lead_id, detail={"status": status})
-    return {"lead": lead}

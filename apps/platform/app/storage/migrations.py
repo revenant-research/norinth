@@ -135,10 +135,12 @@ def _0005_attestation_keys(connection) -> None:
 
 
 def _0006_leads(connection) -> None:
-    """Inbound pilot/demo requests captured by the public landing page"""
-    from app.storage.leads import ensure_leads_table
+    """no-op
 
-    ensure_leads_table(connection)
+    this once created a leads table for a public landing-page contact form;
+    that commercial lead-capture flow was removed (norinth self-hosts, there
+    is no vendor inbox). migration 13 drops the table on installs that have it
+    """
 
 
 def _0007_notifications(connection) -> None:
@@ -277,6 +279,11 @@ def _0012_drop_risk_confidence(connection) -> None:
             connection.execute(f"ALTER TABLE {table} DROP COLUMN confidence")
 
 
+def _0013_drop_leads(connection) -> None:
+    """drop the leads table left by the removed landing-page lead-capture flow"""
+    connection.execute("DROP TABLE IF EXISTS leads")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
@@ -290,6 +297,7 @@ MIGRATIONS: list[Migration] = [
     Migration(10, "tenant-scoped record keys (deployments, incidents, prompts, event dedup)", _0010_cross_tenant_keys),
     Migration(11, "audit-chain HMAC anchor column", _0011_audit_hmac),
     Migration(12, "drop fabricated confidence score from risk tables", _0012_drop_risk_confidence),
+    Migration(13, "drop leads table (landing-page lead capture removed)", _0013_drop_leads),
 ]
 
 

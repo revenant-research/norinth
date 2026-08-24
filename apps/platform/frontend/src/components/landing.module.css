@@ -74,7 +74,6 @@ a.heroGhost.heroGhost:hover { background: rgba(255, 252, 245, 0.12); border-colo
 .planItems { margin: 0; padding-left: 18px; color: var(--n-ink-muted); font-size: var(--n-text-sm); line-height: 1.6; }
 .addons { margin: 0; padding-left: 18px; color: var(--n-ink-dim); font-size: var(--n-text-sm); line-height: 1.6; }
 .frameworks { display: flex; flex-wrap: wrap; gap: 6px; }
-.contactForm { max-width: 44rem; }
 .footer {
   margin-top: var(--n-space-8);
   padding: var(--n-space-6) var(--n-pad-x) var(--n-space-7);

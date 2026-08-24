@@ -1,32 +1,24 @@
-import { useState } from "react";
-
-import { postJson } from "../api";
 import {
   Button,
   ButtonLink,
-  Callout,
   Card,
   Chip,
   CodeBlock,
   Container,
   Eyebrow,
-  FormGrid,
   Grid,
   Heading,
   Lede,
-  SelectField,
   Stack,
   Stat,
   StatGroup,
   Text,
-  TextArea,
-  TextField,
 } from "../design";
 import { ChromeBand, ChromeStrip, Screenshot } from "./Showcase";
 import styles from "./landing.module.css";
 
 // project site: what it is, who it's for, how to install, why it's built this
-// way, security. "get help" links to github, not a sales funnel
+// way, security. every cta points at github or the docs, not a sales funnel
 
 // dated regulatory facts only, each with a primary source
 const CATALYSTS = [
@@ -146,7 +138,10 @@ function Section({ id, eyebrow, title, lede, children }: { id: string; eyebrow: 
   );
 }
 
-export function LandingPage({ onClientSignIn }: { onClientSignIn: () => void }) {
+export function LandingPage({ onClientSignIn }: { onClientSignIn?: () => void }) {
+  // in-platform landing passes onClientSignIn; the standalone marketing build
+  // doesn't, so sign-in, the contact form and the /docs link are hidden there
+  const embedded = Boolean(onClientSignIn);
   return (
     <div className={styles.page}>
       <header className={styles.header}>
@@ -163,8 +158,8 @@ export function LandingPage({ onClientSignIn }: { onClientSignIn: () => void }) 
           <a href="https://github.com/revenant-research/norinth">GitHub</a>
         </nav>
         <div className={styles.actions}>
-          <Button variant="secondary" size="sm" onClick={onClientSignIn}>Sign in</Button>
-          <ButtonLink size="sm" href="#start">Install</ButtonLink>
+          {embedded ? <Button variant="secondary" size="sm" onClick={onClientSignIn}>Sign in</Button> : null}
+          <ButtonLink size="sm" href="#start">Get started</ButtonLink>
         </div>
       </header>
 
@@ -178,7 +173,7 @@ export function LandingPage({ onClientSignIn }: { onClientSignIn: () => void }) 
             without evidence. The audit packet your auditor asks for. Free, open source, in your network.
           </Lede>
           <div className={styles.actions}>
-            <ButtonLink size="lg" href="#start" className={styles.heroCta}>Install it</ButtonLink>
+            <ButtonLink size="lg" href="#start" className={styles.heroCta}>Get started</ButtonLink>
             <ButtonLink variant="secondary" size="lg" href="https://github.com/revenant-research/norinth" className={styles.heroGhost}>Read the source</ButtonLink>
           </div>
           <ul className={styles.proof} aria-label="Key facts">
@@ -383,19 +378,18 @@ export function LandingPage({ onClientSignIn }: { onClientSignIn: () => void }) 
               <Text size="sm">Roles and separation of duties, intake and risk tiering, review routing, release gates and signed evidence, incidents, and the audit packet.</Text>
               <div><ButtonLink variant="link" href="https://github.com/revenant-research/norinth/blob/main/apps/platform/README.md">Platform guide</ButtonLink></div>
             </Card>
-            <Card as="article">
-              <Heading level={3} size="lg">API reference</Heading>
-              <Text size="sm">Every platform capability is an authenticated JSON API. The OpenAPI reference is served by the platform itself.</Text>
-              <div><ButtonLink variant="link" href="/docs">API reference</ButtonLink></div>
-            </Card>
+            {embedded ? (
+              <Card as="article">
+                <Heading level={3} size="lg">API reference</Heading>
+                <Text size="sm">Every platform capability is an authenticated JSON API. The OpenAPI reference is served by the platform itself.</Text>
+                <div><ButtonLink variant="link" href="/docs">API reference</ButtonLink></div>
+              </Card>
+            ) : null}
           </Grid>
         </Section>
 
       </Container>
       </div>
-      <Container>
-        <ContactSection />
-      </Container>
 
       <footer className={styles.footer}>
         <div className={styles.brand}>
@@ -411,69 +405,5 @@ export function LandingPage({ onClientSignIn }: { onClientSignIn: () => void }) 
         </div>
       </footer>
     </div>
-  );
-}
-
-export function ContactSection() {
-  const [form, setForm] = useState({ name: "", email: "", organization: "", interest: "pilot", message: "" });
-  const [state, setState] = useState<"idle" | "busy" | "sent" | "error">("idle");
-  const [error, setError] = useState("");
-
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
-    setState("busy");
-    setError("");
-    try {
-      await postJson("/api/public/leads", form);
-      setState("sent");
-    } catch (caught) {
-      setState("error");
-      setError(caught instanceof Error ? caught.message : "Could not send. Please try again.");
-    }
-  }
-
-  return (
-    <Section
-      id="contact"
-      eyebrow="Get help"
-      title="Leave a note for this instance's administrators."
-      lede="This form is served by the Norinth instance you are viewing, so your note is stored in its own admin console — not sent to the Norinth project. To reach the maintainers, open a GitHub issue or discussion; use this to contact whoever operates this deployment."
-    >
-      {state === "sent" ? (
-        <Callout tone="success" title="Thanks.">Your note was recorded in this instance's admin console.</Callout>
-      ) : (
-        <form className={styles.contactForm} onSubmit={submit} aria-label="Contact">
-          <Stack gap={4}>
-            <FormGrid>
-              <TextField label="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required autoComplete="name" />
-              <TextField label="Work email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required autoComplete="email" />
-              <TextField label="Organization" value={form.organization} onChange={(e) => setForm({ ...form, organization: e.target.value })} required autoComplete="organization" />
-              <SelectField
-                label="I want to"
-                value={form.interest}
-                onChange={(e) => setForm({ ...form, interest: e.target.value })}
-                options={[
-                  { value: "pilot", label: "Get help with a deployment" },
-                  { value: "demo", label: "Help shape a healthcare or EU AI Act pack" },
-                  { value: "pricing", label: "Ask about implementation services" },
-                  { value: "security", label: "Security review questions" },
-                ]}
-              />
-            </FormGrid>
-            <TextArea
-              label="What are you running today?"
-              value={form.message}
-              onChange={(e) => setForm({ ...form, message: e.target.value })}
-              rows={3}
-              placeholder="e.g. ambient documentation in two clinics, a claims triage agent, OpenAI + Anthropic via LiteLLM"
-            />
-            {state === "error" ? <Callout tone="danger">{error}</Callout> : null}
-            <div>
-              <Button type="submit" size="lg" disabled={state === "busy"}>{state === "busy" ? "Sending" : "Send"}</Button>
-            </div>
-          </Stack>
-        </form>
-      )}
-    </Section>
   );
 }
