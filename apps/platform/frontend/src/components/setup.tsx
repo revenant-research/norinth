@@ -46,7 +46,7 @@ norinth.autoinstrument()`;
 function otelSnippet(endpoint: string): string {
   return `exporters:
   otlphttp/norinth:
-    endpoint: ${endpoint}/v1/otel
+    traces_endpoint: ${endpoint}/v1/otel/traces
     headers:
       Authorization: "Bearer $NORINTH_API_KEY"`;
 }

@@ -43,7 +43,7 @@ norinth.autoinstrument()`;
 const OTEL_SNIPPET = `# OpenTelemetry GenAI semantic conventions are accepted as-is.
 exporters:
   otlphttp/norinth:
-    endpoint: ${window.location.origin}/v1/otel
+    traces_endpoint: ${window.location.origin}/v1/otel/traces
     headers:
       Authorization: "Bearer $NORINTH_API_KEY"`;
 

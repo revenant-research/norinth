@@ -112,7 +112,7 @@ const GET_STARTED = [
     eyebrow: "Already on OpenTelemetry",
     title: "Point your collector at it",
     body: "GenAI semantic-convention spans are accepted as-is from any collector or LLM gateway. No application code changes.",
-    code: "exporters:\n  otlphttp/norinth:\n    endpoint: https://norinth.internal/v1/otel\n    headers:\n      Authorization: \"Bearer $NORINTH_API_KEY\"",
+    code: "exporters:\n  otlphttp/norinth:\n    traces_endpoint: https://norinth.internal/v1/otel/traces\n    headers:\n      Authorization: \"Bearer $NORINTH_API_KEY\"",
   },
 ];
 
