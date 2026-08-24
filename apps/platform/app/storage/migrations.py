@@ -284,6 +284,16 @@ def _0013_drop_leads(connection) -> None:
     connection.execute("DROP TABLE IF EXISTS leads")
 
 
+def _0014_org_retention_window(connection) -> None:
+    """per-organization telemetry retention window
+
+    null means keep everything, so an existing install never starts deleting
+    because it upgraded; a window only applies once the organization sets one
+    """
+    if not _has_column(connection, "organizations", "retention_days"):
+        connection.execute("ALTER TABLE organizations ADD COLUMN retention_days INTEGER")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
@@ -298,6 +308,7 @@ MIGRATIONS: list[Migration] = [
     Migration(11, "audit-chain HMAC anchor column", _0011_audit_hmac),
     Migration(12, "drop fabricated confidence score from risk tables", _0012_drop_risk_confidence),
     Migration(13, "drop leads table (landing-page lead capture removed)", _0013_drop_leads),
+    Migration(14, "per-organization telemetry retention window", _0014_org_retention_window),
 ]
 
 

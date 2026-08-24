@@ -124,8 +124,15 @@ def test_retention_purges_old_events(super_admin_client):
             """
         )
 
-    resp = super_admin_client.post(
+    # the scope has to be explicit; leaving it out is refused rather than
+    # ageing out every organization
+    unscoped = super_admin_client.post(
         "/api/admin/retention/purge-events", json={"retention_days": 1}
+    )
+    assert unscoped.status_code == 400, unscoped.text
+
+    resp = super_admin_client.post(
+        "/api/admin/retention/purge-events", json={"retention_days": 1, "all_tenants": True}
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["deleted"] >= 1
