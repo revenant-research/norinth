@@ -85,7 +85,7 @@ jobs:
       - name: Type check + build
         run: npm run build
       - name: Upload dashboard bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dashboard-bundle
           path: apps/platform/app/dashboard/static
