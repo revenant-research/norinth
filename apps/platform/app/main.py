@@ -27,6 +27,7 @@ from app.dependencies import SESSION_COOKIE
 from app.ingestion.routes import router as ingestion_router
 from app.services.auth import resolve_session
 from app.services.bootstrap import seed_dev_ingestion_key_if_dev, seed_super_admin
+from app.services.maintenance import start_worker as start_maintenance_worker
 from app.services.notifications import start_worker as start_notification_worker
 from app.storage.errors import RecordNotFound
 from app.storage.migrations import run_migrations
@@ -50,6 +51,7 @@ app = FastAPI(title="Norinth Platform", description="AI governance platform API:
 
 run_migrations()
 start_notification_worker()
+start_maintenance_worker()
 seed_super_admin()
 seed_dev_ingestion_key_if_dev()
 app.include_router(ingestion_router)
