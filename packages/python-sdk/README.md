@@ -22,11 +22,16 @@ pip install norinth-logger
 
 ## Quick start
 
+`api_key` is an **ingestion key** you create inside your own Norinth instance
+(setup wizard, or Identity & Integrations → ingestion keys); it authenticates the
+SDK to your platform and scopes events to your tenant. `endpoint` is your
+instance's URL. There is no external service or account.
+
 ```python
 import norinth_logger as norinth
 
 norinth.init(
-    api_key="your-key",
+    api_key="your-ingestion-key",   # from your Norinth instance (prefixed nrk_)
     endpoint="https://platform.your-host.example",
     project="my-project",
     environment="production",
