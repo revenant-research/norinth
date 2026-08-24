@@ -77,6 +77,7 @@ from app.storage.raw_events import connect, count_scoped_events, list_events, li
 from app.storage.workflow import (
     assign_owner,
     create_exception,
+    expire_due_exceptions,
     load_decision_target,
     load_owner_assignment,
     record_decision,
@@ -231,6 +232,9 @@ def agents(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = D
 
 @router.get("/api/risk-register")
 def risk_register(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
+    # a lapsed exception reopens the finding it waived; without this the register
+    # keeps reporting it as accepted until the next batch of telemetry
+    expire_due_exceptions()
     return paginate(build_risk_register(scope), "risks", page)
 
 
@@ -395,6 +399,9 @@ def close_incident(incident_id: str, payload: DeploymentGateDecisionRequest, act
 
 @router.post("/api/deployment-gates/{gate_id}/approve")
 def approve_deployment_gate(gate_id: str, payload: DeploymentGateDecisionRequest, actor: ActorContext = Depends(current_actor)):
+    # a risk accepted under an exception that has since lapsed is not remediated;
+    # expire first so the reopened finding blocks this release
+    expire_due_exceptions()
     gate = load_deployment_gate(gate_id)
     gate["target_type"] = "deployment_gate"
     try:
@@ -519,6 +526,8 @@ def create_decision(payload: DecisionRequest, actor: ActorContext = Depends(curr
 
 @router.get("/api/exceptions")
 def exceptions(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
+    # never show a lapsed exception as still active
+    expire_due_exceptions()
     return paginate(build_exceptions(scope), "exceptions", page)
 
 
