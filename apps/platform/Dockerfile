@@ -14,7 +14,7 @@ COPY apps/platform/frontend/ ./
 RUN npm run build
 
 # ---- Stage 2: runtime ----------------------------------------------------------
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 # Non-root runtime user
 RUN groupadd --system norinth && useradd --system --gid norinth --home /app norinth
