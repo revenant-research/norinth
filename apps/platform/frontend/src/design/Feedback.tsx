@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 import styles from "./Feedback.module.css";
 
-/** Inline message block. `tone` picks colour and the ARIA role. */
+/** inline message block; `tone` picks colour and the aria role */
 export function Callout({ tone = "info", title, children, action }: { tone?: "info" | "success" | "warning" | "danger"; title?: ReactNode; children: ReactNode; action?: ReactNode }) {
   const role = tone === "danger" || tone === "warning" ? "alert" : "status";
   return (

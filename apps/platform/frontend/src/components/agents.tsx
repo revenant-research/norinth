@@ -6,13 +6,9 @@ import { toast } from "./toast";
 import { Badge, Chip, EmptyState, MetricCard, RecordList, Section } from "./ui";
 import { useResource } from "./useResource";
 
-/**
- * Agentic-AI governance: the agent registry and the runtime posture that
- * reconciles observed agents against it.
- *
- * Issue badges map to the OWASP Top 10 for Agentic Applications so a reviewer
- * sees *why* an agent is flagged, not just that it is.
- */
+// agent registry plus the runtime view that reconciles observed agents against
+// it. issue badges map to the owasp top 10 for agentic apps so a reviewer sees
+// why an agent is flagged
 
 export type AgentIssue = "unregistered_agent" | "unauthorized_tool" | "agent_trifecta" | "autonomy_without_oversight";
 
@@ -43,7 +39,7 @@ const EMPTY_FORM = {
   human_checkpoint: true,
 };
 
-/** True when the declared profile holds all three "lethal trifecta" legs. */
+/** true when the declared profile holds all three trifecta legs */
 export function hasTrifecta(form: { processes_untrusted_input: boolean; accesses_sensitive_data: boolean; can_act_externally: boolean }): boolean {
   return form.processes_untrusted_input && form.accesses_sensitive_data && form.can_act_externally;
 }

@@ -1,4 +1,4 @@
-"""Agent registry and agentic-governance posture endpoints (tenant plane)."""
+"""agent registry and agent-governance endpoints"""
 
 from __future__ import annotations
 
@@ -104,6 +104,5 @@ def retire(agent_id: str, actor: ActorContext = Depends(current_actor)) -> dict[
 
 @router.get("/api/agents/posture")
 def agent_posture(scope: ScopeFilter = Depends(scoped_dependency)) -> dict[str, Any]:
-    """Observed agents reconciled against the registry: shadow agents,
-    unauthorized tool use, lethal-trifecta and autonomy-without-oversight."""
+    """observed agents reconciled against the registry"""
     return public_posture(compute_agent_posture(scope.tenant_id or ""))

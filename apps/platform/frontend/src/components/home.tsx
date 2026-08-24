@@ -2,12 +2,9 @@ import type { DashboardData, User } from "../api";
 import { Badge, ButtonLink, Callout, Card, Eyebrow, Grid, Heading, Inline, Stack, Stat, StatGroup, Text, statusTone } from "../design";
 import { Section } from "./ui";
 
-/**
- * Role-shaped home. Everyone sees "Needs you": the items that are theirs to act
- * on, derived from their permissions and assignments. Administrators also see
- * organization posture and setup; owners see their systems; deciders see their
- * queue. Nobody sees sixteen pages of everything.
- */
+// role-shaped home. everyone sees "needs you": items theirs to act on, from
+// their permissions and assignments. admins also see org state and setup,
+// owners see their systems, deciders see their queue
 
 type Row = Record<string, any>;
 

@@ -1,10 +1,4 @@
-"""Regression tests for tenant-isolation fail-closed behavior.
-
-Covers audit findings:
-- H-1: require_actor_scope failed open when either tenant was NULL.
-- H-2: role_scope_matches treated a NULL-scoped assignment as a cross-tenant wildcard.
-- H-4: GET /api/sdk-health dropped the tenant filter, leaking other tenants' telemetry.
-"""
+"""tenant-isolation fail-closed: actor scope, role scope, sdk-health filtering"""
 
 from __future__ import annotations
 
@@ -22,17 +16,17 @@ def test_require_actor_scope_fails_closed_on_tenant():
 
     actor = ActorContext(user_ref="u", tenant_id="acme")
 
-    # Same tenant: allowed.
+    # same tenant: allowed
     require_actor_scope(actor, {"tenant_id": "acme"})
 
-    # Different tenant: denied.
+    # different tenant: denied
     try:
         require_actor_scope(actor, {"tenant_id": "beta"})
         raise AssertionError("expected cross-tenant target to be denied")
     except AuthorizationError:
         pass
 
-    # Missing/NULL tenant on the target: denied (fail closed), where it used to pass.
+    # missing/null tenant on the target: denied (fail closed)
     try:
         require_actor_scope(actor, {})
         raise AssertionError("expected NULL-tenant target to be denied")
@@ -45,7 +39,7 @@ def test_role_scope_matches_requires_exact_tenant():
 
     assert role_scope_matches({"tenant_id": "acme"}, {"tenant_id": "acme"}) is True
     assert role_scope_matches({"tenant_id": "acme"}, {"tenant_id": "beta"}) is False
-    # A NULL-scoped assignment is NOT a wildcard across tenants (was True before).
+    # a null-scoped assignment is not a wildcard across tenants
     assert role_scope_matches({"tenant_id": None}, {"tenant_id": "acme"}) is False
 
 
@@ -67,8 +61,8 @@ def test_sdk_health_is_tenant_scoped(super_admin_client):
     from app.main import app
     from fastapi.testclient import TestClient
 
-    # Two orgs; keep an activated admin client per tenant (login_and_activate
-    # rotates the password, so we reuse the live client rather than re-login).
+    # two orgs; login_and_activate rotates the password, so reuse the live
+    # client per tenant rather than re-login
     clients = {}
     tokens = {}
     for tid, email in [("acme", "a@acme.test"), ("beta", "a@beta.test")]:
@@ -88,7 +82,7 @@ def test_sdk_health_is_tenant_scoped(super_admin_client):
         tokens[tid] = org.post("/api/ingestion-keys", json={"name": f"{tid} key"}).json()["token"]
 
     try:
-        # Each tenant ingests an sdk.health event with a distinguishing service.
+        # each tenant ingests an sdk.health event with a distinguishing service
         for tid in ("acme", "beta"):
             resp = clients[tid].post(
                 "/v1/events/batch",
@@ -97,7 +91,7 @@ def test_sdk_health_is_tenant_scoped(super_admin_client):
             )
             assert resp.status_code == 200, resp.text
 
-        # The acme admin sees only acme's sdk.health, never beta's.
+        # acme admin sees only acme's sdk.health, never beta's
         health = clients["acme"].get("/api/sdk-health")
         assert health.status_code == 200, health.text
         services = {e.get("service") for e in health.json()["sdk_health"]}

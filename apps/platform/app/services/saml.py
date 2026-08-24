@@ -1,19 +1,19 @@
-"""SAML 2.0 Service Provider: SP-initiated Web Browser SSO (HTTP-Redirect
-AuthnRequest, HTTP-POST Response) with JIT provisioning.
+"""saml 2.0 service provider: sp-initiated web browser sso (http-redirect
+AuthnRequest, http-post Response) with jit provisioning
 
-Security model:
-* The Response is parsed with a hardened XML parser (no DTD / external
-  entities) and its signature is verified with signxml against the IdP
-  certificate the org admin configured -- never against a certificate embedded
-  in the message. That defeats signature-wrapping and cert-substitution attacks.
-* Only the signed element is trusted: the assertion is read from the verified
-  subtree, not from the raw document.
-* Claims are then validated: Issuer == configured IdP entity id, Audience ==
-  our SP entity id, InResponseTo matches a request we issued (single use),
-  NotBefore / NotOnOrAfter with a small clock skew, StatusCode success, and a
-  bearer SubjectConfirmation whose Recipient is our ACS URL.
-* The user is provisioned exactly like OIDC JIT: tenant-bound, default
-  non-admin role, no password.
+security model:
+* the Response is parsed with a hardened xml parser (no dtd / external entities)
+  and its signature verified with signxml against the configured idp certificate,
+  never against a cert embedded in the message; defeats signature-wrapping and
+  cert-substitution
+* only the signed subtree is trusted: the assertion is read from there, not the
+  raw document
+* claims validated: Issuer == configured idp entity id, Audience == our sp
+  entity id, InResponseTo matches a request we issued (single use), NotBefore /
+  NotOnOrAfter with a small clock skew, StatusCode success, and a bearer
+  SubjectConfirmation whose Recipient is our acs url
+* user provisioned like oidc jit: tenant-bound, default non-admin role, no
+  password
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from urllib import parse
 from lxml import etree
 from signxml import XMLVerifier
 
-from app.services.sso import _provision_user  # shared JIT provisioning
+from app.services.sso import _provision_user  # shared jit provisioning
 from app.storage.saml import consume_saml_request, create_saml_request, load_saml_configuration
 
 NS = {
@@ -73,11 +73,11 @@ def build_authn_redirect(tenant_id: str, base_url: str) -> str:
         f'<samlp:NameIDPolicy Format="urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress" AllowCreate="true"/>'
         f"</samlp:AuthnRequest>"
     )
-    # HTTP-Redirect binding: DEFLATE (raw) + base64 + URL-encode.
+    # http-redirect binding: raw deflate + base64 + url-encode
     deflated = zlib.compress(xml.encode("utf-8"))[2:-4]
     saml_request = base64.b64encode(deflated).decode("ascii")
     separator = "&" if "?" in config["idp_sso_url"] else "?"
-    return f"{config['idp_sso_url']}{separator}{parse.urlencode({'SAMLRequest': saml_request, 'RelayState': tenant_id})}"
+    return f"{config['idp_sso_url']}{separator}{parse.urlencode({'SAMLRequest': saml_request, 'RelayState': tenant_id})}", request_id
 
 
 # --- Response ---------------------------------------------------------------------
@@ -92,9 +92,8 @@ def _parse_time(value: str | None) -> datetime | None:
 
 
 def _verify_signed(root: etree._Element, certificate_pem: str) -> etree._Element:
-    """Verify the XML signature against the configured certificate and return
-    the signed element. signxml rejects any certificate the message itself
-    supplies unless it matches the one we pass."""
+    """verify the xml signature against the configured cert and return the signed
+    element; signxml rejects any cert the message supplies unless it matches ours"""
     try:
         verified = XMLVerifier().verify(root, x509_cert=certificate_pem, expect_references=1)
     except Exception as error:
@@ -102,18 +101,24 @@ def _verify_signed(root: etree._Element, certificate_pem: str) -> etree._Element
     return verified.signed_xml
 
 
-def process_response(saml_response_b64: str, base_url: str) -> dict[str, Any]:
-    """Verify a SAML Response (HTTP-POST binding) and return the provisioned user."""
+def process_response(saml_response_b64: str, base_url: str, expected_request_id: str | None = None) -> dict[str, Any]:
+    """verify a saml Response (http-post binding) and return the provisioned user
+
+    ``expected_request_id`` is the AuthnRequest id this browser was issued at
+    /start (from a cookie); when set, the response's InResponseTo must match it,
+    binding the login to the browser that began it"""
     try:
         raw = base64.b64decode(saml_response_b64)
         root = etree.fromstring(raw, parser=_PARSER)
     except Exception as error:
         raise SamlError("SAMLResponse is not valid base64 XML") from error
 
-    # Locate our request id first so we know which tenant's certificate to use.
+    # locate our request id first so we know which tenant's cert to use
     in_response_to = root.get("InResponseTo")
     if not in_response_to:
         raise SamlError("SAML Response lacks InResponseTo; unsolicited responses are not accepted")
+    if expected_request_id is not None and in_response_to != expected_request_id:
+        raise SamlError("SAML Response does not match the login request from this browser")
     request = consume_saml_request(in_response_to)
     if request is None:
         raise SamlError("SAML Response does not match a pending login request (unknown, expired, or replayed)")
@@ -122,13 +127,13 @@ def process_response(saml_response_b64: str, base_url: str) -> dict[str, Any]:
     if config is None or not config.get("enabled"):
         raise SamlError("SAML SSO is not configured for this organization")
 
-    # Status must be success before we bother verifying anything.
+    # status must be success before we verify anything
     status = root.find("samlp:Status/samlp:StatusCode", NS)
     if status is None or status.get("Value") != SUCCESS:
         raise SamlError("identity provider returned a non-success status")
 
-    # Signature: the Response or the Assertion may be signed. Verify whichever
-    # carries the signature and only trust the verified subtree.
+    # the Response or the Assertion may be signed; verify whichever carries the
+    # signature and only trust the verified subtree
     signed = _verify_signed(root, config["idp_certificate"])
     if etree.QName(signed).localname == "Response":
         assertion = signed.find("saml:Assertion", NS)
@@ -144,31 +149,44 @@ def process_response(saml_response_b64: str, base_url: str) -> dict[str, Any]:
         raise SamlError("assertion Issuer does not match the configured identity provider")
 
     now = datetime.now(UTC)
+    # Conditions (validity window + audience) required, not fail-open on absence:
+    # an assertion with no AudienceRestriction or no expiry must be rejected
     conditions = assertion.find("saml:Conditions", NS)
-    if conditions is not None:
-        not_before = _parse_time(conditions.get("NotBefore"))
-        not_after = _parse_time(conditions.get("NotOnOrAfter"))
-        if not_before and now + CLOCK_SKEW < not_before:
-            raise SamlError("assertion is not yet valid")
-        if not_after and now - CLOCK_SKEW >= not_after:
-            raise SamlError("assertion has expired")
-        audiences = [a.text.strip() for a in conditions.findall("saml:AudienceRestriction/saml:Audience", NS) if a.text]
-        if audiences and sp_entity_id(base_url) not in audiences:
-            raise SamlError("assertion audience does not include this service provider")
+    if conditions is None:
+        raise SamlError("assertion lacks Conditions")
+    not_before = _parse_time(conditions.get("NotBefore"))
+    not_after = _parse_time(conditions.get("NotOnOrAfter"))
+    if not_after is None:
+        raise SamlError("assertion Conditions lack NotOnOrAfter")
+    if not_before and now + CLOCK_SKEW < not_before:
+        raise SamlError("assertion is not yet valid")
+    if now - CLOCK_SKEW >= not_after:
+        raise SamlError("assertion has expired")
+    audiences = [a.text.strip() for a in conditions.findall("saml:AudienceRestriction/saml:Audience", NS) if a.text]
+    if not audiences:
+        raise SamlError("assertion lacks an AudienceRestriction")
+    if sp_entity_id(base_url) not in audiences:
+        raise SamlError("assertion audience does not include this service provider")
 
+    # the bearer SubjectConfirmationData binds the signed assertion to this
+    # request and acs; every field is mandatory. an assertion signed alone (entra
+    # default) could otherwise be wrapped in a Response with a forged
+    # InResponseTo, and an absent Recipient/NotOnOrAfter would fail open to replay
     confirmation = assertion.find("saml:Subject/saml:SubjectConfirmation", NS)
     if confirmation is None or confirmation.get("Method") != BEARER:
         raise SamlError("assertion lacks a bearer SubjectConfirmation")
     data = confirmation.find("saml:SubjectConfirmationData", NS)
-    if data is not None:
-        if data.get("InResponseTo") and data.get("InResponseTo") != in_response_to:
-            raise SamlError("SubjectConfirmationData InResponseTo mismatch")
-        recipient = data.get("Recipient")
-        if recipient and recipient != acs_url(base_url):
-            raise SamlError("SubjectConfirmationData Recipient is not this ACS URL")
-        scd_not_after = _parse_time(data.get("NotOnOrAfter"))
-        if scd_not_after and now - CLOCK_SKEW >= scd_not_after:
-            raise SamlError("subject confirmation has expired")
+    if data is None:
+        raise SamlError("assertion lacks SubjectConfirmationData")
+    if data.get("InResponseTo") != in_response_to:
+        raise SamlError("SubjectConfirmationData InResponseTo does not match the login request")
+    if data.get("Recipient") != acs_url(base_url):
+        raise SamlError("SubjectConfirmationData Recipient is not this ACS URL")
+    scd_not_after = _parse_time(data.get("NotOnOrAfter"))
+    if scd_not_after is None:
+        raise SamlError("SubjectConfirmationData lacks NotOnOrAfter")
+    if now - CLOCK_SKEW >= scd_not_after:
+        raise SamlError("subject confirmation has expired")
 
     name_id = (assertion.findtext("saml:Subject/saml:NameID", namespaces=NS) or "").strip()
     attributes: dict[str, str] = {}

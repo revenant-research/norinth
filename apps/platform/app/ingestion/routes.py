@@ -6,6 +6,7 @@ import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 
 from app.dependencies import ingestion_tenant
 from app.ingestion.otel import otel_spans_to_events
@@ -20,30 +21,38 @@ from app.storage.governance_policy import refresh_governance_assessments
 from app.storage.incidents import process_incident_events
 from app.storage.lifecycle import refresh_lifecycle_state
 from app.storage.prompts import process_prompt_events
-from app.storage.raw_events import count_events, insert_events
-from app.storage.workflow import refresh_workflow_state
+from app.storage.raw_events import insert_events
+from app.storage.workflow import expire_due_exceptions, refresh_workflow_state
 
 router = APIRouter()
 
 
-# Attributes each event type requires beyond the envelope. The entity
-# processors access these without a default, so a missing one previously crashed
-# ingestion with an unhandled 500 after a partial write (audit C-6). Validation
-# runs before any write, so a malformed batch is rejected atomically with 422.
+# attributes each event type needs; validated before any write so a bad batch is a clean 422
 _REQUIRED_ATTRIBUTES: dict[str, tuple[str, ...]] = {
     "deployment.event": ("deployment_id", "version", "artifact_ref"),
     "prompt.event": ("prompt_id", "version", "artifact_ref"),
 }
 
 
+# attributes the pipeline reads as nested objects; reject non-object here so recompute can't choke
+_OBJECT_ATTRIBUTES = ("metadata", "prompt", "response", "usage", "template", "change_notes", "description", "attestation")
+
+
 def _validate_event_attributes(events: list[dict[str, Any]]) -> None:
     for index, event in enumerate(events):
+        attributes = event.get("attributes")
+        if attributes is not None and not isinstance(attributes, dict):
+            raise HTTPException(status_code=422, detail=f"events[{index}].attributes must be an object")
+        attributes = attributes or {}
+        for key in _OBJECT_ATTRIBUTES:
+            if key in attributes and attributes[key] is not None and not isinstance(attributes[key], dict):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"events[{index}].attributes.{key} must be an object",
+                )
         required = _REQUIRED_ATTRIBUTES.get(event.get("type", ""))
         if not required:
             continue
-        attributes = event.get("attributes") or {}
-        if not isinstance(attributes, dict):
-            raise HTTPException(status_code=422, detail=f"events[{index}].attributes must be an object")
         missing = [field for field in required if attributes.get(field) in (None, "")]
         if missing:
             raise HTTPException(
@@ -53,14 +62,7 @@ def _validate_event_attributes(events: list[dict[str, Any]]) -> None:
 
 
 def _bind_events_to_tenant(events: list[dict[str, Any]], tenant_id: str) -> None:
-    """Enforce that every event belongs to the authenticated tenant.
-
-    The tenant is derived from the ingestion key (see ``ingestion_tenant``), not
-    from the client payload. Events that omit a tenant are stamped with the
-    authenticated tenant; events that claim a *different* tenant are rejected for
-    the whole batch. This closes the cross-tenant evidence-forgery hole (C-1) and
-    guarantees no NULL-tenant rows enter storage via authenticated ingestion.
-    """
+    """pin every event to the authenticated tenant; reject events claiming another"""
     for event in events:
         attributes = event.setdefault("attributes", {})
         if not isinstance(attributes, dict):
@@ -96,7 +98,8 @@ async def ingest_events(
             raise HTTPException(status_code=401, detail="Signature mismatch")
 
     events = [event.model_dump() for event in batch.events]
-    return _ingest(events, tenant_id)
+    # ingest is sync db work; run off the event loop so a big recompute can't block the server
+    return await run_in_threadpool(_ingest, events, tenant_id)
 
 
 @router.post("/v1/otel/traces")
@@ -104,12 +107,7 @@ async def ingest_otel_traces(
     request: Request,
     tenant_id: str = Depends(ingestion_tenant),
 ):
-    """Ingest OpenTelemetry GenAI spans (OTLP/HTTP JSON).
-
-    Lets Norinth consume telemetry from any OTel-instrumented framework or LLM
-    gateway, mapping gen_ai.* spans to the same event shapes the SDK emits so the
-    governance pipeline processes them unchanged. Non-GenAI spans are skipped.
-    """
+    """ingest opentelemetry gen_ai spans (otlp/http json)"""
     try:
         payload = await request.json()
     except Exception as error:
@@ -118,17 +116,12 @@ async def ingest_otel_traces(
         raise HTTPException(status_code=400, detail="OTLP payload must be a JSON object")
     events = otel_spans_to_events(payload)
     if not events:
-        return {"accepted": 0, "total": count_events(), "skipped": "no GenAI spans found"}
-    return _ingest(events, tenant_id)
+        return {"accepted": 0, "skipped": "no GenAI spans found"}
+    return await run_in_threadpool(_ingest, events, tenant_id)
 
 
 def _verify_eval_attestations(events: list[dict[str, Any]], tenant_id: str) -> None:
-    """Signed eval evidence (roadmap #20). ``attested`` is a platform-set fact,
-    never a client claim: it is stripped from every event and set only after
-    an Ed25519 signature verifies against one of the tenant's *active*
-    attestation keys. A present-but-invalid attestation rejects the batch and
-    is audit-logged, because a forged attestation is an integrity signal, not a
-    formatting error."""
+    """set attested only after an ed25519 sig verifies against an active key; never a client claim"""
     for event in events:
         attrs = event.get("attributes")
         if not isinstance(attrs, dict):
@@ -170,9 +163,7 @@ def _verify_eval_attestations(events: list[dict[str, Any]], tenant_id: str) -> N
 
 
 def batch_scopes(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The (tenant, project, environment, application) scopes a batch touches.
-    Derived state is recomputed only for these, so one tenant's ingest cost
-    does not grow with other tenants' history."""
+    """scopes a batch touches; derived state recomputes only for these"""
     seen: dict[tuple, dict[str, Any]] = {}
     for event in events:
         metadata = (event.get("attributes") or {}).get("metadata") or {}
@@ -190,8 +181,7 @@ def batch_scopes(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _ingest(events: list[dict[str, Any]], tenant_id: str) -> dict[str, Any]:
-    # Validate and bind BEFORE any write, so a malformed batch is rejected
-    # atomically (422) rather than crashing mid-pipeline after a partial insert.
+    # validate and bind before any write so a bad batch is a clean 422, not a partial insert
     _validate_event_attributes(events)
     _bind_events_to_tenant(events, tenant_id)
     _verify_eval_attestations(events, tenant_id)
@@ -200,22 +190,21 @@ def _ingest(events: list[dict[str, Any]], tenant_id: str) -> dict[str, Any]:
     process_prompt_events(events)
     process_deployment_events(events)
     process_incident_events(events)
-    # Recompute derived state only for the scopes this batch touched.
+    # expire lapsed exceptions (reopens their findings) before recompute
+    expire_due_exceptions()
+    # recompute derived state only for touched scopes
     scopes = batch_scopes(events)
     refresh_lifecycle_state(scopes)
     refresh_governance_assessments(scopes)
     refresh_agent_posture([tenant_id])
     refresh_workflow_state(scopes)
     refresh_deployment_gates(scopes)
-    return {"accepted": accepted, "total": count_events()}
+    return {"accepted": accepted}
 
 
 @router.get("/v1/gates/check")
 def gate_check(deployment_id: str, version: str, tenant_id: str = Depends(ingestion_tenant)) -> dict[str, Any]:
-    """Release-gate status for CI (``norinth gate check``), authenticated with
-    an ingestion key. Read-only, tenant-bound, and deliberately minimal: CI
-    learns whether it may ship, by whom it was decided, and what is blocking —
-    nothing else about the organization."""
+    """release-gate status for ci; read-only, tenant-bound, minimal"""
     gate = find_gate_for_release(tenant_id, deployment_id, version)
     if gate is None:
         raise HTTPException(status_code=404, detail="no release gate for that deployment and version (has the deployment.event been ingested?)")

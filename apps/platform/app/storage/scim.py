@@ -1,9 +1,8 @@
-"""SCIM 2.0 provisioning tokens (per tenant).
+"""per-tenant scim 2.0 provisioning tokens
 
-An identity provider (Okta, Entra ID, ...) provisions and deprovisions users by
-calling the SCIM endpoints with a bearer token. Each token is bound to exactly
-one organization; only its SHA-256 hash is stored and the plaintext is shown
-once at creation (the same model as ingestion keys).
+an idp calls the scim endpoints with a bearer token to provision/deprovision
+users. each token is bound to one org; only its sha-256 hash is stored and the
+plaintext is shown once at creation, like ingestion keys
 """
 
 from __future__ import annotations
@@ -34,7 +33,7 @@ def init_scim() -> None:
             """
         )
         connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_scim_tokens_hash ON scim_tokens(token_hash)")
-        # external_id lets the IdP correlate its own user id with ours.
+        # external_id lets the idp correlate its own user id with ours
         try:
             connection.execute("ALTER TABLE platform_users ADD COLUMN external_id TEXT")
         except Exception:
@@ -74,6 +73,13 @@ def resolve_scim_token(token: str | None) -> dict[str, Any] | None:
             "SELECT * FROM scim_tokens WHERE token_hash = ? AND status = 'active'", (_hash(token),)
         ).fetchone()
         if row is None:
+            return None
+        # a token for a purged or suspended org is dead: purge removes the org
+        # row, and suspension must stop provisioning
+        org = connection.execute(
+            "SELECT status FROM organizations WHERE tenant_id = ?", (row["tenant_id"],)
+        ).fetchone()
+        if org is None or org["status"] != "active":
             return None
         connection.execute(
             "UPDATE scim_tokens SET last_used_at = datetime('now') WHERE token_id = ?", (row["token_id"],)

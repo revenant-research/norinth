@@ -34,8 +34,6 @@ with the SDK.
   server-side validator for that protocol, intentionally duplicated rather than
   imported.)
 - The SDK MUST NOT import from the Platform.
-- Demo apps are a separate test harness (`../../demo-apps/`) and are not part of
-  the Platform.
 
 
 ## Database backend

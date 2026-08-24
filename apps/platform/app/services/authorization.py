@@ -9,18 +9,20 @@ from app.storage.workflow import (
     load_platform_user,
 )
 
-# Org-plane roles. These map to permissions in role_permissions (see workflow.py
-# DEFAULT_ROLE_PERMISSIONS). Authorization decisions are made against permissions,
-# not against role strings, so new roles can be granted permissions without code
-# changes.
+# org-plane roles, mapped to permissions in role_permissions (see workflow.py
+# DEFAULT_ROLE_PERMISSIONS). decisions are made against permissions not role
+# strings so new roles can be granted permissions without code changes
 GOVERNANCE_ADMIN = "governance_admin"
-OWNER_ADMIN = "owner_admin"
 ORG_ADMIN = "org_admin"
 RISK_OWNER = "risk_owner"
 CONTROL_OWNER = "control_owner"
 GOVERNANCE_REVIEWER = "governance_reviewer"
+# read-only, no governance permissions. least-privilege default for federated
+# (jit/scim) users so authenticating at the idp never grants review.decide; an
+# admin must deliberately elevate a user to a decision role
+GOVERNANCE_VIEWER = "governance_viewer"
 
-# Permission identifiers (mirrors workflow.DEFAULT_PERMISSIONS).
+# mirrors workflow.DEFAULT_PERMISSIONS
 PERM_ORG_MANAGE = "org.manage"
 PERM_USER_MANAGE = "user.manage"
 PERM_ROLE_ASSIGN = "role.assign"
@@ -50,11 +52,8 @@ def require_active_actor(actor: ActorContext) -> None:
 
 
 def require_actor_scope(actor: ActorContext, target: dict[str, Any]) -> None:
-    # Tenant fails CLOSED: a tenant-bound actor may act only within its own
-    # tenant. A target naming a different tenant — or, since C-1 stamps a tenant
-    # on all data, failing to name one at all — is denied. Previously this check
-    # was skipped whenever either side was falsy, so NULL-tenant rows bypassed
-    # isolation entirely (audit H-1).
+    # fails closed: a tenant-bound actor may act only within its own tenant; a
+    # target naming a different tenant, or naming none at all, is denied
     if actor.tenant_id and target.get("tenant_id") != actor.tenant_id:
         raise AuthorizationError("Actor tenant does not match target tenant")
     for field in ("project", "environment"):
@@ -65,9 +64,8 @@ def require_actor_scope(actor: ActorContext, target: dict[str, Any]) -> None:
 
 
 def role_scope_matches(assignment: dict[str, Any], target: dict[str, Any]) -> bool:
-    # Tenant must match EXACTLY. A NULL-scoped assignment is not a cross-tenant
-    # wildcard; treating it as one let a NULL-tenant role assignment grant access
-    # to every tenant (audit H-2).
+    # tenant must match exactly; a null-scoped assignment is not a cross-tenant
+    # wildcard or it would grant access to every tenant
     if assignment.get("tenant_id") != target.get("tenant_id"):
         return False
     for field in ("project", "environment"):
@@ -79,12 +77,10 @@ def role_scope_matches(assignment: dict[str, Any], target: dict[str, Any]) -> bo
 
 
 def actor_permissions(actor: ActorContext, target: dict[str, Any] | None = None) -> set[str]:
-    """Resolve the set of permissions an actor holds for a target scope.
+    """permissions an actor holds for a target scope
 
-    Permissions are the union of the permissions granted to every active role
-    assignment whose scope matches the target. The platform super admin is a
-    separate plane: it holds no tenant governance permissions and is authorized
-    only on the platform-administration endpoints via ``require_super_admin``.
+    union over every active role assignment whose scope matches the target. the
+    super admin holds no tenant permissions, gated via ``require_super_admin``
     """
     permissions: set[str] = set()
     for assignment in list_actor_role_assignments(actor.user_ref):
@@ -97,8 +93,8 @@ def actor_permissions(actor: ActorContext, target: dict[str, Any] | None = None)
 def require_permission(actor: ActorContext, permission: str, target: dict[str, Any] | None = None) -> None:
     require_active_actor(actor)
     target = dict(target or {})
-    # A target that does not name a tenant is implicitly scoped to the actor's
-    # own organization, so tenant-scoped role assignments apply to it.
+    # a target with no tenant is scoped to the actor's own org so tenant-scoped
+    # role assignments apply to it
     if target.get("tenant_id") is None and actor.tenant_id:
         target["tenant_id"] = actor.tenant_id
     require_actor_scope(actor, target)
@@ -116,26 +112,20 @@ def require_owner_assignment(actor: ActorContext, assignment: dict[str, Any]) ->
 
 
 def require_decision(actor: ActorContext, target: dict[str, Any]) -> None:
-    # Being the assignee of a task does NOT grant a decision permission the actor
-    # lacks; the appropriate decision permission is always required (audit B3).
-    # Auto-assignment by the review queue must not become a privilege-escalation
-    # path.
+    # being the assignee does not grant a decision permission the actor lacks, or
+    # review-queue auto-assignment would become a privilege-escalation path
     require_permission(actor, _decision_permission(target), target)
 
 
-# --- Separation of duties: administration vs. governance decision-making ------
-#
-# A single person must not simultaneously administer the tenant (manage users,
-# assign roles) and hold governance decision authority (approve gates, accept
-# risk, close incidents, decide reviews). Enforcing this at role-assignment time
-# is the core fix for audit finding C-4.
+# separation of duties: one person must not both administer the tenant (manage
+# users, assign roles) and hold decision authority (approve gates, accept risk,
+# close incidents, decide reviews). enforced at role-assignment time
 ADMINISTRATION_ROLES = {ORG_ADMIN}
 DECISION_ROLES = {GOVERNANCE_ADMIN, RISK_OWNER, CONTROL_OWNER, GOVERNANCE_REVIEWER}
 
 
 def would_violate_role_separation(existing_active_roles: set[str], role: str, status: str) -> bool:
-    """True if granting ``role`` (or the resulting role set) would give one user
-    both an administration role and a governance-decision role."""
+    """true if the resulting role set gives one user both an admin and a decision role"""
     resulting = set(existing_active_roles)
     if status == "active":
         resulting.add(role)
@@ -160,10 +150,9 @@ def require_exception(actor: ActorContext, target: dict[str, Any]) -> None:
 
 
 def effective_permissions(actor: ActorContext) -> list[str]:
-    """All tenant permissions a user holds across any scope, for UI gating.
+    """all tenant permissions a user holds across any scope, for ui gating
 
-    The platform super admin has no tenant permissions; its UI is the
-    platform-administration console, gated on ``is_super_admin`` instead.
+    the super admin has none; its ui is gated on ``is_super_admin`` instead
     """
     permissions: set[str] = set()
     for assignment in list_actor_role_assignments(actor.user_ref):

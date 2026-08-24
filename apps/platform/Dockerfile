@@ -1,8 +1,10 @@
 # syntax=docker/dockerfile:1
 
 # ---- Stage 1: build the dashboard bundle from source -------------------------
-# The compiled bundle is a build artifact (not committed), so the image is
-# reproducible from source and reviewers never have to trust a minified blob.
+# The compiled bundle is a build artifact (not committed), so it is built from
+# source in the image and reviewers never have to trust a minified blob. (The
+# base images below are pinned by tag, not digest, so the build is repeatable
+# from source but not bit-for-bit reproducible.)
 FROM node:20-alpine AS frontend
 WORKDIR /src/frontend
 COPY apps/platform/frontend/package.json apps/platform/frontend/package-lock.json ./

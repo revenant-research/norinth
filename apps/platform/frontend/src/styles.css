@@ -1,8 +1,7 @@
 /*
- * Application stylesheet. Colour, type, spacing and radius come exclusively
- * from the design tokens (src/design/tokens.css); the legacy variable names
- * below are aliases kept only so older view rules keep working while views
- * migrate to src/design components.
+ * app stylesheet. colour, type, spacing and radius come from the design tokens
+ * (src/design/tokens.css); the variable names below are aliases so older view
+ * rules that predate the design components keep working
  */
 @import "./design/tokens.css";
 
@@ -38,8 +37,8 @@ a { color: inherit; text-decoration: none; }
 
 button, input, select, textarea { font: inherit; }
 
-/* Plain <button> / form controls used by views not yet on design components
-   follow the same visual language as src/design/Button and Field. */
+/* plain <button> and form controls not yet on design components follow the
+   same visual language as src/design/Button and Field */
 button {
   display: inline-flex;
   align-items: center;
@@ -358,7 +357,7 @@ code { font-family: var(--n-font-mono); font-size: 0.9em; }
   grid-template-columns: 230px minmax(0, 1fr);
   align-items: start;
 }
-/* A detail page without a rail (the AI System hub) spans the full width. */
+/* detail page without a rail (the ai system hub) spans full width */
 .detail-layout:has(> .detail-stack:only-child) {
   grid-template-columns: minmax(0, 1fr);
 }
@@ -936,7 +935,7 @@ code { font-family: var(--n-font-mono); font-size: 0.9em; }
   font-weight: 650;
 }
 
-/* Toasts */
+/* toasts */
 .toast-host {
   position: fixed;
   bottom: 20px;
@@ -986,7 +985,7 @@ code { font-family: var(--n-font-mono); font-size: 0.9em; }
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Skeletons */
+/* skeletons */
 .skeleton {
   display: block;
   border-radius: 6px;
@@ -1010,7 +1009,7 @@ code { font-family: var(--n-font-mono); font-size: 0.9em; }
   .confirm-dialog { animation: none; }
 }
 
-/* Confirmation dialog */
+/* confirmation dialog */
 .confirm-overlay {
   position: fixed;
   inset: 0;
@@ -1057,7 +1056,7 @@ button.danger {
   color: #fff;
 }
 
-/* Actionable governance flags (org overview -> people & access) */
+/* actionable governance flags (org overview -> people & access) */
 .flag-action {
   margin-top: 10px;
 }
@@ -1127,7 +1126,7 @@ button.danger {
   }
 }
 
-/* --- Agentic governance ----------------------------------------------------- */
+/* --- agentic governance ----------------------------------------------------- */
 .issue-list {
   list-style: none;
   margin: 8px 0 0;
@@ -1176,7 +1175,7 @@ button.danger {
   font-weight: 600;
 }
 
-/* --- Identity & Integrations --------------------------------------------------- */
+/* --- identity & integrations --------------------------------------------------- */
 .secret-reveal {
   border: 1px solid rgba(31, 107, 58, 0.4);
   background: rgba(31, 107, 58, 0.06);
@@ -1238,7 +1237,7 @@ button.secondary.danger {
   border-color: rgba(180, 35, 24, 0.35);
 }
 
-/* --- Compliance ---------------------------------------------------------------- */
+/* --- compliance ---------------------------------------------------------------- */
 .coverage-bar {
   height: 8px;
   border-radius: 999px;
@@ -1288,7 +1287,7 @@ button.linklike {
   gap: 14px;
   padding: 12px 0 0;
 }
-/* Accessibility: skip link is visually hidden until focused. */
+/* skip link is visually hidden until focused */
 .skip-link {
   position: absolute;
   left: 8px;
@@ -1306,5 +1305,5 @@ button.linklike {
   top: 8px;
   outline-color: #fff;
 }
-/* Focused page headings (moved on route change) should not show a ring. */
+/* focused page headings (moved on route change) shouldn't show a ring */
 .topbar h1:focus { outline: none; }

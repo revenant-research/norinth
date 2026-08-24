@@ -25,15 +25,10 @@ import {
 import { ChromeBand, ChromeStrip, Screenshot } from "./Showcase";
 import styles from "./landing.module.css";
 
-/**
- * Project site, structured on docs/GTM_STRATEGY.md (open source, self-hosted):
- *   §1 thesis → hero + "What you are not paying for";  §4 motion → "Get started";
- *   §2 ICP → "Built for";  §3 wedge → "Start here";  §5 → "Why Norinth";
- *   §6 → "Security";  docs;  "Get help" replaces the sales funnel.
- * Visual language follows the Revenant Research identity via src/design.
- */
+// project site: what it is, who it's for, how to install, why it's built this
+// way, security. "get help" links to github, not a sales funnel
 
-// Dated regulatory facts only, each with a primary source (docs/SOURCES.md).
+// dated regulatory facts only, each with a primary source
 const CATALYSTS = [
   { label: "EU AI Act · Annex III high-risk obligations", value: "2 Dec 2027", note: "Regulation (EU) 2026/1744", href: "https://www.aiactblog.nl/en/posts/digital-omnibus-high-risk-postponement-december-2027" },
   { label: "Colorado automated decision-making law", value: "1 Jan 2027", note: "SB 26-189", href: "https://www.akingump.com/en/insights/ai-law-and-regulation-tracker/colorado-postpones-implementation-of-colorado-ai-act-sb-24-205" },
@@ -75,8 +70,9 @@ const STEPS = [
     code: `pip install norinth-logger
 
 import norinth_logger as norinth
+from openai import OpenAI
 norinth.init(api_key=os.environ["NORINTH_API_KEY"], project="claims")
-# OpenAI and Anthropic clients are auto-instrumented from here.`,
+client = norinth.wrap(OpenAI())  # records each model call it makes`,
   },
   {
     title: "Govern",
@@ -103,7 +99,9 @@ const POSITIONING = [
   { them: "Paperwork without runtime data is hard to defend.", us: "Norinth produces the runtime evidence behind the paperwork." },
 ];
 
-const FRAMEWORKS = ["NIST AI RMF 1.0", "ISO/IEC 42001", "EU AI Act", "OWASP LLM Top 10", "OWASP Agentic", "HIPAA", "SOC 2"];
+// only frameworks the control library actually maps controls to; a chip here
+// without a matching control in governance_policy.py claims coverage we don't have
+const FRAMEWORKS = ["NIST AI RMF", "ISO/IEC 42001", "EU AI Act", "SOC 2"];
 
 const GET_STARTED = [
   {
@@ -251,7 +249,7 @@ export function LandingPage({ onClientSignIn }: { onClientSignIn: () => void }) 
                 <ChromeStrip streak={i === 0 ? 3 : 4} label={a.eyebrow} />
                 <Heading level={3}>{a.title}</Heading>
                 <Text>{a.body}</Text>
-                <ul className={styles.tagRow} aria-label="Relevant frameworks">
+                <ul className={styles.tagRow} aria-label="Regulations these teams answer to">
                   {a.tags.map((t) => (
                     <li key={t}><Chip>{t}</Chip></li>
                   ))}
@@ -318,11 +316,12 @@ export function LandingPage({ onClientSignIn }: { onClientSignIn: () => void }) 
               </Card>
             ))}
           </Grid>
-          <div className={styles.frameworks} aria-label="Frameworks covered">
+          <div className={styles.frameworks} aria-label="Frameworks the control library maps">
             {FRAMEWORKS.map((f) => (
               <Chip key={f}>{f}</Chip>
             ))}
           </div>
+          <Text size="sm">The control library ships mappings for these frameworks; coverage is measured against the requirements Norinth maps, not the full regulation.</Text>
         </Section>
       </Container>
 
@@ -437,11 +436,11 @@ export function ContactSection() {
     <Section
       id="contact"
       eyebrow="Get help"
-      title="Talk to the maintainers."
-      lede="Stuck on an install, reviewing it for your security team, or want to help shape the healthcare or EU AI Act pack? Tell us what you run. Bugs and feature requests belong on GitHub issues; everything else here."
+      title="Leave a note for this instance's administrators."
+      lede="This form is served by the Norinth instance you are viewing, so your note is stored in its own admin console — not sent to the Norinth project. To reach the maintainers, open a GitHub issue or discussion; use this to contact whoever operates this deployment."
     >
       {state === "sent" ? (
-        <Callout tone="success" title="Thanks.">Your message was received.</Callout>
+        <Callout tone="success" title="Thanks.">Your note was recorded in this instance's admin console.</Callout>
       ) : (
         <form className={styles.contactForm} onSubmit={submit} aria-label="Contact">
           <Stack gap={4}>

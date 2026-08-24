@@ -48,9 +48,9 @@ JWKS, SAML) and Google Fonts for the dashboard's typeface.
 
 | Threat | Control |
 |---|---|
-| Forged evidence: anyone with network access posts `passed: true` | Per-tenant hashed ingestion keys (C-1); tenant derived from key, never from payload; once an attestation key exists, unsigned evals do not satisfy gates; signatures bind tenant/app/workflow/trace/span (no replay). |
+| Forged evidence: anyone with network access posts `passed: true` | Per-tenant hashed ingestion keys; tenant derived from key, never from payload; once an attestation key exists, unsigned evals do not satisfy gates; signatures bind tenant/app/workflow/trace/span (no replay). |
 | Self-approval / one person approving their own AI | Admin vs decision role exclusivity; maker–checker on reviews and gates; gates never auto-approve; generic decisions route cannot transition gates or incidents. |
-| Cross-tenant read or write | Fail-closed scope checks (H-1/H-2); NULL tenant never matches; ingestion keys, SCIM tokens, attestation keys, SSO configs all tenant-bound. |
+| Cross-tenant read or write | Fail-closed scope checks; NULL tenant never matches; ingestion keys, SCIM tokens, attestation keys, SSO configs all tenant-bound. |
 | Session theft / CSRF | HttpOnly, SameSite=Lax, Secure (outside dev) cookies; hashed session tokens; all sessions revoked on password change; Origin check on every mutating `/api/*` request. |
 | Credential stuffing / spraying | Per-account and per-IP throttling with lockout (`storage/login_attempts.py`); `X-Forwarded-For` honoured only with `NORINTH_TRUST_PROXY=1`. |
 | SSO attacks (token substitution, replay, signature wrapping) | OIDC: PKCE S256, nonce, single-use state, RS256 via the issuer's JWKS, `aud`/`iss`/`exp` checks. SAML: signature verified only against the configured certificate, signed subtree only, InResponseTo single-use, audience/recipient/time checks, hardened XML parser. |

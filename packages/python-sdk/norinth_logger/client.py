@@ -27,11 +27,7 @@ class NorinthClient:
                 raise
 
     def _apply_identity_defaults(self, event: NorinthEvent) -> None:
-        """Backfill the configured application identity onto an event's metadata.
-
-        Values explicitly provided on the event always win, so request-derived
-        context (for example a tenant inferred per request) is never clobbered.
-        """
+        """backfill configured app identity onto metadata; explicit event values win"""
         defaults = {
             key: value
             for key, value in (
@@ -65,13 +61,9 @@ class NorinthClient:
                     "mode": self.config.mode,
                     "fail_open": self.config.fail_open,
                     "async_transport": self.config.async_transport,
-                    # Surface whether raw content capture is enabled so an auditor
-                    # can tell from telemetry alone whether a fleet is in raw mode
-                    # (audit P7).
+                    # report whether raw content capture is on
                     "capture_content": self.config.capture_content,
-                    # Report the worker's liveness and backlog so a stalled or
-                    # dead transport is visible instead of silently lying with
-                    # zero counters (audit C-8).
+                    # report worker liveness and backlog so a stalled transport is visible
                     "thread_alive": self.transport.thread_alive(),
                     "queue_depth": stats.queued - stats.sent - stats.dropped,
                     "endpoint": self.config.endpoint,

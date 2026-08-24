@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .entities import entity_id
+from .entities import as_object, entity_id
+from .errors import RecordNotFound
 from .raw_events import connect
 
 
@@ -12,8 +13,8 @@ def init_incidents() -> None:
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS governance_incidents (
-                incident_id TEXT PRIMARY KEY,
-                tenant_id TEXT,
+                incident_id TEXT NOT NULL,
+                tenant_id TEXT NOT NULL DEFAULT '',
                 project TEXT NOT NULL,
                 environment TEXT NOT NULL,
                 application_name TEXT NOT NULL,
@@ -36,7 +37,8 @@ def init_incidents() -> None:
                 resolution_rationale TEXT,
                 first_seen TEXT NOT NULL,
                 last_seen TEXT NOT NULL,
-                closed_at TEXT
+                closed_at TEXT,
+                PRIMARY KEY (tenant_id, project, environment, incident_id)
             )
             """
         )
@@ -53,7 +55,7 @@ def process_incident_events(events: list[dict[str, Any]]) -> None:
 
 def upsert_incident_event(connection, event: dict[str, Any]) -> None:
     attrs = event.get("attributes") or {}
-    metadata = attrs.get("metadata") or {}
+    metadata = as_object(attrs.get("metadata"))
     application_name = metadata.get("application_name")
     workflow_name = metadata.get("workflow_name")
     if not application_name or not workflow_name:
@@ -69,9 +71,13 @@ def upsert_incident_event(connection, event: dict[str, Any]) -> None:
     deployment = latest_deployment_evidence(connection, scope)
     evidence = incident_evidence_counts(connection, scope)
     incident_id = attrs.get("incident_id") or entity_id("incident", event["trace_id"], event["span_id"])
-    description_summary = json.dumps(attrs.get("description") or {}, sort_keys=True)
+    incident_tenant = scope["tenant_id"] or ""
+    description_summary = json.dumps(as_object(attrs.get("description")), sort_keys=True)
     status = attrs.get("incident_status") or event.get("status", "open")
-    is_new = connection.execute("SELECT 1 FROM governance_incidents WHERE incident_id = ?", (incident_id,)).fetchone() is None
+    is_new = connection.execute(
+        "SELECT 1 FROM governance_incidents WHERE incident_id = ? AND tenant_id = ? AND project = ? AND environment = ?",
+        (incident_id, incident_tenant, event["project"], event["environment"]),
+    ).fetchone() is None
     connection.execute(
         """
         INSERT INTO governance_incidents (
@@ -81,7 +87,7 @@ def upsert_incident_event(connection, event: dict[str, Any]) -> None:
             deployment_gate_id, actor_ref, resolution_rationale, first_seen, last_seen, closed_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, NULL)
-        ON CONFLICT(incident_id) DO UPDATE SET
+        ON CONFLICT(tenant_id, project, environment, incident_id) DO UPDATE SET
             title=excluded.title,
             severity=excluded.severity,
             status=CASE
@@ -102,7 +108,7 @@ def upsert_incident_event(connection, event: dict[str, Any]) -> None:
         """,
         (
             incident_id,
-            scope["tenant_id"],
+            incident_tenant,
             scope["project"],
             scope["environment"],
             scope["application_name"],
@@ -193,7 +199,7 @@ def set_incident_status(incident_id: str, status: str, actor_ref: str, rationale
     with connect() as connection:
         row = connection.execute("SELECT * FROM governance_incidents WHERE incident_id = ?", (incident_id,)).fetchone()
         if row is None:
-            raise ValueError("incident not found")
+            raise RecordNotFound("incident not found")
         connection.execute(
             """
             UPDATE governance_incidents
@@ -209,7 +215,7 @@ def load_incident(incident_id: str) -> dict[str, Any]:
     with connect() as connection:
         row = connection.execute("SELECT * FROM governance_incidents WHERE incident_id = ?", (incident_id,)).fetchone()
     if row is None:
-        raise ValueError("incident not found")
+        raise RecordNotFound("incident not found")
     return dict(row)
 
 

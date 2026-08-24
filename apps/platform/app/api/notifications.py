@@ -1,4 +1,4 @@
-"""Org-plane webhooks and the notification delivery log."""
+"""org webhooks and notification delivery log"""
 
 from __future__ import annotations
 
@@ -51,8 +51,9 @@ def create_hook(payload: WebhookRequest, actor: ActorContext = Depends(current_a
     if unknown:
         raise HTTPException(status_code=400, detail=f"unknown events: {unknown}")
     secret, record = store.create_webhook(tenant_id, name=payload.name, url=payload.url, events=payload.events, fmt=payload.format, created_by=actor.user_ref)
-    record_audit(actor_ref=actor.user_ref, action="webhook.create", tenant_id=tenant_id, target_type="webhook", target_id=record["webhook_id"], detail={"url": payload.url, "events": payload.events})
-    # The signing secret is shown exactly once.
+    # log only the masked host; a slack webhook path is a bearer secret
+    record_audit(actor_ref=actor.user_ref, action="webhook.create", tenant_id=tenant_id, target_type="webhook", target_id=record["webhook_id"], detail={"url": store.mask_url(payload.url), "events": payload.events})
+    # signing secret shown once
     return {"webhook": record, "secret": secret}
 
 

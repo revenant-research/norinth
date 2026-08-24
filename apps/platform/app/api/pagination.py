@@ -1,11 +1,4 @@
-"""Uniform server-side pagination for list endpoints.
-
-Every list endpoint previously returned its entire result set (audit: unbounded
-lists on both API and UI). Endpoints now accept ``offset`` and ``limit`` query
-parameters and return, alongside the existing list key, a ``page`` object with
-``offset``, ``limit``, ``total`` and ``has_more`` so API consumers and the UI can
-page. The default limit is bounded; the maximum is capped.
-"""
+"""server-side pagination for list endpoints"""
 
 from __future__ import annotations
 
@@ -18,7 +11,7 @@ MAX_LIMIT = 1000
 
 
 class PageParams:
-    """FastAPI dependency: ``?offset=&limit=`` with bounds enforced."""
+    """fastapi dependency for ?offset=&limit= with bounds"""
 
     def __init__(
         self,
@@ -30,11 +23,7 @@ class PageParams:
 
 
 def paginate(payload: dict[str, Any], key: str, page: PageParams) -> dict[str, Any]:
-    """Slice ``payload[key]`` by the page and attach ``page`` metadata.
-
-    Keeps the original list key so existing clients keep working; they simply
-    receive the first page plus the total.
-    """
+    """slice payload[key] by the page and attach page metadata"""
     items = payload.get(key) or []
     total = len(items)
     window = items[page.offset : page.offset + page.limit]

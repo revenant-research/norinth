@@ -30,7 +30,7 @@ function describedBy(id: string, hint?: ReactNode, error?: ReactNode): string | 
   return ids.length ? ids.join(" ") : undefined;
 }
 
-/** Labelled text input with hint/error wiring (ids, aria-describedby, aria-invalid). */
+/** labelled text input with hint/error wiring (ids, aria-describedby, aria-invalid) */
 export function TextField({ label, hint, error, className, id: givenId, ...rest }: Common & InputHTMLAttributes<HTMLInputElement>) {
   const auto = useId();
   const id = givenId ?? auto;
@@ -86,7 +86,7 @@ export function Checkbox({ label, className, id: givenId, ...rest }: { label: Re
   );
 }
 
-/** Lays fields out in a responsive grid; `inline` keeps them on one row. */
+/** lays fields out in a responsive grid; `inline` keeps them on one row */
 export function FormGrid({ children, inline = false, className }: { children: ReactNode; inline?: boolean; className?: string }) {
   return <div className={[styles.grid, inline && styles.inline, className].filter(Boolean).join(" ")}>{children}</div>;
 }

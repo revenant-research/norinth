@@ -1,5 +1,4 @@
-"""Sign eval results so the Norinth platform can treat them as attested
-evidence (CI identity rather than a self-reported boolean).
+"""sign eval results so gates accept them as attested evidence
 
 Usage in CI, after your eval job produces a result::
 
@@ -20,10 +19,9 @@ register the public half under Identity & Integrations -> Evidence attestation):
 
     python -m norinth_logger.attest keygen
 
-Requires the optional ``cryptography`` package (``pip install norinth-logger[attest]``).
+Requires the optional ``cryptography`` package (``pip install norinth-logger[attest]``)
 
-The canonical statement below is the contract with the platform
-(``apps/platform/app/services/attestation.py``) and must not drift.
+The signed statement must stay byte-identical to what the platform verifies
 """
 
 from __future__ import annotations
@@ -60,7 +58,7 @@ def _require_crypto():
     try:
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.primitives.asymmetric import ed25519
-    except ImportError as error:  # pragma: no cover - exercised only without the extra
+    except ImportError as error:  # pragma: no cover
         raise RuntimeError(
             "evidence attestation needs the 'cryptography' package: pip install 'norinth-logger[attest]'"
         ) from error
@@ -68,10 +66,7 @@ def _require_crypto():
 
 
 def sign_eval_result(event: dict[str, Any], *, private_key_pem: str | bytes, key_id: str) -> dict[str, Any]:
-    """Attach ``attributes.attestation`` to an ``eval.result`` event in place
-    and return the event. The tenant/application/workflow in
-    ``attributes.metadata`` must match what the platform binds from your
-    ingestion key, or verification fails."""
+    """sign an eval.result event in place; metadata tenant/app/workflow must match the ingestion key or verify fails"""
     if event.get("type") != "eval.result":
         raise ValueError("only eval.result events can be attested")
     serialization, ed25519 = _require_crypto()
@@ -86,7 +81,7 @@ def sign_eval_result(event: dict[str, Any], *, private_key_pem: str | bytes, key
 
 
 def generate_keypair() -> tuple[str, str]:
-    """Return (private_pem, public_pem) for a fresh Ed25519 key."""
+    """fresh ed25519 keypair as (private_pem, public_pem)"""
     serialization, ed25519 = _require_crypto()
     private = ed25519.Ed25519PrivateKey.generate()
     private_pem = private.private_bytes(

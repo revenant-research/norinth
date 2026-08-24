@@ -1,15 +1,4 @@
-"""SCIM 2.0 user provisioning (RFC 7643/7644), per tenant.
-
-Lets an identity provider (Okta, Microsoft Entra ID, OneLogin, ...) create,
-update, and deactivate users automatically — automated deprovisioning is a SOC 2
-CC6 / HIPAA 164.308(a)(3) control and a universal enterprise checklist item.
-
-Resource model: the SCIM `id` and `userName` are the Norinth `user_ref`/email.
-`active=false` suspends the account (and revokes its sessions) rather than
-deleting it, so the audit trail stays intact; SCIM DELETE does the same.
-Provisioned users get the tenant's SSO default role (never an administration
-role) and no password — they sign in through SSO.
-"""
+"""scim 2.0 user provisioning per tenant (rfc 7643/7644)"""
 
 from __future__ import annotations
 
@@ -101,9 +90,10 @@ def _load_tenant_user(user_ref: str, tenant_id: str) -> dict[str, Any] | None:
 
 
 def _default_role(tenant_id: str) -> str:
+    # scim users default to viewer; never auto-grant a decision role from directory presence
     config = load_sso_configuration(tenant_id)
-    role = (config or {}).get("default_role") or "governance_reviewer"
-    return "governance_reviewer" if role in ADMINISTRATION_ROLES else role
+    role = (config or {}).get("default_role") or "governance_viewer"
+    return "governance_viewer" if role in ADMINISTRATION_ROLES else role
 
 
 # --- ServiceProviderConfig -----------------------------------------------------
@@ -136,7 +126,7 @@ def service_provider_config(tenant_id: str = Depends(scim_tenant)):
 
 
 def _parse_filter(filter_expr: str | None) -> str | None:
-    """Support the one filter IdPs use for reconciliation: userName eq "x"."""
+    """only the userName eq "x" filter idps use for reconciliation"""
     if not filter_expr:
         return None
     parts = filter_expr.strip().split(" ", 2)
@@ -209,7 +199,7 @@ def create_user(payload: ScimUserIn, tenant_id: str = Depends(scim_tenant)):
         user_ref=email,
         display_name=_display_name(payload),
         email=email,
-        password_hash="",  # provisioned users sign in via SSO
+        password_hash="",  # provisioned users sign in via sso
         status="active" if payload.active else "suspended",
         platform_role=None,
         tenant_id=tenant_id,
@@ -235,7 +225,7 @@ def create_user(payload: ScimUserIn, tenant_id: str = Depends(scim_tenant)):
 def _apply_active(user_ref: str, tenant_id: str, active: bool) -> dict[str, Any]:
     updated = set_user_status(user_ref, "active" if active else "suspended")
     if not active:
-        end_all_sessions(user_ref)  # deprovisioning takes effect immediately
+        end_all_sessions(user_ref)  # deprovision immediately
     record_audit(
         actor_ref="scim",
         action="scim.user.activate" if active else "scim.user.deactivate",
@@ -278,8 +268,7 @@ def patch_user(user_ref: str, payload: ScimPatch, tenant_id: str = Depends(scim_
         value = operation.get("value")
         if op not in {"replace", "add"}:
             return _scim_error(400, f"unsupported op: {op}", "invalidValue")
-        # Entra/Okta send either {"path": "active", "value": false} or a bare
-        # {"value": {"active": false}} without a path.
+        # entra/okta send {"path":"active","value":false} or bare {"value":{"active":false}}
         updates: dict[str, Any] = {}
         if path:
             updates[path] = value
@@ -295,7 +284,7 @@ def patch_user(user_ref: str, payload: ScimPatch, tenant_id: str = Depends(scim_
                 upsert_platform_user({"user_ref": user_ref, "display_name": str(val), "status": (load_platform_user(user_ref) or user)["status"]})
             elif key == "externalid":
                 set_user_external_id(user_ref, None if val is None else str(val))
-            # Other attributes are accepted and ignored (SCIM allows partial support).
+            # other attributes accepted and ignored (scim allows partial support)
     return JSONResponse(media_type=SCIM_CONTENT_TYPE, content=_to_scim_user(load_platform_user(user_ref) or user))
 
 
@@ -304,8 +293,7 @@ def delete_user(user_ref: str, tenant_id: str = Depends(scim_tenant)):
     user = _load_tenant_user(user_ref, tenant_id)
     if user is None:
         return _scim_error(404, "User not found")
-    # Deactivate rather than delete so the audit trail and decision history
-    # referencing this user remain intact.
+    # deactivate not delete so audit/decision history stays intact
     _apply_active(user_ref, tenant_id, False)
     return Response(status_code=204)
 

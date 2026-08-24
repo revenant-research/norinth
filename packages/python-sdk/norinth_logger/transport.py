@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import atexit
+import glob
 import hashlib
 import hmac
 import json
@@ -9,16 +10,20 @@ import os
 import queue
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from urllib import request
-from urllib.error import URLError
+from urllib.error import HTTPError
 
 from .config import NorinthConfig
 
+# statuses worth retrying: server overloaded or timed out, not malformed. other
+# 4xx will be rejected again no matter what, so not retried/spooled
+_RETRIABLE_STATUS = {408, 429, 500, 502, 503, 504}
+
 logger = logging.getLogger("norinth_logger")
-# A library must not configure the root logger. Adding a NullHandler prevents
-# "No handlers could be found" warnings and stops the SDK from spamming stderr in
-# a host app that has not configured logging (audit F5).
+# a library must not configure the root logger; nullhandler avoids "no handlers"
+# warnings and stops spamming stderr in a host app without logging configured
 logger.addHandler(logging.NullHandler())
 
 
@@ -33,17 +38,12 @@ class TransportStats:
     sent: int = 0
     dropped: int = 0
     failed_sends: int = 0
+    retried: int = 0
+    spooled: int = 0
 
 
 class EventTransport:
-    """Fail-open, background-batching transport.
-
-    The overriding contract (audit C-8): nothing here may crash, block, or kill
-    the host application, and the background worker must never die silently. A
-    single bad event must not stop telemetry: serialization is defensive, the
-    worker loop is fully guarded, and a dead worker is restarted on the next
-    enqueue.
-    """
+    """fail-open background-batching transport; never crash/block the host, and the worker must not die silently"""
 
     def __init__(self, config: NorinthConfig) -> None:
         self.config = config
@@ -65,8 +65,7 @@ class EventTransport:
         self._worker.start()
 
     def _ensure_worker(self) -> None:
-        """Restart the worker if it has died (e.g. after a fork, or if an
-        unexpected error ever escaped the guarded loop)."""
+        """restart the worker if it died (fork, or an escaped error)"""
         if not self.config.async_transport or self._stop.is_set():
             return
         if self._worker is not None and self._worker.is_alive():
@@ -79,9 +78,8 @@ class EventTransport:
         return bool(self._worker and self._worker.is_alive())
 
     def _register_fork_handler(self) -> None:
-        # Under prefork servers (gunicorn, celery) the child inherits a queue
-        # with no consumer thread. Reset and restart the worker in the child so
-        # telemetry keeps flowing (audit F2).
+        # prefork servers (gunicorn, celery): child inherits a queue with no
+        # consumer thread, so reset and restart the worker in the child
         if hasattr(os, "register_at_fork"):
             os.register_at_fork(after_in_child=self._after_fork)
 
@@ -111,6 +109,8 @@ class EventTransport:
             logger.debug("Norinth failed to enqueue event", exc_info=True)
 
     def flush(self) -> None:
+        # drain disk spool first so spooled events go out ahead of the queue
+        self._drain_spool()
         batch: list[dict] = []
         while True:
             try:
@@ -131,12 +131,11 @@ class EventTransport:
         try:
             self.flush()
         except Exception:
-            # Never raise during interpreter shutdown.
+            # never raise during interpreter shutdown
             pass
 
     def _run(self) -> None:
-        # The entire loop body is guarded so no exception (serialization,
-        # network, or otherwise) can ever terminate the worker thread.
+        # loop body fully guarded so no exception can kill the worker thread
         while not self._stop.is_set():
             try:
                 time.sleep(self.config.flush_interval_seconds)
@@ -148,10 +147,9 @@ class EventTransport:
 
     def send_batch(self, events: list[dict]) -> None:
         try:
-            # default=str tolerates non-JSON-native values; allow_nan=False turns
-            # NaN/Infinity (which are invalid JSON the receiver would reject) into
-            # a caught error instead of a poisoned batch. Serialization happens
-            # inside the guard so a bad event is dropped, not fatal (audit C-8/F6).
+            # default=str tolerates non-json values; allow_nan=False makes NaN/Inf
+            # (invalid json the receiver rejects) raise here so one bad event is
+            # dropped, not fatal
             payload = json.dumps(
                 {"events": events},
                 separators=(",", ":"),
@@ -162,7 +160,10 @@ class EventTransport:
             self.stats.dropped += len(events)
             logger.debug("Norinth failed to serialize event batch; dropping", exc_info=True)
             return
+        self._deliver(payload, len(events))
 
+    def _post_once(self, payload: bytes) -> None:
+        """send one payload; raises on any transport or http failure"""
         headers = {
             "Authorization": f"Bearer {self.config.api_key}",
             "Content-Type": "application/json",
@@ -176,11 +177,101 @@ class EventTransport:
             headers=headers,
             method="POST",
         )
+        with request.urlopen(http_request, timeout=self.config.timeout_seconds) as response:
+            if response.status >= 400:
+                raise HTTPError(http_request.full_url, response.status, "ingestion failed", response.headers, None)
+
+    @staticmethod
+    def _is_retriable(exc: Exception) -> bool:
+        if isinstance(exc, HTTPError):
+            return exc.code in _RETRIABLE_STATUS
+        # timeouts and connection errors are transient
+        return True
+
+    def _deliver(self, payload: bytes, count: int) -> None:
+        """deliver a batch with bounded retry, then spool or drop; permanent 4xx dropped immediately"""
+        for attempt in range(self.config.max_send_retries + 1):
+            try:
+                self._post_once(payload)
+                self.stats.sent += count
+                return
+            except Exception as exc:  # noqa: BLE001 - transport must never raise into the host
+                self.stats.failed_sends += 1
+                if not self._is_retriable(exc):
+                    self.stats.dropped += count
+                    logger.warning(
+                        "Norinth ingestion rejected the batch permanently; dropping %d event(s): %s",
+                        count,
+                        exc,
+                    )
+                    return
+                if attempt < self.config.max_send_retries:
+                    self.stats.retried += 1
+                    time.sleep(self.config.retry_backoff_seconds * (2**attempt))
+                    continue
+                logger.debug("Norinth failed to send event batch after retries", exc_info=True)
+
+        if self._spool(payload, count):
+            return
+        self.stats.dropped += count
+        logger.warning("Norinth dropped %d event(s): delivery failed and no spool configured", count)
+
+    # -- spool --------------------------------------------------------------
+
+    def _spool(self, payload: bytes, count: int) -> bool:
+        spool_dir = self.config.spool_dir
+        if not spool_dir:
+            return False
         try:
-            with request.urlopen(http_request, timeout=self.config.timeout_seconds) as response:
-                if response.status >= 400:
-                    raise URLError(f"Norinth ingestion failed with status {response.status}")
-            self.stats.sent += len(events)
+            os.makedirs(spool_dir, exist_ok=True)
+            if self._spool_size(spool_dir) + len(payload) > self.config.spool_max_bytes:
+                logger.warning("Norinth spool is full; dropping %d event(s)", count)
+                return False
+            path = os.path.join(spool_dir, f"{int(time.time() * 1000)}-{uuid.uuid4().hex}.json")
+            tmp = f"{path}.tmp"
+            with open(tmp, "wb") as handle:
+                handle.write(payload)
+            os.replace(tmp, path)
+            self.stats.spooled += count
+            return True
         except Exception:
-            self.stats.failed_sends += 1
-            logger.debug("Norinth failed to send event batch", exc_info=True)
+            logger.debug("Norinth failed to spool event batch", exc_info=True)
+            return False
+
+    @staticmethod
+    def _spool_size(spool_dir: str) -> int:
+        total = 0
+        for path in glob.glob(os.path.join(spool_dir, "*.json")):
+            try:
+                total += os.path.getsize(path)
+            except OSError:
+                continue
+        return total
+
+    def _drain_spool(self) -> None:
+        spool_dir = self.config.spool_dir
+        if not spool_dir or not os.path.isdir(spool_dir):
+            return
+        for path in sorted(glob.glob(os.path.join(spool_dir, "*.json"))):
+            try:
+                with open(path, "rb") as handle:
+                    payload = handle.read()
+            except OSError:
+                continue
+            try:
+                self._post_once(payload)
+            except Exception:
+                # still failing; leave on disk for a later flush
+                return
+            self.stats.sent += self._event_count(payload)
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+    @staticmethod
+    def _event_count(payload: bytes) -> int:
+        try:
+            return len(json.loads(payload).get("events", []))
+        except Exception:
+            return 0

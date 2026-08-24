@@ -42,7 +42,7 @@ describe("SsoSettings", () => {
     const [path, body] = put.mock.calls[0];
     expect(path).toBe("/api/org/sso");
     expect(body).toMatchObject({ issuer: "https://idp.example.test", client_id: "client-1", client_secret: "s3cret", allowed_email_domain: "acme.test" });
-    // The redirect URI an admin must register with the IdP is displayed.
+    // redirect uri the admin registers with the idp is displayed
     expect(screen.getByText(/\/api\/auth\/sso\/callback/)).toBeInTheDocument();
     expect(screen.getByText(/\/api\/auth\/sso\/acme\/start/)).toBeInTheDocument();
   });
@@ -72,7 +72,7 @@ describe("IngestionKeySettings", () => {
     await user.type(screen.getByLabelText("Name"), "prod");
     await user.click(screen.getByRole("button", { name: "Create" }));
 
-    // The full secret is revealed exactly once, and the list shows only the id prefix.
+    // full secret revealed once; the list shows only the id prefix
     await waitFor(() => expect(screen.getByTestId("secret-reveal")).toBeInTheDocument());
     expect(screen.getByText("nrk_abcd1234FULLSECRET")).toBeInTheDocument();
     await waitFor(() => expect(screen.getAllByTestId("token-row")).toHaveLength(1));

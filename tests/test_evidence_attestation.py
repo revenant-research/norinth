@@ -1,15 +1,4 @@
-"""Signed eval evidence (audit roadmap #20, C-2 hardening).
-
-Covers:
-- SDK and platform produce byte-identical canonical statements.
-- A valid Ed25519 attestation marks the eval ``attested``; the client can never
-  self-assert ``attested``.
-- Forged / tampered / cross-tenant / unknown / revoked attestations reject the
-  batch and are audit-logged.
-- Once an organization registers a key, only attested passing evals satisfy a
-  deployment gate; before that, behaviour is unchanged.
-- Attestation key management is org-admin only and tenant-bound.
-"""
+"""signed ed25519 eval evidence: attestation, rejection paths, gate policy, key rbac"""
 
 from __future__ import annotations
 
@@ -125,7 +114,7 @@ def test_sdk_and_platform_statements_are_identical():
     event = _eval("parity")
     assert sdk_statement(event) == platform_statement(event)
     assert b'"type":"norinth.eval.attestation/v1"' in sdk_statement(event)
-    # Every replay-relevant field is bound into the statement.
+    # every replay-relevant field is bound into the statement
     for field in ("acme", "Claims", "triage", "safety-suite", "trc_parity", "spn_parity", "img:v1", "p1"):
         assert field.encode() in sdk_statement(event)
 
@@ -142,7 +131,7 @@ def test_valid_attestation_marks_eval_attested_and_client_cannot_self_assert(org
     key_id = key["attestation_key"]["key_id"]
 
     signed = sign_eval_result(_eval("signed"), private_key_pem=private_pem, key_id=key_id)
-    # A client claiming attested=true without a signature is stripped, not trusted.
+    # client claiming attested=true without a signature is stripped, not trusted
     forged_flag = _eval("selfassert")
     forged_flag["attributes"]["attested"] = True
     forged_flag["attributes"]["attested_key_id"] = key_id
@@ -170,13 +159,13 @@ def test_tampered_unknown_cross_tenant_and_revoked_attestations_are_rejected(org
         "attestation_key"
     ]["key_id"]
 
-    # 1) Signature over passed=False, then flipped to True after signing.
+    # signature over passed=false, then flipped to true after signing
     tampered = sign_eval_result(_eval("tamper", passed=False), private_key_pem=private_pem, key_id=key_id)
     tampered["attributes"]["passed"] = True
     resp = client.post("/v1/events/batch", json={"events": [tampered]}, headers=headers)
     assert resp.status_code == 400 and "does not match" in resp.text
 
-    # 2) Valid signature re-used on a different span (replay onto another run).
+    # valid signature reused on a different span (replay onto another run)
     original = sign_eval_result(_eval("orig"), private_key_pem=private_pem, key_id=key_id)
     replay = copy.deepcopy(original)
     replay["span_id"] = "spn_replay"
@@ -184,19 +173,19 @@ def test_tampered_unknown_cross_tenant_and_revoked_attestations_are_rejected(org
     resp = client.post("/v1/events/batch", json={"events": [replay]}, headers=headers)
     assert resp.status_code == 400 and "does not match" in resp.text
 
-    # 3) Unknown key id.
+    # unknown key id
     unknown = sign_eval_result(_eval("unknown"), private_key_pem=private_pem, key_id="nak_doesnotexist")
     resp = client.post("/v1/events/batch", json={"events": [unknown]}, headers=headers)
     assert resp.status_code == 400 and "unknown, revoked, or belongs to another organization" in resp.text
 
-    # 4) Garbage signature.
+    # garbage signature
     garbage = _eval("garbage")
     garbage["attributes"]["attestation"] = {"key_id": key_id, "signature": base64.b64encode(b"nope").decode()}
     resp = client.post("/v1/events/batch", json={"events": [garbage]}, headers=headers)
     assert resp.status_code == 400
 
-    # 5) Another organization's key cannot attest acme's evidence even with a
-    #    correct signature, because lookup is tenant-bound.
+    # another org's key cannot attest acme's evidence even with a correct
+    # signature, because lookup is tenant-bound
     from app.main import app
     from fastapi.testclient import TestClient
 
@@ -220,18 +209,18 @@ def test_tampered_unknown_cross_tenant_and_revoked_attestations_are_rejected(org
     resp = client.post("/v1/events/batch", json={"events": [cross]}, headers=headers)
     assert resp.status_code == 400 and "belongs to another organization" in resp.text
 
-    # 6) Revoked key: evidence signed with it is rejected from then on.
+    # revoked key: evidence signed with it is rejected from then on
     assert client.post(f"/api/attestation-keys/{key_id}/revoke").status_code == 200
     after_revoke = sign_eval_result(_eval("revoked"), private_key_pem=private_pem, key_id=key_id)
     resp = client.post("/v1/events/batch", json={"events": [after_revoke]}, headers=headers)
     assert resp.status_code == 400
 
-    # Every rejection is on the audit trail.
+    # every rejection is on the audit trail
     logs = client.get("/api/audit-logs", params={"action": "evidence.attestation_rejected", "limit": 50}).json()
     assert logs["page"]["total"] >= 6
     assert all(entry["tenant_id"] == "acme" for entry in logs["audit_logs"])
 
-    # Nothing from the rejected batches was stored.
+    # nothing from the rejected batches was stored
     spans = {e["span_id"] for e in client.get("/api/events").json()["events"]}
     assert not spans & {"spn_tamper", "spn_replay", "spn_unknown", "spn_garbage", "spn_cross", "spn_revoked"}
 
@@ -243,25 +232,25 @@ def test_gate_counts_only_attested_evals_once_a_key_is_registered(org):
     from norinth_logger.attest import sign_eval_result
 
     client, headers = org
-    # Before any key exists: a plain passing eval satisfies the evidence check.
+    # before any key exists a plain passing eval satisfies the evidence check
     resp = client.post("/v1/events/batch", json={"events": [_prompt(), _deployment(), _eval("plain")]}, headers=headers)
     assert resp.status_code == 200, resp.text
     gate = _gate(client)
     assert gate["passing_eval_count"] == 1
     assert "missing passing eval evidence" not in (gate.get("required_reason") or "")
 
-    # Register a key: the existing unattested eval no longer counts.
+    # after registering a key the existing unattested eval no longer counts
     private_pem, public_pem = _keypair()
     key_id = client.post("/api/attestation-keys", json={"name": "ci", "public_key_pem": public_pem}).json()[
         "attestation_key"
     ]["key_id"]
-    resp = client.post("/v1/events/batch", json={"events": [_deployment("v1")]}, headers=headers)  # recompute
+    resp = client.post("/v1/events/batch", json={"events": [_deployment("v1")]}, headers=headers)  # forces recompute
     assert resp.status_code == 200
     gate = _gate(client)
     assert gate["passing_eval_count"] == 0
     assert "missing attested passing eval evidence" in (gate.get("required_reason") or "")
 
-    # An attested passing eval satisfies it again.
+    # an attested passing eval satisfies it again
     signed = sign_eval_result(_eval("attested"), private_key_pem=private_pem, key_id=key_id)
     resp = client.post("/v1/events/batch", json={"events": [signed]}, headers=headers)
     assert resp.status_code == 200, resp.text
@@ -275,12 +264,12 @@ def test_gate_counts_only_attested_evals_once_a_key_is_registered(org):
 def test_attestation_key_management_is_org_admin_and_tenant_bound(org, super_admin_client):
     client, _ = org
     _, public_pem = _keypair()
-    # Super admins operate on organizations, not on tenant evidence keys.
+    # super admins operate on orgs, not on tenant evidence keys
     assert super_admin_client.get("/api/attestation-keys").status_code == 403
-    # Garbage keys are rejected before anything is stored.
+    # garbage keys rejected before anything is stored
     bad = client.post("/api/attestation-keys", json={"name": "x", "public_key_pem": "-----BEGIN PUBLIC KEY-----\nnope\n-----END PUBLIC KEY-----"})
     assert bad.status_code == 400
-    # RSA keys are refused: the contract is Ed25519 only.
+    # rsa keys refused, ed25519 only
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import rsa
 
@@ -296,7 +285,7 @@ def test_attestation_key_management_is_org_admin_and_tenant_bound(org, super_adm
     assert created["fingerprint"].startswith("sha256:")
     assert created["status"] == "active"
 
-    # A reviewer without config.write cannot manage keys.
+    # reviewer without config.write cannot manage keys
     from app.main import app
     from fastapi.testclient import TestClient
 

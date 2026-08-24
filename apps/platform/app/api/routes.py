@@ -56,18 +56,19 @@ from app.services.governance import (
     build_systems,
     build_tools,
     build_trace_detail,
-    build_traces,
+    build_traces_page,
     build_workflow_detail,
     build_workflows,
 )
 from app.services.notifications import emit as notify
 from app.services.notifications import public_base_url
 from app.storage.audit import record_audit
-from app.storage.deployments import load_deployment_gate, set_deployment_gate_status
+from app.storage.deployments import gate_deployer, load_deployment_gate, set_deployment_gate_status
+from app.storage.errors import RecordNotFound
 from app.storage.governance_policy import upsert_control_definition, upsert_risk_rule
 from app.storage.incidents import load_incident, set_incident_status
 from app.storage.intake import intake_submitter
-from app.storage.raw_events import connect, count_events, count_scoped_events, list_events, list_scopes
+from app.storage.raw_events import connect, count_scoped_events, list_events, list_scopes
 from app.storage.workflow import (
     assign_owner,
     create_exception,
@@ -85,13 +86,23 @@ def raise_forbidden(error: AuthorizationError) -> None:
     raise HTTPException(status_code=403, detail=str(error))
 
 
+def _require_tenant_for_config(actor: ActorContext) -> str:
+    """config writes are per-org; super admin has no tenant to scope to"""
+    if actor.is_super_admin or not actor.tenant_id:
+        raise HTTPException(status_code=403, detail="Configuration changes are made within an organization")
+    return actor.tenant_id
+
+
 def enforce_segregation_of_duties(actor: ActorContext, target_type: str, target: dict) -> None:
-    """Maker-checker control: a user may not approve work they themselves
-    originated. The check is applied where the originating user is recorded;
-    intake-originated review tasks resolve the submitter from the use case."""
+    """maker-checker: a user can't approve work they originated"""
     maker: str | None = None
     if target_type == "review_task" and target.get("task_type") == "intake_review":
         maker = intake_submitter(target.get("change_id", ""))
+    elif target_type == "deployment_gate":
+        # deployer can't approve its own release
+        maker = gate_deployer(target.get("version_id", ""))
+    elif target_type == "incident":
+        maker = target.get("detected_by")
     else:
         maker = target.get("submitted_by") or target.get("created_by")
     if maker and maker == actor.user_ref:
@@ -103,16 +114,17 @@ def enforce_segregation_of_duties(actor: ActorContext, target_type: str, target:
 
 @router.get("/health")
 def health():
-    return {"ok": True, "time": now(), "event_count": count_events()}
+    # liveness probe, no db count (would table-scan and leak totals)
+    return {"ok": True, "time": now()}
 
 
 @router.get("/api/scopes")
 def scopes(actor: ActorContext = Depends(current_actor)):
-    # The platform super admin works on organizations, not tenant data scopes.
+    # super admin works on orgs, not tenant scopes
     if actor.is_super_admin:
         return {"tenants": [], "projects": [], "environments": []}
     available = list_scopes()
-    # Tenant actors only ever see their own organization's scope.
+    # tenant actors only see their own org
     return {
         "tenants": [actor.tenant_id] if actor.tenant_id else [],
         "projects": available["projects"],
@@ -121,7 +133,7 @@ def scopes(actor: ActorContext = Depends(current_actor)):
 
 
 def _event_page(scope: ScopeFilter, page: PageParams, key: str, event_type: str | None = None) -> dict:
-    """SQL-level window over sdk_events (never materialises the whole table)."""
+    """sql-level window over sdk_events"""
     filters = scope.model_dump()
     items = list_events(**filters, event_type=event_type, limit=page.limit, offset=page.offset)
     total = count_scoped_events(**filters, event_type=event_type)
@@ -224,7 +236,7 @@ def control_evidence(scope: ScopeFilter = Depends(scoped_dependency), page: Page
 
 @router.get("/api/control-catalog")
 def control_catalog(actor: ActorContext = Depends(current_actor)):
-    return build_control_catalog()
+    return build_control_catalog(actor.tenant_id)
 
 
 @router.post("/api/control-catalog")
@@ -233,12 +245,13 @@ def configure_control(payload: ControlDefinitionRequest, actor: ActorContext = D
         require_config_write(actor)
     except AuthorizationError as error:
         raise_forbidden(error)
-    return {"control": upsert_control_definition(payload.model_dump())}
+    tenant_id = _require_tenant_for_config(actor)
+    return {"control": upsert_control_definition(payload.model_dump(), tenant_id)}
 
 
 @router.get("/api/risk-rules")
 def risk_rules(actor: ActorContext = Depends(current_actor)):
-    return build_risk_rules()
+    return build_risk_rules(actor.tenant_id)
 
 
 @router.post("/api/risk-rules")
@@ -247,7 +260,8 @@ def configure_risk_rule(payload: RiskRuleRequest, actor: ActorContext = Depends(
         require_config_write(actor)
     except AuthorizationError as error:
         raise_forbidden(error)
-    return {"risk_rule": upsert_risk_rule(payload.model_dump())}
+    tenant_id = _require_tenant_for_config(actor)
+    return {"risk_rule": upsert_risk_rule(payload.model_dump(), tenant_id)}
 
 
 @router.get("/api/owner-policies")
@@ -261,17 +275,12 @@ def configure_owner_policy(payload: OwnerPolicyRequest, actor: ActorContext = De
         require_config_write(actor)
     except AuthorizationError as error:
         raise_forbidden(error)
-    return {"owner_policy": upsert_owner_policy(payload.model_dump())}
+    tenant_id = _require_tenant_for_config(actor)
+    return {"owner_policy": upsert_owner_policy(payload.model_dump(), tenant_id)}
 
 
-# NOTE: user and role-assignment management is intentionally NOT exposed on this
-# tenant-governance router. It lives only on the org-administration plane
-# (`/api/org/users`, `/api/org/role-assignments` in api/admin.py), which enforces
-# tenant scoping, role allow-lists, and separation of duties. The previous
-# `POST /api/users` / `POST /api/role-assignments` endpoints here were removed:
-# they authorized on `config.write` with no tenant scoping on the target, which
-# let any config.write holder overwrite arbitrary accounts (including the super
-# admin — a lockout DoS, audit C-7) and self-grant globally-scoped roles (H-2).
+# user and role management is not exposed here; it lives on the org-admin plane
+# (/api/org/users, /api/org/role-assignments) which enforces tenant scoping and sod
 
 
 @router.get("/api/review-queue-policies")
@@ -285,7 +294,8 @@ def configure_review_queue_policy(payload: ReviewQueuePolicyRequest, actor: Acto
         require_config_write(actor)
     except AuthorizationError as error:
         raise_forbidden(error)
-    return {"review_queue_policy": upsert_review_queue_policy(payload.model_dump())}
+    tenant_id = _require_tenant_for_config(actor)
+    return {"review_queue_policy": upsert_review_queue_policy(payload.model_dump(), tenant_id)}
 
 
 @router.get("/api/change-events")
@@ -457,9 +467,7 @@ def decisions(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams 
     return paginate(build_decisions(scope), "decisions", page)
 
 
-# The only decisions the workflow understands. Anything else previously fell
-# through and was written verbatim as the target's status, letting a reviewer
-# escape the workflow by inventing a status string (audit M-2).
+# the only decisions the workflow understands; anything else is rejected
 _ALLOWED_DECISIONS = {"approve", "reject", "accept_risk", "mitigate", "waive", "close"}
 
 
@@ -470,10 +478,7 @@ def create_decision(payload: DecisionRequest, actor: ActorContext = Depends(curr
             status_code=400,
             detail=f"decision must be one of {sorted(_ALLOWED_DECISIONS)}",
         )
-    # Deployment gates and incidents have dedicated, guarded endpoints
-    # (/approve, /reject, /close) that enforce evidence and attribution. They
-    # must not be transitioned through the generic decision route, which would
-    # bypass those guards (audit C-2).
+    # gates and incidents have dedicated guarded endpoints; don't let the generic route bypass them
     if payload.target_type in {"deployment_gate", "incident"}:
         raise HTTPException(
             status_code=400,
@@ -484,8 +489,9 @@ def create_decision(payload: DecisionRequest, actor: ActorContext = Depends(curr
         )
     try:
         target = load_decision_target(payload.target_type, payload.target_id)
-    except ValueError as error:
+    except RecordNotFound as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+    # unsupported target_type raises ValueError -> global 400, distinct from 404
     target["target_type"] = payload.target_type
     try:
         require_decision(actor, target)
@@ -502,8 +508,26 @@ def exceptions(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams
     return paginate(build_exceptions(scope), "exceptions", page)
 
 
+def _validate_future_date(value: str) -> None:
+    from datetime import UTC, datetime
+
+    text = value.strip()
+    for candidate in (text, f"{text}T00:00:00+00:00"):
+        try:
+            parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=UTC)
+            if parsed <= datetime.now(UTC):
+                raise HTTPException(status_code=400, detail="expires_at must be a future date")
+            return
+        except ValueError:
+            continue
+    raise HTTPException(status_code=400, detail="expires_at must be an ISO date (YYYY-MM-DD) or datetime")
+
+
 @router.post("/api/exceptions")
 def create_exception_route(payload: ExceptionRequest, actor: ActorContext = Depends(current_actor)):
+    _validate_future_date(payload.expires_at)
     target = load_decision_target(payload.target_type, payload.target_id)
     target["target_type"] = payload.target_type
     try:
@@ -524,15 +548,13 @@ def create_exception_route(payload: ExceptionRequest, actor: ActorContext = Depe
 
 @router.get("/api/sdk-health")
 def sdk_health(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    # sdk.health events are stamped with the authenticated tenant at ingestion
-    # (C-1), so they must be tenant-scoped like every other read; previously the
-    # tenant filter was dropped, leaking other tenants' telemetry (audit H-4).
+    # sdk.health is tenant-stamped at ingestion, so scope reads by tenant like everything else
     return _event_page(scope, page, "sdk_health", event_type="sdk.health")
 
 
 @router.get("/api/traces")
 def traces(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_traces(scope), "traces", page)
+    return build_traces_page(scope, limit=page.limit, offset=page.offset)
 
 
 @router.get("/api/traces/{trace_id}")

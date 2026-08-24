@@ -13,10 +13,10 @@ dev-install: ## Install dev + runtime dependencies and pre-commit hooks
 	pre-commit install || true
 
 lint: ## Run ruff lint
-	ruff check apps/platform/app packages/python-sdk/norinth_logger tests scripts demo-apps
+	ruff check apps/platform/app packages/python-sdk/norinth_logger tests scripts
 
 fmt: ## Auto-format and fix lint
-	ruff check --fix apps/platform/app packages/python-sdk/norinth_logger tests scripts demo-apps
+	ruff check --fix apps/platform/app packages/python-sdk/norinth_logger tests scripts
 	ruff format apps/platform/app packages/python-sdk/norinth_logger tests
 
 type: ## Type-check the SDK

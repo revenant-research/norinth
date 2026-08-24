@@ -24,7 +24,7 @@ export function Button({
   );
 }
 
-/** Same visual language as Button, for navigation. */
+/** same visual language as Button, for navigation */
 export function ButtonLink({
   variant = "primary",
   size = "md",

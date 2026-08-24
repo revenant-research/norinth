@@ -1,10 +1,4 @@
-"""Org-plane management of per-tenant ingestion keys.
-
-An organization admin (any actor holding ``config.write`` in their tenant)
-provisions, lists, and revokes the API keys their applications use to send
-telemetry. Keys are tenant-scoped: the plaintext token is shown exactly once at
-creation and never again. See storage/ingestion_keys.py and audit finding C-1.
-"""
+"""org management of per-tenant ingestion keys"""
 
 from __future__ import annotations
 
@@ -67,7 +61,7 @@ def create_key(payload: IngestionKeyRequest, actor: ActorContext = Depends(curre
         target_id=record["key_id"],
         detail={"name": payload.name},
     )
-    # The plaintext token is returned exactly once here and never stored.
+    # plaintext token returned once, never stored
     return {"ingestion_key": record, "token": token}
 
 

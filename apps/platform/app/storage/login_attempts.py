@@ -1,12 +1,9 @@
-"""Failed-login throttling, per account AND per source IP.
+"""failed-login throttling, per account and per source ip
 
-Per-account lockout alone (audit H-6) has two gaps: an attacker can lock a
-victim out on purpose (targeted-lockout DoS), and spraying one password across
-many accounts from one source never trips a per-account counter. Throttling the
-source IP closes both. Thresholds are separate: the IP threshold is higher so a
-shared office NAT is not blocked by a handful of typos.
-
-Subjects are namespaced strings ("email:<addr>", "ip:<addr>") in one table.
+per-account lockout alone misses two cases: deliberate targeted lockout, and
+password spraying across many accounts from one source. the ip threshold is
+higher so a shared office nat isn't blocked by a few typos. subjects are
+namespaced strings ("email:<addr>", "ip:<addr>") in one table
 """
 
 from __future__ import annotations
@@ -16,18 +13,18 @@ from datetime import UTC, datetime, timedelta
 
 from .raw_events import connect
 
-# Per-account policy.
+# per-account policy
 LOCKOUT_THRESHOLD = int(os.getenv("NORINTH_LOGIN_LOCKOUT_THRESHOLD", "5"))
 LOCKOUT_WINDOW_MINUTES = int(os.getenv("NORINTH_LOGIN_LOCKOUT_WINDOW_MINUTES", "15"))
 LOCKOUT_MINUTES = int(os.getenv("NORINTH_LOGIN_LOCKOUT_MINUTES", "15"))
-# Per-source-IP policy (higher threshold: many users may share an egress IP).
+# per-source-ip policy, higher threshold since many users may share an egress ip
 IP_THRESHOLD = int(os.getenv("NORINTH_LOGIN_IP_THRESHOLD", "50"))
 IP_WINDOW_MINUTES = int(os.getenv("NORINTH_LOGIN_IP_WINDOW_MINUTES", "15"))
 IP_LOCKOUT_MINUTES = int(os.getenv("NORINTH_LOGIN_IP_LOCKOUT_MINUTES", "15"))
 
 
 def ensure_login_throttle_table(connection) -> None:
-    """Schema for migration 4 (idempotent)."""
+    """login_throttle schema, idempotent"""
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS login_throttle (
@@ -41,8 +38,8 @@ def ensure_login_throttle_table(connection) -> None:
 
 
 def init_login_attempts() -> None:
-    """Kept for the baseline migration; the table now lives in migration 4 but
-    creating it here too keeps fresh databases and tests consistent."""
+    """kept for the baseline migration; creating it here too keeps fresh
+    databases and tests consistent"""
     with connect() as connection:
         ensure_login_throttle_table(connection)
 
@@ -74,29 +71,46 @@ def is_locked(subject: str) -> bool:
 
 
 def register_failure(subject: str) -> None:
+    """record one failed attempt, atomic so concurrent failures aren't lost
+
+    the increment is a single upsert; a separate guarded update first resets an
+    expired, unlocked window. both compare iso timestamps, which sort
+    lexicographically since every value is utc in the same format
+    """
     threshold, window_minutes, lockout_minutes = _policy(subject)
     now = _now()
+    now_iso = now.isoformat()
+    window_cutoff = (now - timedelta(minutes=window_minutes)).isoformat()
+    locked_iso = (now + timedelta(minutes=lockout_minutes)).isoformat()
     with connect() as connection:
-        row = connection.execute(
-            "SELECT failed_count, first_failed_at FROM login_throttle WHERE subject = ?", (subject,)
-        ).fetchone()
-        first_failed = _parse(row["first_failed_at"]) if row else None
-        if first_failed is None or (now - first_failed) > timedelta(minutes=window_minutes):
-            failed_count = 1
-            first_failed = now
-        else:
-            failed_count = int(row["failed_count"]) + 1
-        locked_until = now + timedelta(minutes=lockout_minutes) if failed_count >= threshold else None
+        # reset an expired window, but only when not currently locked, so a
+        # reset can't lift an active lockout
+        connection.execute(
+            """
+            UPDATE login_throttle
+            SET failed_count = 0, first_failed_at = ?, locked_until = NULL
+            WHERE subject = ?
+              AND first_failed_at IS NOT NULL
+              AND first_failed_at < ?
+              AND (locked_until IS NULL OR locked_until < ?)
+            """,
+            (now_iso, subject, window_cutoff, now_iso),
+        )
+        # atomic increment: the db serializes writers on the row, so no
+        # increment is lost; locked_until is set once the count hits the threshold
         connection.execute(
             """
             INSERT INTO login_throttle (subject, failed_count, first_failed_at, locked_until)
-            VALUES (?, ?, ?, ?)
+            VALUES (?, 1, ?, NULL)
             ON CONFLICT(subject) DO UPDATE SET
-                failed_count = excluded.failed_count,
-                first_failed_at = excluded.first_failed_at,
-                locked_until = excluded.locked_until
+                failed_count = login_throttle.failed_count + 1,
+                first_failed_at = COALESCE(login_throttle.first_failed_at, ?),
+                locked_until = CASE
+                    WHEN login_throttle.failed_count + 1 >= ? THEN ?
+                    ELSE login_throttle.locked_until
+                END
             """,
-            (subject, failed_count, first_failed.isoformat(), locked_until.isoformat() if locked_until else None),
+            (subject, now_iso, now_iso, threshold, locked_iso),
         )
 
 
@@ -105,7 +119,7 @@ def clear_attempts(subject: str) -> None:
         connection.execute("DELETE FROM login_throttle WHERE subject = ?", (subject,))
 
 
-# Convenience wrappers used by the login route.
+# wrappers used by the login route
 def email_subject(email: str) -> str:
     return f"email:{email.strip().lower()}"
 

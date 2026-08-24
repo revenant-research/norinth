@@ -1,23 +1,9 @@
-"""Agentic-AI governance: agent registry and runtime posture derivation.
+"""agent registry and runtime posture derivation
 
-Grounded in the 2026 agentic-governance research (OWASP Top 10 for Agentic
-Applications, Microsoft's agent failure-mode taxonomy, Meta's "Agents Rule of
-Two", Singapore's Model AI Governance Framework for Agentic AI, Chan et al.
-"Visibility into AI Agents"):
-
-* **Registry** — every agent an organization sanctions is registered with an
-  accountable owner, an **autonomy level** (0 tool-assisted ... 4 fully
-  autonomous), a **tool allow-list**, and its capability profile: whether it
-  processes untrusted input, touches sensitive data, and can act externally.
-* **Posture** — on every ingest, observed `agent.run` / `tool.call` telemetry is
-  reconciled against the registry to derive risk findings mapped to OWASP ASI
-  ids: unregistered ("shadow") agents (ASI10), tool use outside the allow-list
-  (ASI02/ASI03), the "lethal trifecta" — untrusted input + sensitive data +
-  external action without a human checkpoint (ASI01/ASI09), and high autonomy
-  without human oversight (ASI09).
-
-Findings flow into the existing risk register (preserving reviewer decisions),
-so they appear in the audit packet and framework coverage like any other risk.
+registry: each agent has an owner, autonomy level, tool allow-list, and a
+capability profile (untrusted input, sensitive data, external action). posture:
+observed agent.run / tool.call telemetry is reconciled against the registry to
+derive risk findings, which flow into the risk register like any other risk
 """
 
 from __future__ import annotations
@@ -35,8 +21,8 @@ AUTONOMY_LEVELS = {
     4: "fully autonomous (AI plans and acts; human informed)",
 }
 
-# Risk rules this module derives. Registered in the control catalog so they
-# are visible, and evaluated here (not by the generic signal evaluator).
+# risk rules this module derives; registered in the catalog but evaluated here,
+# not by the generic signal evaluator
 AGENT_RISK_RULES = [
     {
         "rule_id": "RISK-AGT-SHADOW",
@@ -212,10 +198,10 @@ def retire_agent(agent_id: str, tenant_id: str) -> dict[str, Any]:
 
 
 def _observed_agent_activity(connection, tenant_id: str) -> dict[str, dict[str, Any]]:
-    """Group observed agent.run and tool.call telemetry by agent name.
+    """group agent.run and tool.call telemetry by agent name
 
-    A tool.call is attributed to an agent when it shares a trace with that
-    agent's run; it is also attributed via the step list when present.
+    a tool.call is attributed to an agent when it shares a trace with the
+    agent's run, or via the step list when present
     """
     runs = connection.execute(
         """
@@ -263,7 +249,7 @@ def _observed_agent_activity(connection, tenant_id: str) -> dict[str, dict[str, 
 
 
 def compute_agent_posture(tenant_id: str) -> dict[str, Any]:
-    """Reconcile observed agent activity against the registry. Pure read."""
+    """reconcile observed agent activity against the registry, read-only"""
     registered = {agent["agent_name"]: agent for agent in list_registered_agents(tenant_id)}
     with connect() as connection:
         activity = _observed_agent_activity(connection, tenant_id)
@@ -306,7 +292,7 @@ def compute_agent_posture(tenant_id: str) -> dict[str, Any]:
                 findings.append({"rule_id": "RISK-AGT-AUTONOMY", "agent": name, "obs": obs, "summary": f"Agent '{name}' is autonomy level {registration['autonomy_level']} with no human checkpoint"})
         agents.append(entry)
 
-    # Registered agents never observed at runtime are reported too (dormant).
+    # registered agents never observed at runtime are reported too (dormant)
     for name, registration in registered.items():
         if name not in activity and registration.get("status") == "active":
             agents.append(
@@ -337,9 +323,8 @@ def compute_agent_posture(tenant_id: str) -> dict[str, Any]:
 
 
 def refresh_agent_posture(tenant_ids: list[str] | None = None) -> None:
-    """Derive agent risk findings and write them into the risk register
-    (preserving reviewer decisions). ``tenant_ids`` limits the work to the
-    tenants an ingest batch touched; None recomputes every tenant."""
+    """derive agent risk findings into the risk register, preserving reviewer
+    decisions; tenant_ids limits to the tenants an ingest touched, None does all"""
     from .governance_policy import upsert_rule_finding
 
     rules = {rule["rule_id"]: rule for rule in AGENT_RISK_RULES}
@@ -363,11 +348,11 @@ def refresh_agent_posture(tenant_ids: list[str] | None = None) -> None:
                     "environment": obs["environment"],
                     "application_name": obs["application_name"] or finding["agent"],
                 }
-                # Evidence events only need trace ids for linkage.
+                # evidence events only need trace ids for linkage
                 evidence = [{"trace_id": trace_id} for trace_id in sorted(obs["trace_ids"])]
                 rule = dict(rules[finding["rule_id"]])
-                # One finding per agent: make the rule id agent-specific so two
-                # shadow agents don't collapse into one finding.
+                # agent-specific rule id so two shadow agents don't collapse into
+                # one finding
                 rule["rule_id"] = f"{rule['rule_id']}:{finding['agent']}"
                 upsert_rule_finding(connection, app_context, rule, evidence, finding["summary"])
 

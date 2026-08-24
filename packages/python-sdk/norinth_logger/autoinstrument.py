@@ -27,7 +27,7 @@ def _messages(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
 
 
 def instrument_openai(client) -> None:
-    # Responses API (sync + async).
+    # Responses API (sync + async)
     try:
         from openai.resources.responses.responses import Responses
 
@@ -56,8 +56,7 @@ def instrument_openai(client) -> None:
         )
     except Exception:
         pass
-    # Chat Completions API — the most widely used OpenAI surface (sync + async).
-    # Previously uninstrumented, so this traffic was invisible (audit A1/H-14).
+    # chat completions api (sync + async)
     try:
         from openai.resources.chat.completions import AsyncCompletions, Completions
 
@@ -84,7 +83,7 @@ def instrument_openai(client) -> None:
 
 
 def instrument_anthropic(client) -> None:
-    # Messages API (sync + async).
+    # Messages API (sync + async)
     try:
         from anthropic.resources.messages.messages import Messages
 
@@ -171,12 +170,7 @@ def patch_provider_method_async(
     prompt_getter: Callable[[tuple[Any, ...], dict[str, Any]], Any],
     client,
 ) -> None:
-    """Async counterpart to patch_provider_method.
-
-    The wrapper awaits the real coroutine and records the model call only after
-    it resolves, so async provider calls are captured correctly instead of being
-    logged as instant success before they run (audit A2/H-14).
-    """
+    """async counterpart; records the call only after the awaited coroutine resolves"""
     if patch_key in _PATCHED:
         return
 
@@ -213,6 +207,9 @@ def patch_provider_method_async(
     _PATCHED.add(patch_key)
 
 
+_BODY_INFERENCE_CAP = 64 * 1024  # bytes of request body buffered for context inference
+
+
 class NorinthFastAPIMiddleware:
     def __init__(self, app, client, *, system: str = "fastapi") -> None:
         self.app = app
@@ -224,19 +221,35 @@ class NorinthFastAPIMiddleware:
             await self.app(scope, receive, send)
             return
 
+        # buffer only enough body to infer governance context, then replay it and
+        # delegate the rest of receive() to the real transport. a forever-synthetic
+        # receive() starves starlette's disconnect listener during a StreamingResponse
+        # (worker spins at 100% cpu); delegating also bounds memory for large uploads
         body = b""
-        more_body = True
-        messages = []
-        while more_body:
+        buffered: list[dict] = []
+        while True:
             message = await receive()
-            messages.append(message)
+            buffered.append(message)
+            if message["type"] != "http.request":
+                break
             body += message.get("body", b"")
-            more_body = message.get("more_body", False)
+            if not message.get("more_body", False):
+                break
+            if len(body) > _BODY_INFERENCE_CAP:
+                break  # stop buffering; the rest streams straight to the app
 
         async def replay_receive():
-            if messages:
-                return messages.pop(0)
-            return {"type": "http.request", "body": b"", "more_body": False}
+            if buffered:
+                return buffered.pop(0)
+            return await receive()
+
+        # capture status so 4xx/5xx aren't recorded as success
+        response_status = {"code": None}
+
+        async def wrapped_send(event):
+            if event.get("type") == "http.response.start":
+                response_status["code"] = event.get("status")
+            await send(event)
 
         workflow_name = workflow_name_from_path(scope.get("path", ""))
         metadata = infer_governance_context((decode_body(body),), {})
@@ -247,13 +260,16 @@ class NorinthFastAPIMiddleware:
         status = "success"
         error_summary = None
         try:
-            await self.app(scope, replay_receive, send)
+            await self.app(scope, replay_receive, wrapped_send)
         except Exception as exc:
             status = "error"
             error_summary = summarize_error(exc, self.client.config.capture_content, self.client.config.signing_secret)
             raise
         finally:
             duration_ms = (perf_counter() - started) * 1000
+            code = response_status["code"]
+            if status != "error" and isinstance(code, int) and code >= 500:
+                status = "error"  # 5xx is a failed request
             self.client.record(
                 NorinthEvent(
                     type="trace.completed",
@@ -266,7 +282,7 @@ class NorinthFastAPIMiddleware:
                     name=workflow_name,
                     status=status,
                     duration_ms=duration_ms,
-                    attributes={"metadata": context.metadata, "error": error_summary},
+                    attributes={"metadata": context.metadata, "error": error_summary, "http_status": code},
                 )
             )
             reset_context(token)

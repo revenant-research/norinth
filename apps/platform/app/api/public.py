@@ -1,4 +1,4 @@
-"""Unauthenticated endpoints used by the public landing page."""
+"""unauthenticated endpoints for the public landing page"""
 
 from __future__ import annotations
 
@@ -10,7 +10,6 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
 from app.api.auth import client_ip
-from app.storage.audit import record_audit
 from app.storage.leads import INTERESTS, count_leads_from_ip, create_lead
 
 router = APIRouter()
@@ -51,5 +50,5 @@ def submit_lead(payload: LeadRequest, request: Request) -> dict[str, Any]:
         message=(payload.message or "").strip() or None,
         source_ip=ip,
     )
-    record_audit(actor_ref="public", action="lead.create", tenant_id=None, target_type="lead", target_id=lead["lead_id"])
+    # not written to the audit chain; anonymous submissions shouldn't grow a tamper-evident log
     return {"ok": True, "lead_id": lead["lead_id"]}

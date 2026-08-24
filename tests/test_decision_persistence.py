@@ -1,9 +1,4 @@
-"""Regression test for decision-preserving derivation (audit B6).
-
-A reviewer's decision on a risk finding (or a waived control) must survive the
-governance re-computation that runs on every ingest, instead of being silently
-reset to "open" / "passing".
-"""
+"""reviewer decisions survive the governance recompute on re-ingest"""
 
 from __future__ import annotations
 
@@ -40,7 +35,7 @@ def test_accepted_risk_is_not_reopened_on_reingest(super_admin_client):
     from app.storage.raw_events import connect
     from fastapi.testclient import TestClient
 
-    # Provision org + a governance_admin (holds risk.accept), plus an ingest key.
+    # org + governance_admin (holds risk.accept) + ingest key
     super_admin_client.post(
         "/api/admin/organizations",
         json={
@@ -62,7 +57,7 @@ def test_accepted_risk_is_not_reopened_on_reingest(super_admin_client):
             "/v1/events/batch", json={"events": [_model_call(span)]}, headers={"Authorization": f"Bearer {token}"}
         )
 
-    # First ingest creates risk findings (e.g. missing guardrail/eval evidence).
+    # first ingest creates risk findings
     assert ingest("one").status_code == 200
 
     with connect() as connection:
@@ -73,7 +68,7 @@ def test_accepted_risk_is_not_reopened_on_reingest(super_admin_client):
     assert finding["status"] == "open"
     finding_id = finding["finding_id"]
 
-    # A reviewer accepts the risk.
+    # reviewer accepts the risk
     gov = TestClient(app)
     login_and_activate(gov, "gov@acme.test", "gov-password-1")
     decision = gov.post(
@@ -93,8 +88,7 @@ def test_accepted_risk_is_not_reopened_on_reingest(super_admin_client):
         ).fetchone()["status"]
     assert status_after_decision == "accepted"
 
-    # A subsequent ingest re-runs the governance recompute. The accepted status
-    # must NOT be reset to "open".
+    # re-ingest re-runs recompute, accepted status must not reset to open
     assert ingest("two").status_code == 200
     with connect() as connection:
         status_after_reingest = connection.execute(

@@ -1,6 +1,4 @@
-"""End-to-end SAML 2.0 SSO tests against a fake IdP that issues genuinely
-signed assertions (real RSA key + X.509 cert, signed with signxml), so the
-exact verification path used against ADFS/Okta/Entra SAML is exercised."""
+"""saml 2.0 sso against a fake idp issuing signed assertions"""
 
 from __future__ import annotations
 
@@ -129,7 +127,7 @@ def _configure(org, idp, **overrides):
 
 
 def _start(browser) -> str:
-    """Kick off login and return the AuthnRequest ID the IdP must echo back."""
+    """kick off login and return the authnrequest id the idp must echo back"""
     start = browser.get("/api/auth/saml/acme/start", follow_redirects=False)
     assert start.status_code == 302
     query = dict(parse.parse_qsl(parse.urlsplit(start.headers["location"]).query))
@@ -137,6 +135,60 @@ def _start(browser) -> str:
     authn = etree.fromstring(inflated)
     assert authn.get("AssertionConsumerServiceURL") == ACS
     return authn.get("ID")
+
+
+_SAML_NS = "urn:oasis:names:tc:SAML:2.0:assertion"
+
+
+def _strip(payload: str, xpath: str) -> str:
+    root = etree.fromstring(base64.b64decode(payload))
+    for node in root.findall(xpath, {"saml": _SAML_NS}):
+        node.getparent().remove(node)
+    return base64.b64encode(etree.tostring(root)).decode()
+
+
+def test_response_level_inresponseto_rewrite_is_rejected(super_admin_client, idp):
+    """wrapping attack: assertion signed alone, wrapped in a response whose root inresponseto is
+    swapped to another pending request; signed subjectconfirmationdata still names the original"""
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    org = _org(super_admin_client)
+    _configure(org, idp)
+    with TestClient(app) as browser:
+        victim_req = _start(browser)
+        attacker_req = _start(browser)  # a second, distinct pending request
+        payload = idp.response(victim_req)  # assertion bound to victim_req
+        root = etree.fromstring(base64.b64decode(payload))
+        root.set("InResponseTo", attacker_req)  # rewrite only the unsigned root
+        mangled = base64.b64encode(etree.tostring(root)).decode()
+        resp = browser.post("/api/auth/saml/acs", data={"SAMLResponse": mangled}, follow_redirects=False)
+        assert resp.status_code == 401, resp.text
+    org.close()
+
+
+@pytest.mark.parametrize(
+    "xpath",
+    [
+        "saml:Assertion/saml:Subject/saml:SubjectConfirmation",
+        "saml:Assertion/saml:Conditions/saml:AudienceRestriction",
+    ],
+)
+def test_missing_mandatory_bindings_are_rejected(super_admin_client, idp, xpath):
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    org = _org(super_admin_client)
+    _configure(org, idp)
+    with TestClient(app) as browser:
+        req = _start(browser)
+        # strip a mandatory element from an otherwise-valid signed response; the
+        # assertion signature covers its subtree, so removing subjectconfirmation
+        # or audiencerestriction also breaks the signature; either way fail closed
+        payload = _strip(idp.response(req), xpath)
+        resp = browser.post("/api/auth/saml/acs", data={"SAMLResponse": payload}, follow_redirects=False)
+        assert resp.status_code == 401, resp.text
+    org.close()
 
 
 def test_full_saml_login_with_jit(super_admin_client, idp):
@@ -155,7 +207,9 @@ def test_full_saml_login_with_jit(super_admin_client, idp):
         assert me["email"] == "jane@acme.test"
         assert me["tenant_id"] == "acme"
         assert me["display_name"] == "Jane Doe"
-        assert "review.decide" in me["permissions"]
+        # least-privilege jit default (viewer): no decision or admin rights until
+        # an org admin deliberately elevates the user
+        assert "review.decide" not in me["permissions"]
         assert "role.assign" not in me["permissions"]
     org.close()
 
@@ -197,7 +251,7 @@ def test_invalid_responses_are_rejected(super_admin_client, idp, case):
         elif case == "replay":
             payload = idp.response(request_id)
             assert browser.post("/api/auth/saml/acs", data={"SAMLResponse": payload}, follow_redirects=False).status_code == 303
-            # second submission of the same (valid) response must fail: InResponseTo consumed
+            # second submission of the same valid response must fail: inresponseto consumed
         else:  # unsolicited
             payload = idp.response("_never-issued")
 

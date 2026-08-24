@@ -1,4 +1,4 @@
-"""Unit tests for the SQLite -> PostgreSQL SQL translation layer (storage/db.py)."""
+"""sqlite to postgres sql translation"""
 
 from __future__ import annotations
 
@@ -32,11 +32,11 @@ def test_insert_or_ignore():
 
 def test_insert_or_replace_becomes_upsert_on_pk():
     out = translate_sql(
-        "INSERT OR REPLACE INTO risk_rules (rule_id, name, signal) VALUES (?, ?, ?)",
+        "INSERT OR REPLACE INTO risk_findings (finding_id, name, signal) VALUES (?, ?, ?)",
         ("r", "n", "s"),
     )
-    assert "INSERT INTO risk_rules (rule_id, name, signal)" in out
-    assert "ON CONFLICT (rule_id) DO UPDATE SET name = EXCLUDED.name, signal = EXCLUDED.signal" in out
+    assert "INSERT INTO risk_findings (finding_id, name, signal)" in out
+    assert "ON CONFLICT (finding_id) DO UPDATE SET name = EXCLUDED.name, signal = EXCLUDED.signal" in out
 
 
 def test_insert_or_replace_unknown_table_is_an_error():

@@ -1,8 +1,7 @@
-"""SAML 2.0 SSO endpoints: SP metadata, login start, ACS, and org configuration."""
+"""saml 2.0 sso endpoints: metadata, start, acs, config"""
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -13,6 +12,7 @@ from app.api.auth import _set_session_cookie
 from app.dependencies import ActorContext, current_actor
 from app.services.auth import create_session
 from app.services.authorization import PERM_USER_MANAGE, AuthorizationError, require_permission
+from app.services.base_url import external_base_url
 from app.services.saml import SamlError, acs_url, build_authn_redirect, process_response, sp_entity_id
 from app.storage.audit import record_audit
 from app.storage.saml import disable_saml_configuration, load_saml_configuration, upsert_saml_configuration
@@ -24,12 +24,13 @@ class SamlConfigurationRequest(BaseModel):
     idp_entity_id: str = Field(min_length=1)
     idp_sso_url: str = Field(min_length=1)
     idp_certificate: str = Field(min_length=1, description="IdP signing certificate, PEM")
-    default_role: str = Field(default="governance_reviewer", min_length=1)
+    default_role: str = Field(default="governance_viewer", min_length=1)
     allowed_email_domain: str | None = None
 
 
 def _base_url(request: Request) -> str:
-    return (os.getenv("NORINTH_PUBLIC_BASE_URL") or str(request.base_url)).rstrip("/")
+    # validate Host against allowlist so a spoofed Host can't steer the saml audience/recipient
+    return external_base_url(request)
 
 
 def _require_tenant_admin(actor: ActorContext) -> str:
@@ -45,7 +46,7 @@ def _require_tenant_admin(actor: ActorContext) -> str:
 def _public(config: dict[str, Any] | None) -> dict[str, Any] | None:
     if config is None:
         return None
-    # The certificate is public material; return it so the admin can confirm what's configured.
+    # cert is public material; return it so admin can confirm config
     return config
 
 
@@ -90,7 +91,7 @@ def remove_saml(actor: ActorContext = Depends(current_actor)) -> dict[str, bool]
 
 @router.get("/api/auth/saml/metadata")
 def sp_metadata(request: Request) -> Response:
-    """SP metadata an IdP admin imports to set up the trust."""
+    """sp metadata for the idp admin to import"""
     base = _base_url(request)
     xml = (
         '<?xml version="1.0"?>'
@@ -105,22 +106,39 @@ def sp_metadata(request: Request) -> Response:
     return Response(content=xml, media_type="application/samlmetadata+xml")
 
 
+# binds the saml flow to the browser; acs is a cross-site POST so cookie needs SameSite=None+Secure
+_SAML_REQUEST_COOKIE = "norinth_saml_req"
+
+
 @router.get("/api/auth/saml/{tenant_id}/start")
 def saml_start(tenant_id: str, request: Request):
     try:
-        return RedirectResponse(build_authn_redirect(tenant_id, _base_url(request)), status_code=302)
+        url, request_id = build_authn_redirect(tenant_id, _base_url(request))
     except SamlError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+    redirect = RedirectResponse(url, status_code=302)
+    redirect.set_cookie(
+        _SAML_REQUEST_COOKIE,
+        request_id,
+        max_age=600,
+        httponly=True,
+        samesite="none",
+        secure=request.url.scheme == "https",
+        path="/api/auth/saml",
+    )
+    return redirect
 
 
 @router.post("/api/auth/saml/acs")
 def saml_acs(request: Request, SAMLResponse: str = Form(...), RelayState: str | None = Form(default=None)):  # noqa: N803 - SAML field names
+    expected_request_id = request.cookies.get(_SAML_REQUEST_COOKIE)
     try:
-        user = process_response(SAMLResponse, _base_url(request))
+        user = process_response(SAMLResponse, _base_url(request), expected_request_id=expected_request_id)
     except SamlError as error:
         raise HTTPException(status_code=401, detail=str(error)) from error
     token = create_session(user["user_ref"])
     redirect = RedirectResponse("/", status_code=303)
     _set_session_cookie(redirect, token)
+    redirect.delete_cookie(_SAML_REQUEST_COOKIE, path="/api/auth/saml")
     record_audit(actor_ref=user["user_ref"], action="auth.saml_login", tenant_id=user.get("tenant_id"))
     return redirect

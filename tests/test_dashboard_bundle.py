@@ -1,6 +1,4 @@
-"""The dashboard bundle is a build artifact (not committed). The platform must
-serve it when present and fail loudly -- not fall back to an alternative UI --
-when it is absent."""
+"""dashboard bundle is served when built and 503s loudly when absent"""
 
 from __future__ import annotations
 
@@ -22,7 +20,7 @@ def test_root_is_503_when_dashboard_not_built(client):
     assert response.status_code == 503
     assert "dashboard has not been built" in response.text
     assert "make build-frontend" in response.text
-    # API stays fully available regardless of the bundle.
+    # api available regardless of the bundle
     assert client.get("/health").status_code == 200
 
 

@@ -1,8 +1,4 @@
-"""Regression tests for constrained decision/status enums (audit M-2).
-
-Free-form status strings previously let a reviewer or admin write arbitrary
-state, escaping the governance workflow and RBAC status model.
-"""
+"""constrained decision/status enums reject free-form values"""
 
 from __future__ import annotations
 
@@ -48,7 +44,7 @@ def test_decision_rejects_unknown_verb(super_admin_client):
                 "target_type": "review_task",
                 "target_id": "whatever",
                 "decision": "totally_done",  # not a real workflow verb
-                "rationale": "x",
+                "rationale": "Reviewed the evidence and this looks acceptable.",
             },
         )
         assert resp.status_code == 400

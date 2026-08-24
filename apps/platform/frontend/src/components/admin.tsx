@@ -10,15 +10,10 @@ import { confirm } from "./confirm";
 const DATA_SENSITIVITY = ["public", "internal", "confidential", "restricted"];
 const AUTONOMY = ["assistive", "supervised", "autonomous"];
 
-/**
- * Deep-link handoff from the org overview into People & Access.
- *
- * A staffing or segregation-of-duties flag is only useful if the admin can act
- * on it. Rather than thread router state through both consoles, the overview
- * stashes the intent here and switches the route hash; the team console picks
- * it up on mount, pre-selects the relevant role, and scrolls to the assign
- * form. The value is consumed once so a later manual visit starts clean.
- */
+// deep-link handoff from org overview into people & access without threading
+// router state through both consoles: overview stashes the role, team console
+// reads it on mount, pre-selects the role and scrolls to the assign form
+// consumed once so a later manual visit starts clean
 let pendingRoleToStaff: string | null = null;
 
 function staffRoleInTeamConsole(role: string): void {
@@ -45,7 +40,7 @@ function formatTimestamp(value: unknown): string {
   return parsed.toLocaleString();
 }
 
-// --- Intake ------------------------------------------------------------------
+// --- intake ------------------------------------------------------------------
 
 export function IntakeView({ scope }: { scope: Scope }) {
   const { value, error, reload } = useResource(() => getJson<{ intake: Array<Record<string, any>> }>("/api/intake", scope));
@@ -130,7 +125,7 @@ export function IntakeView({ scope }: { scope: Scope }) {
   );
 }
 
-// --- My Queue ----------------------------------------------------------------
+// --- my queue ----------------------------------------------------------------
 
 export function MyQueue({ rows }: { rows: Array<Record<string, any>> }) {
   const open = rows.filter((task) => task.status === "open");
@@ -164,7 +159,7 @@ export function MyQueue({ rows }: { rows: Array<Record<string, any>> }) {
   );
 }
 
-// --- Platform overview (super admin) -----------------------------------------
+// --- platform overview (super admin) -----------------------------------------
 
 type PlatformOverviewData = {
   tenants: { total: number; active: number; suspended: number };
@@ -212,7 +207,7 @@ export function PlatformOverview() {
   );
 }
 
-// --- Organizations (super admin) ---------------------------------------------
+// --- organizations (super admin) ---------------------------------------------
 
 export function AdminConsole() {
   const orgs = useResource(() => getJson<{ organizations: Array<Record<string, any>> }>("/api/admin/organizations"));
@@ -313,7 +308,7 @@ export function AdminConsole() {
   );
 }
 
-// --- Accounts (super admin) --------------------------------------------------
+// --- accounts (super admin) --------------------------------------------------
 
 export function PlatformUsers() {
   const { value, error, reload } = useResource(() => getJson<{ users: Array<Record<string, any>> }>("/api/admin/users"));
@@ -390,7 +385,7 @@ export function PlatformUsers() {
   );
 }
 
-// --- RBAC matrix editor (super admin) ----------------------------------------
+// --- rbac matrix editor (super admin) ----------------------------------------
 
 export function RbacMatrixEditor() {
   const { value, error, reload } = useResource(() =>
@@ -419,7 +414,7 @@ export function RbacMatrixEditor() {
     );
   }
   const held = new Set(value.role_permissions.map((row) => `${row.role}:${row.permission}`));
-  // Pin the column count to the number of roles so the grid never collapses.
+  // pin column count to role count so the grid never collapses
   const gridStyle = { gridTemplateColumns: `1.6fr repeat(${value.roles.length}, minmax(96px, 1fr))` };
   return (
     <>
@@ -456,7 +451,7 @@ export function RbacMatrixEditor() {
   );
 }
 
-// --- Organization overview (org admin) ---------------------------------------
+// --- organization overview (org admin) ---------------------------------------
 
 type OrgOverviewData = {
   tenant_id: string;
@@ -530,7 +525,7 @@ export function OrgOverview() {
   );
 }
 
-// --- Team (org admin) --------------------------------------------------------
+// --- team (org admin) --------------------------------------------------------
 
 export function TeamConsole() {
   const users = useResource(() => getJson<{ users: Array<Record<string, any>> }>("/api/org/users"));
@@ -767,7 +762,7 @@ function RolePermissionMatrix({
   );
 }
 
-// --- Audit log ---------------------------------------------------------------
+// --- audit log ---------------------------------------------------------------
 
 const AUDIT_PAGE_SIZE = 50;
 

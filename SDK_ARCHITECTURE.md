@@ -37,14 +37,6 @@ The repository is organized so new features extend existing modules rather than 
 
 New SDK primitives should add schema/event behavior in `client.py` and supporting instrumentation in a focused module. They should not require product workflow code to call explicit Norinth logging commands directly; when an explicit primitive is still necessary, it belongs behind an app-owned observability adapter.
 
-### Demo Apps
-
-- `demo-apps/support-copilot`: standalone OpenAI support workflow app.
-- `demo-apps/claims-review-assistant`: standalone Anthropic claim review app.
-- `demo-apps/agentic-governance-assistant`: standalone multi-provider app with retrieval, tool, guardrail, eval, and agent evidence.
-
-Each demo app remains a separate service with its own `app/main.py`, settings, request/response schemas, provider integration code, and local `app/observability.py` adapter. The demo apps intentionally do not share application-layer provider wrappers or schemas, so they behave like separate customer applications that happen to install the same Norinth SDK. Direct SDK calls are isolated to each observability adapter; route handlers and workflow code use app-owned monitoring functions rather than depending on Norinth APIs directly.
-
 ### Platform
 
 - `app/main.py`: FastAPI app construction only.

@@ -1,5 +1,4 @@
-/* Streak palettes: indigo→magenta→amber (1), indigo→violet→magenta (2),
-   teal→pink→violet (3), red→amber→green (4). Image layered above fallback. */
+/* streak palettes; image layered above the gradient fallback */
 .streak1 { background-image: url("/assets/brand/streak-1.jpg"), linear-gradient(115deg, #1b1740 0%, #2a2d7a 30%, #7a3b84 55%, #e07a2e 80%, #f4b44c 100%); }
 .streak2 { background-image: url("/assets/brand/streak-2.jpg"), linear-gradient(135deg, #1d1f7a 0%, #3b2aa8 45%, #9a2f8a 75%, #c4562e 100%); }
 .streak3 { background-image: url("/assets/brand/streak-3.jpg"), linear-gradient(120deg, #0f5a6a 0%, #2b6f9a 35%, #c23f8a 65%, #5c4bb8 100%); }
@@ -15,7 +14,7 @@
   border-top: 1px solid var(--n-rule);
   border-bottom: 1px solid var(--n-rule);
 }
-/* Dark scrim keeps white text ≥ 7:1 regardless of image brightness. */
+/* dark scrim keeps white text >= 7:1 regardless of image brightness */
 .scrim { position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, rgba(18, 14, 28, 0.72), rgba(18, 14, 28, 0.82)); }
 .bandInner { position: relative; }
 .band :is(h2, h3, strong) { color: var(--n-white); }

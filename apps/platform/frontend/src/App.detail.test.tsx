@@ -45,9 +45,7 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("DetailRoute", () => {
   it("does not hand a stale payload to the next detail view when the route kind changes", async () => {
-    // Reproduces the white-screen crash seen navigating #gate/... -> #incident/...:
-    // the first render after the route change still held the gate payload and
-    // IncidentDetail read `detail.incident.title` on undefined.
+    // route kind change must not render the previous payload as the new kind
     let resolveIncident: (value: unknown) => void = () => undefined;
     vi.spyOn(api, "loadDetail").mockImplementation(async (kind: api.DetailKind) => {
       if (kind === "gate") return gate;
@@ -63,7 +61,7 @@ describe("DetailRoute", () => {
     await waitFor(() => expect(screen.getByRole("heading", { name: "Claims release gate" })).toBeInTheDocument());
 
     rerender(<DetailRoute kind="incident" id="i1" scope={scope} mutate={mutate} />);
-    // While the incident loads, the gate payload must not be rendered as an incident.
+    // while the incident loads, the gate payload must not render as an incident
     expect(screen.getByRole("status")).toHaveTextContent("Loading the selected record.");
     expect(screen.queryByRole("heading", { name: "Claims release gate" })).not.toBeInTheDocument();
 

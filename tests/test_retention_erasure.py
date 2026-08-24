@@ -1,4 +1,4 @@
-"""Regression tests for retention & right-to-erasure (audit H-10)."""
+"""retention and right-to-erasure"""
 
 from __future__ import annotations
 
@@ -103,14 +103,14 @@ def test_purge_preserves_the_audit_chain(super_admin_client):
     super_admin_client.post(
         "/api/admin/organizations/acme/purge", json={"confirm_tenant_id": "acme"}
     )
-    # The tamper-evident audit log is retained, so its chain still verifies.
+    # tamper-evident audit log is retained, so its chain still verifies
     verify = super_admin_client.get("/api/admin/audit-logs/verify")
     assert verify.status_code == 200
     assert verify.json()["ok"] is True
 
 
 def test_retention_purges_old_events(super_admin_client):
-    # Insert an event dated well in the past so a 1-day retention window ages it out.
+    # event dated well in the past so a 1-day retention window ages it out
     from app.storage.raw_events import connect
 
     with connect() as connection:
@@ -132,8 +132,7 @@ def test_retention_purges_old_events(super_admin_client):
 
 
 def test_purge_requires_super_admin(super_admin_client):
-    # Create the org, then use a single activated org-admin client (activation
-    # rotates the password, so we must not re-login with the original).
+    # activation rotates the password, so don't re-login with the original
     super_admin_client.post(
         "/api/admin/organizations",
         json={

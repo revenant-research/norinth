@@ -1,11 +1,4 @@
-"""Regression tests for ingestion robustness (audit C-6, C-3).
-
-- Malformed events (missing required attributes) are rejected with 422 before
-  any write, instead of crashing the pipeline with a 500 after a partial insert.
-- Retried batches are idempotent (deduped by trace_id/span_id), so counters are
-  not double-incremented.
-- The database runs in WAL mode with a busy timeout for concurrency.
-"""
+"""ingestion validation, batch atomicity, idempotency and wal mode"""
 
 from __future__ import annotations
 
@@ -33,7 +26,7 @@ def _model_call(span_id="spn_a", trace_id="trc_a") -> dict:
 
 
 def test_incomplete_prompt_event_is_422_not_500(client):
-    # prompt.event without artifact_ref previously crashed ingestion (KeyError -> 500).
+    # prompt.event missing artifact_ref must be rejected, not crash ingestion
     event = {
         "type": "prompt.event",
         "schema_version": "2026-01",
@@ -56,8 +49,7 @@ def test_incomplete_prompt_event_is_422_not_500(client):
 
 
 def test_malformed_batch_writes_nothing(client):
-    # A batch with one good and one malformed event is rejected atomically:
-    # nothing is persisted.
+    # one good + one malformed event rejected atomically, nothing persisted
     good = _model_call()
     bad = {
         "type": "deployment.event",
@@ -84,7 +76,7 @@ def test_retried_batch_is_idempotent(client):
     assert first.json()["accepted"] == 1
 
     second = client.post("/v1/events/batch", json=batch, headers=HEADERS)
-    # The same span is ignored the second time; not double-counted.
+    # same span ignored second time, not double-counted
     assert second.json()["accepted"] == 0
 
     from app.storage.raw_events import count_events

@@ -1,8 +1,4 @@
-"""Getting-started checklist computed from the organization's real state.
-
-Each step reports whether it is done, what to do next, and where to do it, so
-the in-product guide reflects reality instead of a static tutorial.
-"""
+"""getting-started checklist computed from the org's real state"""
 
 from __future__ import annotations
 

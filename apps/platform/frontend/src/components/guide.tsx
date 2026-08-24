@@ -47,11 +47,9 @@ exporters:
     headers:
       Authorization: "Bearer $NORINTH_API_KEY"`;
 
-/**
- * Getting started: a checklist computed from the organization's actual state
- * (keys, events, systems, roles, owners, evidence, identity, packets), each
- * step explaining why it matters and linking to where it is done.
- */
+// getting-started checklist computed from the org's actual state (keys, events,
+// systems, roles, owners, evidence, identity, packets); each step links to where
+// it's done
 export function GettingStarted() {
   const { value, error } = useResource(() => getJson<Onboarding>("/api/onboarding"));
 

@@ -5,7 +5,8 @@ from typing import Any
 
 from . import db
 from .attestation_keys import tenant_requires_attestation
-from .entities import entity_id
+from .entities import as_object, entity_id
+from .errors import RecordNotFound
 from .raw_events import connect
 
 
@@ -14,8 +15,8 @@ def init_deployments() -> None:
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS governance_deployments (
-                deployment_id TEXT PRIMARY KEY,
-                tenant_id TEXT,
+                deployment_id TEXT NOT NULL,
+                tenant_id TEXT NOT NULL DEFAULT '',
                 project TEXT NOT NULL,
                 environment TEXT NOT NULL,
                 application_name TEXT NOT NULL,
@@ -26,7 +27,8 @@ def init_deployments() -> None:
                 model TEXT,
                 artifact_ref TEXT NOT NULL,
                 first_seen TEXT NOT NULL,
-                last_seen TEXT NOT NULL
+                last_seen TEXT NOT NULL,
+                PRIMARY KEY (tenant_id, project, environment, deployment_id)
             )
             """
         )
@@ -102,7 +104,7 @@ def process_deployment_events(events: list[dict[str, Any]]) -> None:
 
 def upsert_deployment_event(connection, event: dict[str, Any]) -> None:
     attrs = event.get("attributes") or {}
-    metadata = attrs.get("metadata") or {}
+    metadata = as_object(attrs.get("metadata"))
     deployment_id = attrs["deployment_id"]
     version = attrs["version"]
     application_name = metadata.get("application_name")
@@ -110,7 +112,8 @@ def upsert_deployment_event(connection, event: dict[str, Any]) -> None:
     if not application_name or not workflow_name:
         return
     status = attrs.get("deployment_status") or event.get("status", "observed")
-    version_id = entity_id("deployment-version", metadata.get("tenant_id"), event["project"], event["environment"], deployment_id, version)
+    tenant = metadata.get("tenant_id") or ""
+    version_id = entity_id("deployment-version", tenant, event["project"], event["environment"], deployment_id, version)
     connection.execute(
         """
         INSERT INTO governance_deployments (
@@ -118,7 +121,7 @@ def upsert_deployment_event(connection, event: dict[str, Any]) -> None:
             current_version, current_status, provider, model, artifact_ref, first_seen, last_seen
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(deployment_id) DO UPDATE SET
+        ON CONFLICT(tenant_id, project, environment, deployment_id) DO UPDATE SET
             current_version=excluded.current_version,
             current_status=excluded.current_status,
             provider=excluded.provider,
@@ -128,7 +131,7 @@ def upsert_deployment_event(connection, event: dict[str, Any]) -> None:
         """,
         (
             deployment_id,
-            metadata.get("tenant_id"),
+            metadata.get("tenant_id") or "",
             event["project"],
             event["environment"],
             application_name,
@@ -162,7 +165,7 @@ def upsert_deployment_event(connection, event: dict[str, Any]) -> None:
         (
             version_id,
             deployment_id,
-            metadata.get("tenant_id"),
+            tenant,
             event["project"],
             event["environment"],
             application_name,
@@ -181,8 +184,8 @@ def upsert_deployment_event(connection, event: dict[str, Any]) -> None:
 
 
 def refresh_deployment_gates(scopes: list[dict[str, Any]] | None = None) -> None:
-    """Recompute gate evidence. ``scopes`` limits the work to the applications
-    an ingest batch touched; None recomputes every version."""
+    """recompute gate evidence; scopes limits to the apps an ingest touched,
+    None does every version"""
     wanted = None if scopes is None else {(s.get("tenant_id"), s["project"], s["environment"], s["application_name"]) for s in scopes}
     with connect() as connection:
         versions = connection.execute("SELECT * FROM deployment_versions ORDER BY observed_at DESC").fetchall()
@@ -198,12 +201,11 @@ def upsert_deployment_gate(connection, version: dict[str, Any]) -> None:
     gate_id = entity_id("deployment-gate", version["version_id"])
     existing = connection.execute("SELECT * FROM deployment_approval_gates WHERE gate_id = ?", (gate_id,)).fetchone()
     current_status = existing["gate_status"] if existing else None
-    # A gate is NEVER auto-approved (audit C-2). Undecided gates stay
-    # pending_review until a human approves or rejects them through the guarded
-    # /approve|/reject endpoints; an existing human decision is preserved. Whether
-    # a gate is approvable (has linked prompt + passing eval and no open blockers)
-    # is enforced at approval time by set_deployment_gate_status, and the blocking
-    # reasons below tell the reviewer what is still outstanding.
+    # never auto-approve: undecided gates stay pending_review until a human
+    # approves or rejects via the guarded /approve|/reject endpoints; an existing
+    # human decision is preserved. approvability (linked prompt + passing eval, no
+    # open blockers) is enforced at approval time by set_deployment_gate_status;
+    # the reasons below tell the reviewer what is still outstanding
     gate_status = current_status if current_status in {"approved", "rejected"} else "pending_review"
     reason_parts = []
     if evidence["risk_count"]:
@@ -269,6 +271,7 @@ def gate_evidence_counts(connection, version: dict[str, Any]) -> dict[str, int]:
         "application_name": version["application_name"],
         "workflow_name": version["workflow_name"],
         "prompt_version": version.get("prompt_version"),
+        "artifact_ref": version.get("artifact_ref"),
     }
     risk_count = count_scoped(connection, "risk_findings", "status IN ('open', 'mitigation_required')", params)
     missing_control_count = count_scoped(connection, "control_assessments", "status = 'missing'", params)
@@ -321,11 +324,11 @@ def count_passing_eval_evidence(connection, params: dict[str, Any]) -> int:
         """,
         params,
     ).fetchall()
-    # Once an organization has registered an attestation key, only evals whose
-    # Ed25519 signature verified at ingestion count as gate evidence; a
-    # self-reported ``passed: true`` no longer satisfies the gate (C-2
-    # hardening, roadmap #20).
+    # once a tenant has an attestation key, only evals whose signature verified
+    # at ingestion count; a self-reported passed: true no longer satisfies
     require_attested = tenant_requires_attestation(params.get("tenant_id"), connection)
+    version_artifact = params.get("artifact_ref")
+    version_prompt = params.get("prompt_version")
     count = 0
     for row in rows:
         try:
@@ -336,6 +339,19 @@ def count_passing_eval_evidence(connection, params: dict[str, Any]) -> int:
             continue
         if require_attested and attrs.get("attested") is not True:
             continue
+        # the eval must be about this release: prefer artifact_ref (what the
+        # attestation signs), fall back to prompt_version. neither or a mismatch
+        # doesn't count, so an earlier version's evals can't pass an untested build
+        eval_artifact = attrs.get("artifact_ref")
+        eval_prompt = attrs.get("prompt_version")
+        if eval_artifact is not None:
+            if version_artifact is None or eval_artifact != version_artifact:
+                continue
+        elif eval_prompt is not None:
+            if version_prompt is None or eval_prompt != version_prompt:
+                continue
+        else:
+            continue  # names neither artifact nor prompt version, not bindable
         count += 1
     return count
 
@@ -360,10 +376,17 @@ def set_deployment_gate_status(gate_id: str, status: str, actor_ref: str, ration
     with connect() as connection:
         row = connection.execute("SELECT * FROM deployment_approval_gates WHERE gate_id = ?", (gate_id,)).fetchone()
         if row is None:
-            raise ValueError("deployment gate not found")
+            raise RecordNotFound("deployment gate not found")
         gate = dict(row)
-        if status == "approved" and (gate.get("prompt_evidence_status") != "linked" or int(gate.get("passing_eval_count") or 0) == 0):
-            raise ValueError("deployment gate requires linked prompt version and passing eval evidence")
+        if status == "approved":
+            if gate.get("prompt_evidence_status") != "linked" or int(gate.get("passing_eval_count") or 0) == 0:
+                raise ValueError("deployment gate requires a linked prompt version and passing eval evidence bound to this version")
+            if int(gate.get("risk_count") or 0) > 0:
+                raise ValueError("deployment gate cannot be approved while risk findings are open; mitigate or accept them first")
+            if int(gate.get("missing_control_count") or 0) > 0:
+                raise ValueError("deployment gate cannot be approved while controls are missing evidence")
+        if not (rationale or "").strip():
+            raise ValueError("a decision rationale is required")
         connection.execute(
             """
             UPDATE deployment_approval_gates
@@ -375,11 +398,18 @@ def set_deployment_gate_status(gate_id: str, status: str, actor_ref: str, ration
         return dict(connection.execute("SELECT * FROM deployment_approval_gates WHERE gate_id = ?", (gate_id,)).fetchone())
 
 
+def gate_deployer(version_id: str) -> str | None:
+    """user who deployed the gated version; maker-checker: they can't approve it"""
+    with connect() as connection:
+        row = connection.execute("SELECT deployed_by FROM deployment_versions WHERE version_id = ?", (version_id,)).fetchone()
+    return None if row is None else row["deployed_by"]
+
+
 def load_deployment_gate(gate_id: str) -> dict[str, Any]:
     with connect() as connection:
         row = connection.execute("SELECT * FROM deployment_approval_gates WHERE gate_id = ?", (gate_id,)).fetchone()
     if row is None:
-        raise ValueError("deployment gate not found")
+        raise RecordNotFound("deployment gate not found")
     return dict(row)
 
 
@@ -410,13 +440,35 @@ def list_deployment_versions(*, tenant_id: str | None = None, project: str | Non
 
 
 def list_deployment_gates(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
-    return scoped_rows("deployment_approval_gates", tenant_id=tenant_id, project=project, environment=environment)
+    # enrich each gate with the version and artifact it gates, so callers can
+    # see which build a decision applies to
+    clauses, params = ["1=1"], {}
+    if tenant_id:
+        clauses.append("g.tenant_id = :tenant_id")
+        params["tenant_id"] = tenant_id
+    if project:
+        clauses.append("g.project = :project")
+        params["project"] = project
+    if environment:
+        clauses.append("g.environment = :environment")
+        params["environment"] = environment
+    with connect() as connection:
+        rows = connection.execute(
+            f"""
+            SELECT g.*, v.version AS version, v.artifact_ref AS artifact_ref
+            FROM deployment_approval_gates g
+            LEFT JOIN deployment_versions v ON v.version_id = g.version_id
+            WHERE {' AND '.join(clauses)}
+            ORDER BY g.updated_at DESC
+            """,
+            params,
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def find_gate_for_release(tenant_id: str, deployment_id: str, version: str) -> dict[str, Any] | None:
-    """Gate for a (deployment, version) pair, tenant-bound. Used by CI's
-    ``norinth gate check`` with an ingestion key, so the lookup never crosses
-    the key's organization."""
+    """gate for a (deployment, version) pair, tenant-bound so the CI lookup
+    never crosses the key's org"""
     with connect() as connection:
         row = connection.execute(
             """

@@ -57,6 +57,14 @@ spec:
               value: {{ .Values.config.smtp.port | quote }}
             - name: NORINTH_SMTP_USER
               value: {{ .Values.config.smtp.user | quote }}
+            # smtp password comes from the Secret; optional so a relay that needs
+            # no auth still deploys
+            - name: NORINTH_SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "norinth.secretName" . }}
+                  key: NORINTH_SMTP_PASSWORD
+                  optional: true
             - name: NORINTH_SMTP_FROM
               value: {{ .Values.config.smtp.from | quote }}
             - name: NORINTH_SMTP_STARTTLS
@@ -69,10 +77,13 @@ spec:
             httpGet: {path: /health, port: http}
             initialDelaySeconds: 15
             periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
           readinessProbe:
             httpGet: {path: /health, port: http}
             initialDelaySeconds: 5
             periodSeconds: 10
+            timeoutSeconds: 5
           resources: {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
             - name: data

@@ -1,18 +1,4 @@
-"""First-run setup wizard.
-
-A fresh install has a platform administrator (credentials printed by the
-installer) and no organizations. Instead of dropping the operator into the
-super-admin console, the dashboard shows a guided wizard until the first
-organization exists. This module provides the two pieces the wizard needs
-beyond the existing APIs:
-
-* ``GET /api/setup/state`` (public) -- whether setup is still needed. It
-  reveals nothing but a boolean, and only until the first organization exists.
-* ``POST /api/setup/organization`` (super admin, only while setup is needed) --
-  creates the organization and its first administrator with the password the
-  operator chose, without the must-change-password round-trip that the normal
-  provisioning route imposes (the operator *is* that administrator).
-"""
+"""first-run setup wizard: create the first org and its admin"""
 
 from __future__ import annotations
 
@@ -85,7 +71,7 @@ def setup_organization(payload: SetupOrganizationRequest, actor: ActorContext = 
         status="active",
         platform_role=None,
         tenant_id=tenant_id,
-        must_change_password=False,  # the operator chose this password themselves, just now
+        must_change_password=False,  # operator just chose this password
     )
     upsert_role_assignment(
         {"user_ref": email, "role": ORG_ADMIN, "status": "active", "tenant_id": tenant_id, "project": None, "environment": None}

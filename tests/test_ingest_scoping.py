@@ -1,9 +1,4 @@
-"""Ingest recomputes derived state only for the scopes the batch touched.
-
-Previously every batch recomputed lifecycle, assessments, posture, workflow
-and gates for every application of every tenant, so one tenant's ingest cost
-grew with everyone else's history.
-"""
+"""ingest recomputes derived state only for scopes the batch touched"""
 
 from __future__ import annotations
 
@@ -50,22 +45,20 @@ def test_ingest_recomputes_only_touched_scopes(super_admin_client):
         headers[tenant] = {"Authorization": f"Bearer {org.post('/api/ingestion-keys', json={'name': 'k'}).json()['token']}"}
         assert org.post("/v1/events/batch", json={"events": _events(tenant, "seed")}, headers=headers[tenant]).status_code == 200
 
-    # Both tenants have a gate.
     assert len(clients["beta"].get("/api/deployment-gates").json()["deployment_gates"]) == 1
 
-    # Sentinel: remove beta's derived gate row directly. If ingest still
-    # recomputed globally, acme's next batch would recreate it.
+    # drop beta's gate row; if ingest recomputed globally acme's batch would recreate it
     with connect() as connection:
         connection.execute("DELETE FROM deployment_approval_gates WHERE tenant_id = 'beta'")
     assert clients["acme"].post("/v1/events/batch", json={"events": _events("acme", "second")}, headers=headers["acme"]).status_code == 200
     assert clients["acme"].get("/api/deployment-gates").json()["deployment_gates"], "acme's own gate is maintained"
     assert clients["beta"].get("/api/deployment-gates").json()["deployment_gates"] == [], "beta was not recomputed by acme's ingest"
 
-    # beta's own ingest (or a full refresh) restores it.
+    # beta's own ingest restores it
     assert clients["beta"].post("/v1/events/batch", json={"events": _events("beta", "second")}, headers=headers["beta"]).status_code == 200
     assert len(clients["beta"].get("/api/deployment-gates").json()["deployment_gates"]) == 1
 
-    # And the no-argument form still recomputes everything.
+    # no-argument form recomputes everything
     with connect() as connection:
         connection.execute("DELETE FROM deployment_approval_gates")
     refresh_deployment_gates()

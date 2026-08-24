@@ -43,7 +43,7 @@ describe("useRouteAnnouncement", () => {
   it("sets the document title and moves focus to the heading on route change", () => {
     const { rerender } = render(<Page title="Overview" />);
     expect(document.title).toBe("Overview · Norinth");
-    // Initial render must not steal focus from wherever the user was.
+    // initial render must not steal focus from wherever the user was
     expect(document.activeElement).not.toBe(screen.getByRole("heading"));
 
     rerender(<Page title="Risk" />);

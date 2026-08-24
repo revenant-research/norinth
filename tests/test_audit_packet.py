@@ -1,4 +1,4 @@
-"""Test the audit-ready evidence packet export (compliance feature)."""
+"""audit-ready evidence packet export"""
 
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ def test_audit_packet_assembles_tenant_evidence(super_admin_client):
     assert packet.status_code == 200, packet.text
     body = packet.json()
 
-    # Structure and provenance.
+    # structure and provenance
     assert body["tenant_id"] == "acme"
     assert body["generated_by"] == "oa@acme.test"
     assert body["packet_version"]
@@ -74,15 +74,15 @@ def test_audit_packet_assembles_tenant_evidence(super_admin_client):
     ):
         assert section in body, f"packet missing {section}"
 
-    # Real evidence flowed through from the ingested telemetry.
+    # ingested telemetry shows up as evidence
     assert any(a.get("application_name") == "acme-app" for a in body["inventory"]["applications"])
-    # The audit trail's integrity is proven inside the packet.
+    # audit trail integrity proven inside the packet
     assert body["audit_trail"]["integrity"]["ok"] is True
 
     org.close()
 
 
 def test_audit_packet_requires_tenant_actor(super_admin_client):
-    # A super admin has no tenant governance scope, so cannot pull a tenant packet.
+    # super admin has no tenant scope so cannot pull a tenant packet
     resp = super_admin_client.get("/api/compliance/audit-packet")
     assert resp.status_code == 403

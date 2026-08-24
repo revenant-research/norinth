@@ -28,7 +28,7 @@ describe("RecordList", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Show all 37" }));
     expect(screen.getAllByTestId("card")).toHaveLength(37);
-    // Everything is visible: the footer disappears.
+    // everything visible: footer disappears
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 

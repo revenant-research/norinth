@@ -5,8 +5,7 @@ from typing import Any
 from .entities import entity_id
 from .raw_events import connect
 
-# Inputs that drive the automated risk tier. Ordering matters: higher index is
-# higher inherent risk.
+# inputs to the risk tier; order matters, higher index is higher risk
 DATA_SENSITIVITY_LEVELS = ["public", "internal", "confidential", "restricted"]
 AUTONOMY_LEVELS = ["assistive", "supervised", "autonomous"]
 RISK_TIERS = ["limited", "elevated", "high"]
@@ -41,12 +40,8 @@ def init_intake() -> None:
 
 
 def compute_risk_tier(data_sensitivity: str, autonomy_level: str, affects_individuals: bool) -> str:
-    """Derive an inherent risk tier from intake attributes.
-
-    The model mirrors how enterprise AI governance teams tier use cases: data
-    sensitivity and system autonomy are the primary drivers, escalated when the
-    system makes or materially influences decisions about individuals.
-    """
+    """risk tier from intake attributes: data sensitivity and autonomy drive it,
+    escalated when the system affects decisions about individuals"""
     sensitivity_score = _level_index(DATA_SENSITIVITY_LEVELS, data_sensitivity)
     autonomy_score = _level_index(AUTONOMY_LEVELS, autonomy_level)
     score = sensitivity_score + autonomy_score + (1 if affects_individuals else 0)
@@ -117,12 +112,8 @@ def create_intake(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _seed_intake_review_task(connection, intake_id: str, record: dict[str, Any], risk_tier: str) -> None:
-    """Route a review task for the new use case so it lands in a reviewer queue.
-
-    The task uses task_type 'intake_review'; the review queue policy engine
-    (refresh_workflow_state) assigns a role and owner based on configured
-    policies, exactly like material-change reviews.
-    """
+    """route an intake_review task; refresh_workflow_state assigns role and
+    owner from policy, like material-change reviews"""
     task_id = entity_id("review-task", "intake", intake_id)
     priority = "high" if risk_tier == "high" else "medium"
     title = f"Intake review: {record['application_name']} / {record['use_case']}"
@@ -183,8 +174,7 @@ def load_intake(intake_id: str) -> dict[str, Any] | None:
 
 
 def intake_submitter(intake_id: str) -> str | None:
-    """Return the submitter of a use case, used to enforce maker-checker
-    separation on intake review tasks."""
+    """submitter of a use case, for maker-checker on intake review tasks"""
     with connect() as connection:
         row = connection.execute("SELECT submitted_by FROM ai_use_cases WHERE intake_id = ?", (intake_id,)).fetchone()
     return None if row is None else row["submitted_by"]

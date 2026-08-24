@@ -42,7 +42,7 @@ class AIScanner(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_Call(self, node: ast.Call) -> None:
-        # Check for model=... kwargs
+        # model=... kwargs
         model_name = None
         for keyword in node.keywords:
             if keyword.arg == "model":
@@ -50,11 +50,11 @@ class AIScanner(ast.NodeVisitor):
                     model_name = keyword.value.value
                     self.models.add(model_name)
                 elif isinstance(keyword.value, ast.Name):
-                    # It's a variable, harder to statically analyze but we note the dynamic nature
+                    # dynamic model arg; note it, can't resolve statically
                     model_name = f"<dynamic_from_var:{keyword.value.id}>"
                     self.models.add(model_name)
                     
-        # Rough check for function name to identify provider calls
+        # match provider call by function name
         func_name = None
         if isinstance(node.func, ast.Attribute):
             func_name = node.func.attr
@@ -119,7 +119,7 @@ def scan_directory(directory: str) -> dict[str, Any]:
             except Exception as e:
                 logger.debug(f"Failed to scan {filepath}: {e}")
 
-    # Convert sets to lists for JSON serialization
+    # sets -> lists for json
     manifest["providers_detected"] = list(manifest["providers_detected"])
     manifest["models_detected"] = list(manifest["models_detected"])
     
@@ -170,7 +170,7 @@ def _settings(args: argparse.Namespace) -> dict[str, str]:
     for attr, env in (("endpoint", "NORINTH_ENDPOINT"), ("api_key", "NORINTH_API_KEY"), ("project", "NORINTH_PROJECT"), ("environment", "NORINTH_ENVIRONMENT"), ("service", "NORINTH_SERVICE")):
         if getattr(args, attr, None):
             values[env] = getattr(args, attr)
-    # .env in the working directory, if present, fills gaps (never overrides the environment).
+    # .env fills gaps, never overrides real env vars
     env_file = Path(".env")
     if env_file.exists():
         for line in env_file.read_text(encoding="utf-8").splitlines():
@@ -213,7 +213,7 @@ def _prompt(label: str, default: str = "", secret: bool = False) -> str:
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    """Write NORINTH_* settings to .env (created or updated) and print the snippet."""
+    """write NORINTH_* settings to .env and print the setup snippet"""
     current = _settings(args)
     endpoint = current["NORINTH_ENDPOINT"] or _prompt("Norinth endpoint (e.g. https://norinth.internal)", "http://localhost:8001")
     api_key = current["NORINTH_API_KEY"] or _prompt("Ingestion key (nrk_...)", secret=True)
@@ -243,20 +243,23 @@ def cmd_init(args: argparse.Namespace) -> int:
         pass
     _ok(f"wrote {env_path} ({', '.join(values)}) — keep it out of version control")
     if providers:
-        _ok(f"detected {', '.join(providers)} in {manifest['total_files_scanned']} files; these clients are auto-instrumented")
+        _ok(f"detected {', '.join(providers)} in {manifest['total_files_scanned']} files; wrap each client to record its calls")
     else:
         print("  - no OpenAI/Anthropic clients detected statically; explicit events still work")
     print(
         "\nAdd at startup:\n\n"
         "    import norinth_logger as norinth\n"
-        "    norinth.init()   # reads NORINTH_* from the environment\n\n"
+        "    norinth.init()          # reads NORINTH_* from the environment\n\n"
+        "Wrap each provider client so its model calls are recorded:\n\n"
+        "    from openai import OpenAI\n"
+        "    client = norinth.wrap(OpenAI())   # use the returned client\n\n"
         "Then run `norinth doctor` to confirm events arrive."
     )
     return 0
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
-    """Prove the path from this machine to the platform: reachability, key, an accepted event."""
+    """check endpoint reachability, key, and that an event is accepted"""
     s = _settings(args)
     endpoint, key = s["NORINTH_ENDPOINT"].rstrip("/"), s["NORINTH_API_KEY"]
     print(f"Norinth doctor — {endpoint or '(no endpoint)'}")
@@ -310,7 +313,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 
 def cmd_gate_check(args: argparse.Namespace) -> int:
-    """Exit 0 only when the release gate for (deployment, version) is approved."""
+    """exit 0 only when the gate for (deployment, version) is approved"""
     s = _settings(args)
     endpoint, key = s["NORINTH_ENDPOINT"].rstrip("/"), s["NORINTH_API_KEY"]
     if not endpoint or not key:
@@ -414,7 +417,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    # Backward compatibility: `norinth <dir>` used to run the scanner.
+    # bare `norinth <dir>` is treated as `scan <dir>`
     if argv and argv[0] not in {"scan", "init", "doctor", "gate", "attest", "-h", "--help"} and not argv[0].startswith("-"):
         argv = ["scan", *argv]
     parser = build_parser()

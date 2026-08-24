@@ -1,8 +1,4 @@
-"""Notifications: outbox, SMTP invites, signed webhooks, review/gate/incident hooks.
-
-Delivery is exercised against a real in-process SMTP server and a real HTTP
-webhook receiver (verifying the HMAC signature), not mocks of smtplib/urllib.
-"""
+"""notifications: outbox, smtp invites, signed webhooks, review/gate/incident hooks"""
 
 from __future__ import annotations
 
@@ -25,11 +21,11 @@ META = {"tenant_id": "acme", "application_name": "Claims", "workflow_name": "tri
 BASE = {"schema_version": "2026-01", "service": "svc", "environment": "prod", "project": "p1"}
 
 
-# --- tiny real servers ---------------------------------------------------------------
+# tiny real servers
 
 
 class _SmtpServer:
-    """Minimal SMTP server (no TLS) that records messages."""
+    """minimal smtp server (no tls) that records messages"""
 
     def __init__(self) -> None:
         self.messages: list[dict] = []
@@ -139,7 +135,7 @@ def _org(super_admin_client):
     return client
 
 
-# --- invites --------------------------------------------------------------------------
+# invites
 
 
 def test_invite_is_emailed_and_sets_password_once(super_admin_client, smtp):
@@ -167,12 +163,12 @@ def test_invite_is_emailed_and_sets_password_once(super_admin_client, smtp):
         accepted = visitor.post("/api/auth/accept-invite", json={"token": token, "password": "a-chosen-password-123"})
         assert accepted.status_code == 200, accepted.text
         assert accepted.json()["user"]["must_change_password"] is False
-        # Signed in straight away, no forced rotation.
+        # signed in straight away, no forced rotation
         assert visitor.get("/api/auth/me").status_code == 200
-        # Single use.
+        # single use
         assert visitor.post("/api/auth/accept-invite", json={"token": token, "password": "another-password-123"}).status_code == 404
         assert visitor.get(f"/api/auth/invite/{token}").status_code == 404
-    # The chosen password works for a normal login.
+    # chosen password works for a normal login
     with TestClient(app) as again:
         assert again.post("/api/auth/login", json={"email": "rev@acme.test", "password": "a-chosen-password-123"}).status_code == 200
     logs = org.get("/api/audit-logs", params={"action": "auth.accept_invite"}).json()
@@ -191,7 +187,7 @@ def test_without_smtp_invite_is_returned_and_logged_not_lost(super_admin_client,
     org.close()
 
 
-# --- webhooks + hooks ----------------------------------------------------------------
+# webhooks + hooks
 
 
 def test_signed_webhooks_receive_gate_and_incident_events(super_admin_client, monkeypatch):
@@ -209,15 +205,19 @@ def test_signed_webhooks_receive_gate_and_incident_events(super_admin_client, mo
     assert "secret" not in org.get("/api/org/webhooks").json()["webhooks"][0]
     assert org.post("/api/org/webhooks", json={"name": "x", "url": "http://h", "events": ["nope"]}).status_code == 400
 
-    # Test delivery, signed.
+    # test delivery, signed
     test = org.post(f"/api/org/webhooks/{webhook_id}/test").json()
     assert test["delivered"]["sent"] == 1 and test["last_status"] == "ok"
     body = receiver.received[-1]["body"]
-    expected = "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-    assert receiver.received[-1]["headers"]["X-Norinth-Signature"] == expected
-    assert receiver.received[-1]["headers"]["X-Norinth-Event"] == "test"
+    headers = receiver.received[-1]["headers"]
+    # replay-resistant signature: hmac over "<timestamp>." + body, delivered as
+    # t=<ts>,v1=<sig> alongside an X-Norinth-Timestamp header
+    timestamp = headers["X-Norinth-Timestamp"]
+    expected_sig = hmac.new(secret.encode(), f"{timestamp}.".encode() + body, hashlib.sha256).hexdigest()
+    assert headers["X-Norinth-Signature"] == f"t={timestamp},v1={expected_sig}"
+    assert headers["X-Norinth-Event"] == "test"
 
-    # Real events: an incident opened by ingestion, a gate rejected by a human.
+    # real events: an incident opened by ingestion, a gate rejected by a human
     token = org.post("/api/ingestion-keys", json={"name": "k"}).json()["token"]
     h = {"Authorization": f"Bearer {token}"}
     events = [
@@ -237,27 +237,26 @@ def test_signed_webhooks_receive_gate_and_incident_events(super_admin_client, mo
     assert "incident.opened" in types and "gate.rejected" in types
     rejected = json.loads(next(r["body"] for r in receiver.received if r["headers"]["X-Norinth-Event"] == "gate.rejected"))
     assert rejected["data"]["decided_by"] == "gov@acme.test" and rejected["link"].endswith(f"#gate/{gate_id}")
-    # Delivery log shows both sent.
+    # delivery log shows both sent
     log = org.get("/api/org/notifications").json()["notifications"]
     assert {e["event_type"] for e in log if e["channel"] == "webhook" and e["status"] == "sent"} >= {"incident.opened", "gate.rejected"}
     org.close()
 
 
 def test_review_assignment_and_escalation_notify_once(super_admin_client, smtp):
-    """Assignment emails the assignee once; escalation emails the assignee and org admins once,
-    even though the queue is recomputed on every ingest."""
+    """assignment emails the assignee once; escalation emails assignee + org admins once despite requeue"""
     from app.services.notifications import deliver_pending
     from app.storage.raw_events import connect
 
     org = _org(super_admin_client)
     org.post("/api/org/users", json={"email": "rev@acme.test", "display_name": "Rev", "password": "rev-password-1"})
     org.post("/api/org/role-assignments", json={"user_ref": "rev@acme.test", "role": "governance_reviewer"})
-    # Route intake reviews to reviewers, due in 2 days, escalate 1 day later.
+    # route intake reviews to reviewers, due in 2 days, escalate 1 day later
     assert org.post("/api/review-queue-policies", json={"policy_id": "intake", "task_type": "intake_review", "assigned_role": "governance_reviewer", "due_days": 2, "escalation_days": 1}).status_code == 200
     deliver_pending()
     smtp.messages.clear()
 
-    # A high-risk use case through intake creates an intake review routed to a reviewer.
+    # high-risk use case through intake creates an intake review routed to a reviewer
     submitted = org.post("/api/intake", json={"application_name": "Claims", "use_case": "Claims triage", "description": "Triage inbound claims", "intended_purpose": "prioritise claims", "data_sensitivity": "restricted", "autonomy_level": "assistive", "affects_individuals": True, "project": "p1", "environment": "prod"})
     assert submitted.status_code in (200, 201), submitted.text
     token = org.post("/api/ingestion-keys", json={"name": "k"}).json()["token"]
@@ -268,12 +267,12 @@ def test_review_assignment_and_escalation_notify_once(super_admin_client, smtp):
     assigned = [m for m in smtp.messages if "Review assigned to you" in m["raw"]]
     assert len(assigned) == 1 and assigned[0]["to"] == ["rev@acme.test"]
 
-    # Re-ingesting must not re-send the assignment.
+    # re-ingesting must not re-send the assignment
     org.post("/v1/events/batch", json={"events": [{**ping, "trace_id": "t2", "span_id": "s2"}]}, headers=h)
     deliver_pending()
     assert len([m for m in smtp.messages if "Review assigned to you" in m["raw"]]) == 1
 
-    # Age the task past its escalation deadline and refresh.
+    # age the task past its escalation deadline and refresh
     with connect() as connection:
         connection.execute("UPDATE review_tasks SET created_at = '2020-01-01 00:00:00', due_at = '2020-01-02 00:00:00'")
     org.post("/v1/events/batch", json={"events": [{**ping, "trace_id": "t3", "span_id": "s3"}]}, headers=h)
@@ -287,8 +286,7 @@ def test_review_assignment_and_escalation_notify_once(super_admin_client, smtp):
 
 
 def test_two_workers_never_deliver_the_same_row(super_admin_client):
-    """Replica safety: claiming is atomic, so concurrent workers get disjoint
-    rows; rows claimed by a dead worker are reclaimed after the stale window."""
+    """concurrent workers claim disjoint rows; dead-worker rows reclaimed after stale window"""
     from app.storage import notifications as store
     from app.storage.raw_events import connect
 
@@ -301,13 +299,13 @@ def test_two_workers_never_deliver_the_same_row(super_admin_client):
     assert len(a) == 20 and b == []  # everything claimed by a; b gets nothing
     assert {row["claimed_by"] for row in a} == {"replica-a"}
 
-    # replica-a dies without finishing; after the stale window replica-b reclaims.
+    # replica-a dies without finishing; after the stale window replica-b reclaims
     with connect() as connection:
         connection.execute("UPDATE notification_outbox SET claimed_at = '2020-01-01 00:00:00' WHERE claimed_by = 'replica-a'")
     reclaimed = store.claim_pending(limit=50, worker_id="replica-b")
     assert len(reclaimed) == 20 and {row["claimed_by"] for row in reclaimed} == {"replica-b"}
 
-    # Interleaved claiming with a smaller limit stays disjoint.
+    # interleaved claiming with a smaller limit stays disjoint
     with connect() as connection:
         connection.execute("UPDATE notification_outbox SET status = 'pending', claimed_by = NULL, claimed_at = NULL")
     first = store.claim_pending(limit=10, worker_id="replica-a")

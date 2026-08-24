@@ -14,12 +14,15 @@ from app.storage.workflow import (
     purge_expired_sessions,
 )
 
-# Password hashing parameters. PBKDF2-HMAC-SHA256 is part of the standard
-# library, which keeps the open/closed dependency boundary clean (no external
-# crypto dependency) while remaining a defensible KDF for an internal app.
+# pbkdf2-hmac-sha256 is stdlib, no external crypto dep. iteration count meets
+# owasp 2023 guidance (600k), env-tunable so tests can lower it; weaker hashes are
+# upgraded on the next successful login
 _PBKDF2_ALGORITHM = "sha256"
-_PBKDF2_ITERATIONS = 240_000
+_PBKDF2_ITERATIONS = int(os.getenv("NORINTH_PBKDF2_ITERATIONS", "600000"))
 _SALT_BYTES = 16
+# a hash string names its own kdf; allowlist so a tampered db row can't make the
+# verifier run a weak or attacker-chosen digest
+_ALLOWED_ALGORITHMS = {"sha256", "sha512"}
 
 SESSION_TTL_HOURS = int(os.getenv("NORINTH_SESSION_TTL_HOURS", "12"))
 
@@ -42,16 +45,38 @@ def verify_password(password: str, stored: str | None) -> bool:
     if not scheme.startswith("pbkdf2_"):
         return False
     algorithm = scheme.removeprefix("pbkdf2_")
-    derived = hashlib.pbkdf2_hmac(algorithm, password.encode("utf-8"), bytes.fromhex(salt_hex), int(iterations))
+    if algorithm not in _ALLOWED_ALGORITHMS:
+        return False
+    try:
+        rounds = int(iterations)
+    except ValueError:
+        return False
+    derived = hashlib.pbkdf2_hmac(algorithm, password.encode("utf-8"), bytes.fromhex(salt_hex), rounds)
     return hmac.compare_digest(derived.hex(), expected_hex)
 
 
-def _hash_token(token: str) -> str:
-    """Hash a session token for storage.
+def needs_rehash(stored: str | None) -> bool:
+    """true when a stored hash is weaker than current params (diff algo or fewer iterations)"""
+    if not stored:
+        return True
+    try:
+        scheme, iterations, _, _ = stored.split("$")
+    except ValueError:
+        return True
+    if not scheme.startswith("pbkdf2_"):
+        return True
+    algorithm = scheme.removeprefix("pbkdf2_")
+    try:
+        return algorithm != _PBKDF2_ALGORITHM or int(iterations) < _PBKDF2_ITERATIONS
+    except ValueError:
+        return True
 
-    Session tokens are high-entropy bearer secrets; storing only their SHA-256
-    means a database read (or backup leak) never yields a usable, replayable
-    token (audit H-7).
+
+def _hash_token(token: str) -> str:
+    """hash a session token for storage
+
+    tokens are bearer secrets; storing only the sha-256 means a db read or backup
+    leak never yields a replayable token
     """
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
@@ -77,5 +102,5 @@ def end_session(token: str | None) -> None:
 
 
 def end_all_sessions(user_ref: str) -> None:
-    """Revoke every active session for a user (e.g. after a password change)."""
+    """revoke every active session for a user, e.g. after a password change"""
     delete_sessions_for_user(user_ref)

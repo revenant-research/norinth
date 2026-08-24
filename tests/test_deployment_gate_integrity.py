@@ -1,10 +1,4 @@
-"""Regression tests for deployment-gate integrity (audit C-2).
-
-Before this fix, a deployment gate with no blocking evidence was written
-directly as "approved" (no human, no attribution), and the generic
-/api/decisions route could flip a gate to "approved" while bypassing the
-evidence guard. A release could ship with zero human sign-off.
-"""
+"""deployment gates are never auto-approved and can't be flipped via /api/decisions"""
 
 from __future__ import annotations
 
@@ -54,16 +48,14 @@ def test_gate_is_never_auto_approved(client):
         ).fetchall()
     assert len(gates) == 1
     gate = gates[0]
-    # The system must never write an approved gate; it awaits a human decision
-    # with no attribution yet.
+    # gate awaits a human decision, never written as approved
     assert gate["gate_status"] == "pending_review"
     assert gate["actor_ref"] is None
     assert gate["decided_at"] is None
 
 
 def test_decisions_route_cannot_transition_a_gate(super_admin_client):
-    # A governance_admin in an org cannot use the generic /api/decisions route to
-    # approve a gate — it must go through the guarded /approve endpoint.
+    # governance_admin can't approve a gate via generic /api/decisions, must use guarded /approve
     super_admin_client.post(
         "/api/admin/organizations",
         json={
@@ -90,7 +82,7 @@ def test_decisions_route_cannot_transition_a_gate(super_admin_client):
 
     with TestClient(app) as gov:
         login_and_activate(gov, "gov@acme.test", "gov-password-1")
-        # Even with gate.decide, the generic decisions route rejects gate/incident.
+        # even with gate.decide, generic decisions route rejects gate/incident
         gate_resp = gov.post(
             "/api/decisions",
             json={

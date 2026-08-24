@@ -61,3 +61,22 @@ def load_organization(tenant_id: str) -> dict[str, Any] | None:
     with connect() as connection:
         row = connection.execute("SELECT * FROM organizations WHERE tenant_id = ?", (tenant_id,)).fetchone()
     return None if row is None else dict(row)
+
+
+def organization_is_active(tenant_id: str | None) -> bool:
+    """false when the organization is missing (purged) or suspended"""
+    if not tenant_id:
+        return False
+    with connect() as connection:
+        row = connection.execute("SELECT status FROM organizations WHERE tenant_id = ?", (tenant_id,)).fetchone()
+    return row is not None and row["status"] == "active"
+
+
+def organization_is_suspended(tenant_id: str | None) -> bool:
+    """true only when an org row exists and is not active; a missing row (e.g
+    the dev tenant) is not suspended, the ingestion key is the authority there"""
+    if not tenant_id:
+        return False
+    with connect() as connection:
+        row = connection.execute("SELECT status FROM organizations WHERE tenant_id = ?", (tenant_id,)).fetchone()
+    return row is not None and row["status"] != "active"

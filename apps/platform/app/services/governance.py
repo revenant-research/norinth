@@ -23,7 +23,13 @@ from app.storage.governance_policy import (
 from app.storage.incidents import list_incidents
 from app.storage.lifecycle import list_change_events, list_review_tasks
 from app.storage.prompts import list_prompt_templates, list_prompt_versions
-from app.storage.raw_events import list_events
+from app.storage.raw_events import (
+    aggregate_traces,
+    count_distinct,
+    count_error_events,
+    count_events_by_type,
+    list_events,
+)
 from app.storage.workflow import (
     list_configured_owner_policies,
     list_decisions,
@@ -34,20 +40,31 @@ from app.storage.workflow import (
     list_role_assignments,
 )
 
-MAX_QUERY_LIMIT = 10000
+# page size when a builder aggregates over every matching event, and the ceiling
+# on that scan
+_SCAN_PAGE = 5000
+MAX_QUERY_LIMIT = 500_000
 
 
 def scoped_events(scope: ScopeFilter, *, event_type: str | None = None, limit: int = MAX_QUERY_LIMIT) -> list[Event]:
-    return [
-        Event.model_validate(event)
-        for event in list_events(
+    """all matching events up to limit, paged; use the sql count/aggregate
+    helpers for pure counts, this is for builders that parse event attributes"""
+    events: list[Event] = []
+    offset = 0
+    while offset < limit:
+        page = list_events(
             tenant_id=scope.tenant_id,
             project=scope.project,
             environment=scope.environment,
             event_type=event_type,
-            limit=limit,
+            limit=min(_SCAN_PAGE, limit - offset),
+            offset=offset,
         )
-    ]
+        events.extend(Event.model_validate(event) for event in page)
+        if len(page) < _SCAN_PAGE:
+            break
+        offset += _SCAN_PAGE
+    return events
 
 
 def event_attributes(event: Event) -> dict[str, Any]:
@@ -585,12 +602,12 @@ def build_risk_register(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
     return {"risks": list_risk_findings(**scope.model_dump())}
 
 
-def build_control_catalog() -> dict[str, list[dict[str, Any]]]:
-    return {"controls": list_controls_catalog()}
+def build_control_catalog(tenant_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
+    return {"controls": list_controls_catalog(tenant_id)}
 
 
-def build_risk_rules() -> dict[str, list[dict[str, Any]]]:
-    return {"risk_rules": list_configured_risk_rules()}
+def build_risk_rules(tenant_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
+    return {"risk_rules": list_configured_risk_rules(tenant_id)}
 
 
 def build_owner_policies() -> dict[str, list[dict[str, Any]]]:
@@ -637,11 +654,9 @@ def build_control_evidence(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]
     return {"controls": list_control_assessments(**scope.model_dump())}
 
 
-# Prefixes used in control framework_refs, mapped to a display family. A control
-# assessment cites specific requirements (e.g. "NIST AI RMF MAP 1.1",
-# "ISO/IEC 42001 A.5.2", "EU AI Act Art 26", "SOC 2 CC7.2"); we roll these up per
-# framework so a buyer/auditor sees coverage by regulation, not a flat list
-# (audit §6.2, GTM: framework crosswalks are table-stakes).
+# framework_ref prefix -> display family. a control assessment cites specific
+# requirements (e.g. "NIST AI RMF MAP 1.1", "SOC 2 CC7.2"); roll these up per
+# framework so coverage reads by regulation, not as a flat list
 _FRAMEWORK_FAMILIES: list[tuple[str, str]] = [
     ("OWASP Agentic", "OWASP Top 10 for Agentic Applications (2026)"),
     ("NIST AI 600", "NIST GenAI Profile (AI 600-1)"),
@@ -663,22 +678,31 @@ def _framework_family(ref: str) -> str:
 
 
 def build_framework_coverage(scope: ScopeFilter) -> dict[str, Any]:
-    """Roll control assessments up into per-framework coverage.
+    """roll control assessments up into per-framework coverage
 
-    A framework requirement counts as satisfied if any control that cites it has
-    a passing or waived assessment. The result is a compliance-posture-by-
-    framework view: total mapped requirements, how many are satisfied, the
-    coverage percentage, and the specific gaps still outstanding.
+    denominator is every requirement the control library maps for a framework
+    (from the control definitions), not only requirements that produced an
+    assessment, else one passing control would read as 100% of its framework. a
+    requirement is satisfied when a citing control has a passing or waived
+    assessment; ``basis`` states this is coverage of mapped controls, not the
+    full regulation
     """
-    assessments = list_control_assessments(**scope.model_dump())
-    # family -> {requirement_ref: satisfied?}
+    # denominator: every framework requirement the control library defines
     by_family: dict[str, dict[str, bool]] = {}
-    for assessment in assessments:
+    for control in list_controls_catalog(scope.tenant_id):
+        for ref in control.get("framework_refs", []):
+            family = _framework_family(ref)
+            by_family.setdefault(family, {}).setdefault(ref, False)
+
+    # numerator: requirements whose citing control has a satisfying assessment
+    for assessment in list_control_assessments(**scope.model_dump()):
         satisfied = assessment.get("status") in _SATISFIED_STATUSES
+        if not satisfied:
+            continue
         for ref in assessment.get("framework_refs", []):
             family = _framework_family(ref)
             requirements = by_family.setdefault(family, {})
-            requirements[ref] = requirements.get(ref, False) or satisfied
+            requirements[ref] = True
 
     coverage: list[dict[str, Any]] = []
     for family, requirements in by_family.items():
@@ -694,7 +718,10 @@ def build_framework_coverage(scope: ScopeFilter) -> dict[str, Any]:
                 "satisfied_requirements": sorted(ref for ref, ok in requirements.items() if ok),
             }
         )
-    return {"framework_coverage": sorted(coverage, key=lambda item: item["framework"])}
+    return {
+        "framework_coverage": sorted(coverage, key=lambda item: item["framework"]),
+        "basis": "Coverage of the control requirements the Norinth control library maps for each framework, not of the full regulation.",
+    }
 
 
 def build_change_events(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
@@ -717,18 +744,28 @@ def build_exceptions(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
     return {"exceptions": list_exceptions(**scope.model_dump())}
 
 
-def build_traces(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
-    trace_ids = Counter(event.trace_id for event in scoped_events(scope))
+def build_traces_page(scope: ScopeFilter, *, limit: int, offset: int) -> dict[str, Any]:
+    """trace list paged and counted in sql so the whole event table isn't loaded
+    just to count events per trace and slice in python"""
+    traces, total = aggregate_traces(**scope.model_dump(), limit=limit, offset=offset)
     return {
-        "traces": [
-            {"trace_id": trace_id, "event_count": count}
-            for trace_id, count in trace_ids.most_common()
-        ]
+        "traces": traces,
+        "page": {
+            "offset": offset,
+            "limit": limit,
+            "total": total,
+            "has_more": offset + len(traces) < total,
+        },
     }
 
 
 def build_summary(scope: ScopeFilter) -> dict[str, Any]:
-    events = scoped_events(scope)
+    # counts computed in sql, not by materialising a window and counting in python
+    scope_filters = scope.model_dump()
+    by_type = count_events_by_type(**scope_filters)
+    total_events = sum(by_type.values())
+    error_events = count_error_events(**scope_filters)
+    distinct_systems = count_distinct("COALESCE(system, service)", **scope_filters)
     applications = list_applications(**scope.model_dump())
     workflows = list_workflows(**scope.model_dump())
     providers = list_providers(**scope.model_dump())
@@ -744,18 +781,18 @@ def build_summary(scope: ScopeFilter) -> dict[str, Any]:
     decisions = list_decisions(**scope.model_dump())
     exceptions = list_exceptions(**scope.model_dump())
     return {
-        "events": len(events),
-        "model_calls": sum(1 for event in events if event.type == "model.call"),
-        "agent_runs": sum(1 for event in events if event.type == "agent.run"),
-        "retrievals": sum(1 for event in events if event.type == "retrieval.call"),
-        "tool_calls": sum(1 for event in events if event.type == "tool.call"),
-        "guardrail_decisions": sum(1 for event in events if event.type == "guardrail.decision"),
-        "eval_results": sum(1 for event in events if event.type == "eval.result"),
-        "prompt_events": sum(1 for event in events if event.type == "prompt.event"),
-        "deployment_events": sum(1 for event in events if event.type == "deployment.event"),
-        "incident_events": sum(1 for event in events if event.type == "incident.event"),
-        "errors": sum(1 for event in events if event.status == "error"),
-        "systems": len({event.system or event.service for event in events}),
+        "events": total_events,
+        "model_calls": by_type.get("model.call", 0),
+        "agent_runs": by_type.get("agent.run", 0),
+        "retrievals": by_type.get("retrieval.call", 0),
+        "tool_calls": by_type.get("tool.call", 0),
+        "guardrail_decisions": by_type.get("guardrail.decision", 0),
+        "eval_results": by_type.get("eval.result", 0),
+        "prompt_events": by_type.get("prompt.event", 0),
+        "deployment_events": by_type.get("deployment.event", 0),
+        "incident_events": by_type.get("incident.event", 0),
+        "errors": error_events,
+        "systems": distinct_systems,
         "applications": len(applications),
         "workflows": len(workflows),
         "providers": sorted({provider["provider"] for provider in providers}),

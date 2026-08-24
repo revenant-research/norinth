@@ -4,7 +4,7 @@ import { type User, getJson, postJson } from "../api";
 import { Button, Callout, Card, Container, Eyebrow, Heading, Lede, Stack, Text, TextField } from "../design";
 import styles from "./setup.module.css";
 
-/** Invite acceptance: the invitee sets their own password and is signed in. */
+/** invite acceptance: invitee sets their own password and is signed in */
 export function InviteScreen({ token, onAccepted }: { token: string; onAccepted: (user: User) => void }) {
   const [preview, setPreview] = useState<{ email: string; display_name: string | null; organization: string } | null>(null);
   const [error, setError] = useState("");

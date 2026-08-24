@@ -25,7 +25,7 @@ jobs:
           pip install -r requirements-dev.txt
           pip install -e packages/python-sdk
       - name: Lint (ruff)
-        run: ruff check apps/platform/app packages/python-sdk/norinth_logger tests scripts demo-apps
+        run: ruff check apps/platform/app packages/python-sdk/norinth_logger tests scripts
       - name: Type check (mypy)
         run: mypy packages/python-sdk/norinth_logger || true  # non-blocking baseline; tightened over time
       - name: Test (pytest)
@@ -76,7 +76,7 @@ jobs:
         with:
           node-version: "20"
       - name: Install dependencies
-        run: npm ci || npm install
+        run: npm ci
       - name: Unit tests (vitest)
         run: npm test
       - name: Type check + build

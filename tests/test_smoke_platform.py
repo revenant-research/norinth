@@ -1,8 +1,4 @@
-"""Baseline smoke tests: the app boots, core auth works, ingestion accepts a batch.
-
-These lock in current, correct behavior. Security-hardening PRs add their own
-regression tests (which start red and go green) alongside the fix.
-"""
+"""smoke: app boots, core auth works, ingestion accepts a batch"""
 
 from __future__ import annotations
 
@@ -10,7 +6,10 @@ from __future__ import annotations
 def test_health_ok(client):
     resp = client.get("/health")
     assert resp.status_code == 200
-    assert "event_count" in resp.json()
+    body = resp.json()
+    assert body["ok"] is True
+    # /health must not leak the platform-wide event count to anonymous callers
+    assert "event_count" not in body
 
 
 def test_unauthenticated_reads_are_rejected(client):
@@ -26,7 +25,7 @@ def test_default_super_admin_login(client):
     assert resp.status_code == 200
     user = resp.json()["user"]
     assert user["is_super_admin"] is True
-    # The bootstrap admin is created with a forced password change.
+    # bootstrap admin is created with a forced password change
     assert user["must_change_password"] is True
 
 
@@ -39,7 +38,7 @@ def test_bad_login_is_rejected(client):
 
 
 def test_super_admin_cannot_read_tenant_governance(super_admin_client):
-    # By design the platform super-admin plane has no tenant governance access.
+    # super-admin plane has no tenant governance access by design
     assert super_admin_client.get("/api/applications").status_code == 403
 
 
@@ -56,7 +55,7 @@ def test_super_admin_can_create_org_and_org_admin_can_login(super_admin_client):
     )
     assert resp.status_code == 200, resp.text
 
-    # Fresh client (no super-admin cookie) logging in as the org admin.
+    # fresh client (no super-admin cookie) logging in as the org admin
     from app.main import app
     from fastapi.testclient import TestClient
 
@@ -87,8 +86,8 @@ def test_ingestion_accepts_a_batch(client):
                     "operation": "chat",
                     "usage": {"input_tokens": 10, "output_tokens": 5},
                     "metadata": {
-                        # The dev ingestion key is bound to tenant-local; a batch
-                        # claiming another tenant would be rejected (see C-1 tests).
+                        # dev ingestion key is bound to tenant-local; a batch
+                        # claiming another tenant would be rejected
                         "tenant_id": "tenant-local",
                         "application_name": "App",
                         "workflow_name": "wf",

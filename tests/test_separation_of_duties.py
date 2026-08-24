@@ -1,12 +1,4 @@
-"""Regression tests for separation of duties (audit C-4) and removal of the
-dangerous governance-plane user/role endpoints (C-7, H-2).
-
-Before this fix, an org_admin (who holds `role.assign`) could grant itself
-`governance_admin`, unilaterally gaining gate.decide / risk.accept /
-incident.close / review.decide — collapsing the boundary between administering
-the tenant and making governance decisions. This was reproduced during the
-audit.
-"""
+"""separation of duties: org_admin can't self-assign decision roles, legacy user/role endpoints gone"""
 
 from __future__ import annotations
 
@@ -52,7 +44,7 @@ def test_org_admin_cannot_self_assign_a_decision_role(super_admin_client):
 def test_admin_and_decision_roles_are_mutually_exclusive(super_admin_client):
     email, pw = _make_org(super_admin_client)
     with _org_client(email, pw) as org:
-        # Create a second user and make them a decision-maker (legitimate).
+        # second user made a decision-maker
         org.post(
             "/api/org/users",
             json={"email": "reviewer@acme.test", "display_name": "Reviewer", "password": "reviewer-pw-1"},
@@ -63,7 +55,7 @@ def test_admin_and_decision_roles_are_mutually_exclusive(super_admin_client):
         )
         assert granted.status_code == 200, granted.text
 
-        # Now trying to ALSO make that decision-maker an org_admin must fail.
+        # also making that decision-maker an org_admin must fail
         conflict = org.post(
             "/api/org/role-assignments",
             json={"user_ref": "reviewer@acme.test", "role": "org_admin"},
@@ -89,8 +81,8 @@ def test_org_admin_can_delegate_decision_roles_to_others(super_admin_client):
 def test_legacy_governance_plane_user_endpoints_removed(super_admin_client):
     email, pw = _make_org(super_admin_client)
     with _org_client(email, pw) as org:
-        # These endpoints (POST /api/users, POST /api/role-assignments) allowed
-        # cross-tenant account overwrite and global self-escalation; they are gone.
+        # these endpoints allowed cross-tenant account overwrite and global
+        # self-escalation; they are gone
         assert org.post("/api/users", json={"user_ref": "x", "display_name": "x"}).status_code == 404
         assert (
             org.post("/api/role-assignments", json={"user_ref": "x", "role": "governance_admin"}).status_code

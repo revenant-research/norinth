@@ -1,4 +1,4 @@
-"""Tests for the OpenTelemetry GenAI ingestion path."""
+"""opentelemetry genai ingestion path"""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ def test_otel_endpoint_ingests_and_populates_inventory(client):
     assert resp.status_code == 200, resp.text
     assert resp.json()["accepted"] == 1
 
-    # The OTel-sourced model call shows up as an application under the key's tenant.
+    # otel-sourced model call shows up as an application under the key's tenant
     from app.storage.entities import connect
 
     with connect() as connection:

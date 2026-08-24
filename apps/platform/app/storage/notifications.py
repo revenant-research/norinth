@@ -1,10 +1,9 @@
-"""Notification outbox, webhooks and invites (roadmap: self-contained operations).
+"""notification outbox, webhooks and invites
 
-Nothing in a request path talks to SMTP or a webhook URL. Events are written
-to ``notification_outbox`` inside the caller's transaction and a background
-worker delivers them with retries, so a slow mail server can never slow or
-fail governance actions, and nothing is lost if delivery fails: every row keeps
-its status and last error, visible to organization administrators.
+no request path talks to smtp or a webhook url: events are written to
+notification_outbox in the caller's transaction and a background worker delivers
+them with retries, so a slow mail server can't slow governance actions and
+nothing is lost on failure. every row keeps its status and last error
 """
 
 from __future__ import annotations
@@ -12,11 +11,13 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+import urllib.parse
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.services import secrets as secret_store
 
+from .db import is_postgres
 from .raw_events import connect
 
 WEBHOOK_EVENTS = (
@@ -34,7 +35,7 @@ INVITE_TTL_DAYS = 7
 
 
 def ensure_notification_tables(connection) -> None:
-    """Schema for migration 7 (idempotent)."""
+    """outbox, webhooks, invites schema, idempotent"""
     connection.execute(
         """
         CREATE TABLE IF NOT EXISTS notification_outbox (
@@ -118,7 +119,7 @@ STALE_CLAIM_MINUTES = 10
 
 
 def ensure_claim_columns(connection) -> None:
-    """Schema for migration 8 (idempotent)."""
+    """delivery claim columns, idempotent"""
     for statement in (
         "ALTER TABLE notification_outbox ADD COLUMN claimed_by TEXT",
         "ALTER TABLE notification_outbox ADD COLUMN claimed_at TEXT",
@@ -130,14 +131,12 @@ def ensure_claim_columns(connection) -> None:
 
 
 def claim_pending(limit: int = 50, *, worker_id: str) -> list[dict[str, Any]]:
-    """Atomically claim up to ``limit`` due rows for this worker.
+    """atomically claim up to limit due rows for this worker
 
-    Multiple platform replicas each run a delivery worker. Claiming is a single
-    UPDATE that flips status to 'delivering' for rows that are still 'pending',
-    so two replicas can never both deliver the same row: on PostgreSQL the
-    second updater blocks on the row lock and then re-evaluates the WHERE
-    (READ COMMITTED), on SQLite writes are serialized. Rows claimed by a worker
-    that died are returned to 'pending' after STALE_CLAIM_MINUTES.
+    each replica runs a delivery worker; the claim is one update flipping status
+    to 'delivering' for still-'pending' rows, so two replicas can't both deliver
+    a row. rows claimed by a dead worker return to 'pending' after
+    STALE_CLAIM_MINUTES
     """
     now_dt = datetime.now(UTC)
     now = now_dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -148,13 +147,17 @@ def claim_pending(limit: int = 50, *, worker_id: str) -> list[dict[str, Any]]:
             "WHERE status = 'delivering' AND claimed_at <= ?",
             (stale_before,),
         )
+        # on postgres, FOR UPDATE SKIP LOCKED makes this a work queue: a selector
+        # skips rows another replica locked, so two workers never select the same
+        # batch. sqlite serializes writers and doesn't support the clause
+        skip_locked = " FOR UPDATE SKIP LOCKED" if is_postgres() else ""
         connection.execute(
-            """
+            f"""
             UPDATE notification_outbox SET status = 'delivering', claimed_by = ?, claimed_at = ?
             WHERE id IN (
                 SELECT id FROM notification_outbox
                 WHERE status = 'pending' AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
-                ORDER BY id LIMIT ?
+                ORDER BY id LIMIT ?{skip_locked}
             )
             """,
             (worker_id, now, now, limit),
@@ -200,17 +203,35 @@ def list_outbox(tenant_id: str, limit: int = 100) -> list[dict[str, Any]]:
 # --- webhooks -----------------------------------------------------------------------
 
 
+def mask_url(url: str) -> str:
+    """hide a webhook url's path; a slack incoming-webhook carries its auth
+    token there, so exposing it leaks a bearer secret. keep scheme and host only"""
+    try:
+        parsed = urllib.parse.urlsplit(url)
+    except ValueError:
+        return "[redacted-url]"
+    if not parsed.scheme or not parsed.netloc:
+        return "[redacted-url]"
+    suffix = "/…" if parsed.path not in ("", "/") or parsed.query else ""
+    return f"{parsed.scheme}://{parsed.netloc}{suffix}"
+
+
 def _public_webhook(row: dict[str, Any]) -> dict[str, Any]:
     out = {k: v for k, v in row.items() if k != "secret"}
+    # never expose the full url (its path may be a bearer secret), host only
+    if out.get("url"):
+        out["url"] = mask_url(out["url"])
     out["events"] = json.loads(row["events"])
     return out
 
 
 def create_webhook(tenant_id: str, *, name: str, url: str, events: list[str], fmt: str, created_by: str | None) -> tuple[str, dict[str, Any]]:
-    """Returns (signing secret shown once, public record)."""
+    """returns (signing secret shown once, public record)"""
     webhook_id = "whk_" + secrets.token_urlsafe(9)
     secret = "whs_" + secrets.token_urlsafe(24)
-    stored = secret_store.encrypt(secret, associated_data=f"webhook:{tenant_id}:{webhook_id}") if secret_store.encryption_enabled() else secret
+    # always encrypt, fail-closed: encrypt() raises without a key rather than
+    # storing the signing secret in plaintext
+    stored = secret_store.encrypt(secret, associated_data=f"webhook:{tenant_id}:{webhook_id}")
     with connect() as connection:
         connection.execute(
             "INSERT INTO webhooks (webhook_id, tenant_id, name, url, secret, events, format, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, datetime('now'))",

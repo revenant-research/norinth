@@ -1,10 +1,41 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
+from app.services import secrets as secret_store
+
 from . import db
+
+# the raw event body can carry prompt/response content (phi with content capture
+# on). with NORINTH_ENCRYPT_RAW_EVENTS=1 the raw_event column is encrypted at
+# rest while the extracted governance columns stay queryable in plaintext. reads
+# decrypt transparently and legacy plaintext rows pass through, so the flag can
+# be turned on without a migration
+_RAW_EVENT_AAD = "sdk_event"
+
+
+def _encrypt_raw_events() -> bool:
+    return os.getenv("NORINTH_ENCRYPT_RAW_EVENTS", "0").lower() in {"1", "true", "yes"}
+
+
+def serialize_raw_event(event: dict[str, Any]) -> str:
+    payload = json.dumps(event)
+    if _encrypt_raw_events():
+        return secret_store.encrypt(payload, associated_data=_RAW_EVENT_AAD)
+    return payload
+
+
+def deserialize_raw_event(stored: str) -> dict[str, Any]:
+    # decrypt returns plaintext unchanged, so this handles both encrypted and
+    # legacy-plaintext rows
+    return json.loads(secret_store.decrypt(stored, associated_data=_RAW_EVENT_AAD))
+
+
+def _as_object(value):
+    return value if isinstance(value, dict) else {}
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "norinth.sqlite3"
 
@@ -14,8 +45,7 @@ def database_path() -> Path:
 
 
 def connect():
-    """Open a connection to the configured backend (SQLite by default,
-    PostgreSQL when NORINTH_DATABASE_URL is set). See storage/db.py."""
+    """open a connection to the configured backend; see storage/db.py"""
     return db.connect()
 
 
@@ -58,31 +88,29 @@ def init_storage() -> None:
         connection.execute("CREATE INDEX IF NOT EXISTS idx_sdk_events_project_env ON sdk_events(project, environment)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_sdk_events_type ON sdk_events(event_type)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_sdk_events_application ON sdk_events(application_name)")
-        # Composite index for the per-application evidence scans run on every
-        # ingest (governance_policy / lifecycle recompute), audit P3.
+        # composite index for the per-application evidence scans run on every
+        # ingest (governance_policy / lifecycle recompute)
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_sdk_events_app_scope "
             "ON sdk_events(project, environment, application_name, tenant_id)"
         )
-        # Idempotency: a retried batch re-sends the same (trace_id, span_id)
+        # idempotency: a retried batch re-sends the same (trace_id, span_id)
         # spans; a unique index plus INSERT OR IGNORE prevents double-counting
-        # (audit C-6 / M4). Guarded because a legacy DB may already hold
-        # duplicates from before this constraint existed.
+        # guarded because a legacy db may already hold duplicates
         try:
             connection.execute(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_sdk_events_span "
-                "ON sdk_events(trace_id, span_id)"
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_sdk_events_span_tenant "
+                "ON sdk_events(tenant_id, trace_id, span_id)"
             )
         except db.IntegrityError:
             pass
 
 
 def insert_events(events: list[dict[str, Any]]) -> int:
-    """Insert events idempotently and return the number newly accepted.
+    """insert events idempotently, returning the number newly accepted
 
-    Uses INSERT OR IGNORE against the unique (trace_id, span_id) index so a
-    retried batch does not double-count (audit C-6). The return value is the
-    count actually inserted, not the batch size.
+    INSERT OR IGNORE against the unique (trace_id, span_id) index so a retried
+    batch doesn't double-count; the return is the count inserted, not batch size
     """
     rows = [event_to_row(event) for event in events]
     with connect() as connection:
@@ -109,8 +137,8 @@ def insert_events(events: list[dict[str, Any]]) -> int:
 
 def event_to_row(event: dict[str, Any]) -> dict[str, Any]:
     attributes = event.get("attributes") or {}
-    metadata = attributes.get("metadata") or {}
-    usage = attributes.get("usage") or {}
+    metadata = _as_object(attributes.get("metadata"))
+    usage = _as_object(attributes.get("usage"))
     return {
         "event_type": event["type"],
         "schema_version": event["schema_version"],
@@ -136,7 +164,7 @@ def event_to_row(event: dict[str, Any]) -> dict[str, Any]:
         "operation": attributes.get("operation"),
         "input_tokens": int(usage.get("input_tokens") or 0),
         "output_tokens": int(usage.get("output_tokens") or 0),
-        "raw_event": json.dumps(event),
+        "raw_event": serialize_raw_event(event),
     }
 
 
@@ -194,6 +222,79 @@ def count_scoped_events(
     return int(row["count"])
 
 
+def count_events_by_type(
+    *,
+    tenant_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+) -> dict[str, int]:
+    """per-event-type counts computed in sql, correct for a tenant of any size"""
+    where, params = _event_filters(tenant_id, project, environment, None)
+    with connect() as connection:
+        rows = connection.execute(
+            f"SELECT event_type, COUNT(*) AS count FROM sdk_events {where} GROUP BY event_type", params
+        ).fetchall()
+    return {row["event_type"]: int(row["count"]) for row in rows}
+
+
+def count_error_events(
+    *,
+    tenant_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+) -> int:
+    where, params = _event_filters(tenant_id, project, environment, None)
+    clause = f"{where} AND status = :status" if where else "WHERE status = :status"
+    params["status"] = "error"
+    with connect() as connection:
+        row = connection.execute(f"SELECT COUNT(*) AS count FROM sdk_events {clause}", params).fetchone()
+    return int(row["count"])
+
+
+def count_distinct(
+    column: str,
+    *,
+    tenant_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+) -> int:
+    # column is a fixed identifier chosen by callers, never user input
+    where, params = _event_filters(tenant_id, project, environment, None)
+    with connect() as connection:
+        row = connection.execute(
+            f"SELECT COUNT(DISTINCT {column}) AS count FROM sdk_events {where}", params
+        ).fetchone()
+    return int(row["count"])
+
+
+def aggregate_traces(
+    *,
+    tenant_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+    limit: int = 200,
+    offset: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    """trace list with per-trace event counts, grouped and paged in sql
+
+    returns (rows, total_distinct_traces) so the route never materializes every
+    event to count and slice in python"""
+    where, params = _event_filters(tenant_id, project, environment, None)
+    with connect() as connection:
+        total_row = connection.execute(
+            f"SELECT COUNT(*) AS count FROM (SELECT trace_id FROM sdk_events {where} GROUP BY trace_id) AS distinct_traces",
+            params,
+        ).fetchone()
+        page_params = {**params, "limit": limit, "offset": offset}
+        rows = connection.execute(
+            f"SELECT trace_id, COUNT(*) AS event_count FROM sdk_events {where} "
+            "GROUP BY trace_id ORDER BY event_count DESC, trace_id LIMIT :limit OFFSET :offset",
+            page_params,
+        ).fetchall()
+    traces = [{"trace_id": row["trace_id"], "event_count": int(row["event_count"])} for row in rows]
+    return traces, int(total_row["count"])
+
+
 def list_events(
     *,
     tenant_id: str | None = None,
@@ -203,11 +304,11 @@ def list_events(
     limit: int = 200,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
-    """Newest-first window of events (``offset`` 0 = the most recent), returned
-    in chronological order within the window for display."""
+    """newest-first window of events (offset 0 = most recent), returned in
+    chronological order within the window for display"""
     where, params = _event_filters(tenant_id, project, environment, event_type)
     params.update({"limit": limit, "offset": offset})
     query = f"SELECT raw_event FROM sdk_events {where} ORDER BY id DESC LIMIT :limit OFFSET :offset"
     with connect() as connection:
         rows = connection.execute(query, params).fetchall()
-    return [json.loads(row["raw_event"]) for row in reversed(rows)]
+    return [deserialize_raw_event(row["raw_event"]) for row in reversed(rows)]

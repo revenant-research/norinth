@@ -14,6 +14,7 @@ from app.services.auth import (
     end_all_sessions,
     end_session,
     hash_password,
+    needs_rehash,
     verify_password,
 )
 from app.services.authorization import effective_permissions
@@ -32,13 +33,7 @@ router = APIRouter()
 
 
 def _cookie_secure() -> bool:
-    """Whether to mark the session cookie Secure (HTTPS-only).
-
-    Explicit ``NORINTH_COOKIE_SECURE`` wins. Otherwise the cookie is Secure in
-    production (env-configured deployments) and relaxed in local development
-    (documented dev defaults, plain HTTP), so the quickstart works out of the
-    box while production is protected (audit H-7).
-    """
+    """mark session cookie Secure; env override wins, else on outside dev"""
     override = os.getenv("NORINTH_COOKIE_SECURE")
     if override is not None:
         return override.lower() not in {"0", "false", "no"}
@@ -72,21 +67,22 @@ def _actor_profile(actor: ActorContext) -> dict[str, Any]:
 
 
 def client_ip(request: Request) -> str | None:
-    """Source address for throttling. X-Forwarded-For is honoured only when the
-    deployment declares a trusted proxy (NORINTH_TRUST_PROXY=1); otherwise a
-    client could spoof the header to dodge the IP throttle."""
+    """client ip for throttling"""
+    # x-forwarded-for honored only behind a declared trusted proxy
     if os.getenv("NORINTH_TRUST_PROXY", "0").lower() in {"1", "true", "yes"}:
         forwarded = request.headers.get("x-forwarded-for")
         if forwarded:
-            return forwarded.split(",")[0].strip()
+            parts = [part.strip() for part in forwarded.split(",") if part.strip()]
+            if parts:
+                # read Nth from the right; leftmost entries are client-controlled
+                hops = max(1, int(os.getenv("NORINTH_TRUSTED_PROXY_HOPS", "1")))
+                return parts[max(0, len(parts) - hops)]
     return request.client.host if request.client else None
 
 
 @router.post("/api/auth/login")
 def login(payload: LoginRequest, request: Request, response: Response) -> dict[str, Any]:
-    # Throttle credential stuffing / password spraying per account AND per
-    # source IP (audit H-6 + follow-up: targeted-lockout DoS and cross-account
-    # spraying).
+    # throttle per account and per source ip
     account = email_subject(payload.email)
     source = ip_subject(client_ip(request))
     if is_locked(account) or is_locked(source):
@@ -100,6 +96,9 @@ def login(payload: LoginRequest, request: Request, response: Response) -> dict[s
         register_failure(source)
         raise HTTPException(status_code=401, detail="Invalid email or password")
     clear_attempts(account)
+    # rehash if kdf params are outdated, now that we have the verified plaintext
+    if needs_rehash(user.get("password_hash")):
+        set_user_password(user["user_ref"], hash_password(payload.password))
     token = create_session(user["user_ref"])
     _set_session_cookie(response, token)
     record_audit(actor_ref=user["user_ref"], action="auth.login", tenant_id=user.get("tenant_id"))
@@ -136,9 +135,7 @@ def change_password(
     if payload.new_password == payload.current_password:
         raise HTTPException(status_code=400, detail="New password must differ from the current password")
     set_user_password(actor.user_ref, hash_password(payload.new_password))
-    # Revoke every existing session for this user (defeats a stolen/leaked token
-    # surviving a password change, audit H-7), then issue a fresh rotated session
-    # so the current browser stays signed in.
+    # drop all sessions (leaked token shouldn't survive), reissue for this browser
     end_all_sessions(actor.user_ref)
     token = create_session(actor.user_ref)
     _set_session_cookie(response, token)
@@ -148,7 +145,7 @@ def change_password(
 
 @router.get("/api/auth/invite/{token}")
 def invite_preview(token: str) -> dict[str, Any]:
-    """What the invite page shows before the user sets a password."""
+    """invite page preview before password set"""
     invite = peek_invite(token)
     if invite is None:
         raise HTTPException(status_code=404, detail="This invite link is invalid, expired, or already used")

@@ -1,10 +1,4 @@
-"""Server-side pagination on list endpoints.
-
-The audit flagged unbounded list responses (API and UI). Every list endpoint
-now accepts ``offset``/``limit`` and returns ``page`` metadata while keeping the
-original list key for backward compatibility. Event-backed endpoints page at the
-SQL level; entity-backed endpoints page the materialised list.
-"""
+"""server-side pagination on list endpoints"""
 
 from __future__ import annotations
 
@@ -66,7 +60,7 @@ def test_events_are_paged_at_sql_level_newest_first(org_client):
     first = org_client.get("/api/events", params={"limit": 10}).json()
     assert first["page"] == {"offset": 0, "limit": 10, "total": 25, "has_more": True}
     assert len(first["events"]) == 10
-    # Offset 0 is the newest window; within the window events are chronological.
+    # offset 0 is the newest window; within the window events are chronological
     traces = [e["trace_id"] for e in first["events"]]
     assert traces == [f"trc_{i:04d}" for i in range(15, 25)]
 
@@ -74,7 +68,7 @@ def test_events_are_paged_at_sql_level_newest_first(org_client):
     assert last["page"] == {"offset": 20, "limit": 10, "total": 25, "has_more": False}
     assert [e["trace_id"] for e in last["events"]] == [f"trc_{i:04d}" for i in range(0, 5)]
 
-    # Walking every page yields each event exactly once.
+    # walking every page yields each event exactly once
     seen: list[str] = []
     offset = 0
     while True:
@@ -121,7 +115,7 @@ def test_limit_bounds_are_enforced(org_client):
     assert org_client.get("/api/events", params={"limit": 0}).status_code == 422
     assert org_client.get("/api/events", params={"limit": 5000}).status_code == 422
     assert org_client.get("/api/events", params={"offset": -1}).status_code == 422
-    # Default is bounded even without parameters.
+    # default is bounded even without parameters
     body = org_client.get("/api/events").json()
     assert body["page"]["limit"] == 200
 
@@ -134,6 +128,6 @@ def test_audit_logs_page_with_totals(org_client):
     assert body["page"]["has_more"] is True
     second = org_client.get("/api/audit-logs", params={"limit": 2, "offset": 2}).json()
     assert {e["id"] for e in second["audit_logs"]}.isdisjoint({e["id"] for e in body["audit_logs"]})
-    # A tenant admin cannot widen the scope with tenant_id.
+    # a tenant admin cannot widen the scope with tenant_id
     other = org_client.get("/api/audit-logs", params={"tenant_id": "beta"}).json()
     assert all(e["tenant_id"] == "acme" for e in other["audit_logs"])

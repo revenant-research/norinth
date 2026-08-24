@@ -22,8 +22,13 @@ class Event(BaseModel):
     attributes: dict[str, Any] = Field(default_factory=dict)
 
 
+# cap one ingestion request so a hostile client can't pin the recompute path
+# with an unbounded batch; larger senders split across requests
+MAX_BATCH_EVENTS = 5000
+
+
 class EventBatch(BaseModel):
-    events: list[Event]
+    events: list[Event] = Field(..., max_length=MAX_BATCH_EVENTS)
 
 
 class ScopeFilter(BaseModel):

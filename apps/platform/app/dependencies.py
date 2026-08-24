@@ -9,9 +9,8 @@ from app.schemas.events import ScopeFilter
 from app.services.auth import resolve_session
 from app.storage.workflow import load_platform_user
 
-# Platform-plane role. Defined here (not in authorization.py) so that both the
-# dependency layer and the authorization service can reference it without a
-# circular import.
+# defined here not in authorization.py so both the dependency layer and the
+# authorization service can reference it without a circular import
 PLATFORM_SUPER_ADMIN = "super_admin"
 
 SESSION_COOKIE = "norinth_session"
@@ -44,20 +43,23 @@ def _extract_bearer(authorization: str | None) -> str | None:
 
 
 def ingestion_tenant(authorization: str | None = Header(default=None)) -> str:
-    """Resolve the ingestion Bearer token to its bound tenant.
+    """resolve the ingestion bearer token to its bound tenant
 
-    Telemetry tenancy is derived from the authenticated key, never from the
-    client-supplied event payload. An invalid or revoked key is rejected. This
-    is the authentication half of audit finding C-1; the ingestion route then
-    enforces that every event in the batch belongs to this tenant.
+    tenancy comes from the authenticated key, never the client-supplied payload;
+    the ingestion route then checks every event in the batch belongs to it
     """
-    # Imported here to avoid a circular import at module load.
+    # imported here to avoid a circular import at module load
     from app.storage.ingestion_keys import resolve_ingestion_key
+    from app.storage.organizations import organization_is_suspended
 
     token = _extract_bearer(authorization)
     key = resolve_ingestion_key(token)
     if key is None:
         raise HTTPException(status_code=401, detail="Invalid or missing ingestion key")
+    # purge deletes an org's keys; a suspended org keeps its keys but must stop
+    # ingesting. the dev tenant has no org row and is not treated as suspended
+    if organization_is_suspended(key["tenant_id"]):
+        raise HTTPException(status_code=403, detail="Organization is suspended")
     return key["tenant_id"]
 
 
@@ -66,10 +68,10 @@ def scope_filter(tenant_id: str | None, project: str | None, environment: str | 
 
 
 def current_actor(norinth_session: str | None = Cookie(default=None)) -> ActorContext:
-    """Resolve the authenticated session cookie into an ActorContext.
+    """resolve the session cookie into an ActorContext
 
-    Tenant membership is derived from the stored user record, never from a
-    client-supplied header, so a user cannot impersonate another tenant.
+    tenant membership comes from the stored user record, never a client header,
+    so a user cannot impersonate another tenant
     """
     user_ref = resolve_session(norinth_session)
     if not user_ref:
@@ -77,9 +79,16 @@ def current_actor(norinth_session: str | None = Cookie(default=None)) -> ActorCo
     user = load_platform_user(user_ref)
     if user is None or user.get("status") != "active":
         raise HTTPException(status_code=403, detail="User is not active")
+    # a suspended org freezes its users; super admins have no tenant to suspend
+    tenant_id = user.get("tenant_id")
+    if user.get("platform_role") != "super_admin" and tenant_id:
+        from app.storage.organizations import organization_is_suspended
+
+        if organization_is_suspended(tenant_id):
+            raise HTTPException(status_code=403, detail="Organization is suspended")
     return ActorContext(
         user_ref=user_ref,
-        tenant_id=user.get("tenant_id"),
+        tenant_id=tenant_id,
         platform_role=user.get("platform_role"),
     )
 
@@ -89,12 +98,10 @@ def request_scope(
     project: str | None,
     environment: str | None,
 ) -> ScopeFilter:
-    """Resolve the effective query scope for an actor.
+    """resolve the effective query scope for an actor
 
-    Tenant governance data belongs to the tenant plane. The platform super admin
-    is not a member of any tenant and has no access to governance data; it
-    operates on organizations and the platform audit trail instead. Every tenant
-    actor is pinned to their own organization regardless of any requested tenant.
+    the platform super admin belongs to no tenant and gets no governance data; a
+    tenant actor is pinned to their own org regardless of any requested tenant
     """
     if actor.is_super_admin:
         raise HTTPException(
@@ -111,5 +118,5 @@ def scoped_dependency(
     project: str | None = None,
     environment: str | None = None,
 ) -> ScopeFilter:
-    """FastAPI dependency that yields the tenant-enforced scope for read routes."""
+    """tenant-enforced scope for read routes"""
     return request_scope(actor, project, environment)

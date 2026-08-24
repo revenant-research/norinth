@@ -53,7 +53,7 @@ describe("ComplianceView", () => {
 
   it("summarizes coverage and exports the packet with an integrity verdict", async () => {
     const user = userEvent.setup();
-    // jsdom has no object URLs; stub the download primitives and capture the anchor click.
+    // jsdom has no object urls; stub the download primitives and capture the anchor click
     const objectUrl = vi.fn(() => "blob:norinth");
     Object.defineProperty(URL, "createObjectURL", { value: objectUrl, configurable: true });
     Object.defineProperty(URL, "revokeObjectURL", { value: vi.fn(), configurable: true });
@@ -63,7 +63,7 @@ describe("ComplianceView", () => {
     });
     render(<ComplianceView scope={{}} tenantId="acme" />);
     await waitFor(() => expect(screen.getAllByTestId("framework-card")).toHaveLength(3));
-    // Average of 90, 25, 100 => 72%; gaps 1 + 3 + 0 = 4.
+    // average of 90, 25, 100 => 72%; gaps 1 + 3 + 0 = 4
     expect(screen.getByText("72%")).toBeInTheDocument();
     expect(screen.getByText("4")).toBeInTheDocument();
 

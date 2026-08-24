@@ -3,7 +3,7 @@ from __future__ import annotations
 from hashlib import sha256
 from typing import Any
 
-from .entities import decode_json, encode_json, entity_id
+from .entities import as_object, decode_json, encode_json, entity_id
 from .raw_events import connect
 
 MATERIAL_FIELDS = {
@@ -89,8 +89,8 @@ def init_lifecycle() -> None:
 
 
 def refresh_lifecycle_state(scopes: list[dict[str, Any]] | None = None) -> None:
-    """Recompute change fingerprints. ``scopes`` limits the work to the
-    applications an ingest batch touched; None recomputes everything."""
+    """recompute change fingerprints; scopes limits to the apps an ingest
+    touched, None does everything"""
     with connect() as connection:
         applications = _applications_in_scope(connection, scopes)
         for application in applications:
@@ -147,7 +147,7 @@ def build_fingerprints(app_context: dict[str, Any], events: list[dict[str, Any]]
         workflow_events = [
             event
             for event in events
-            if ((event.get("attributes") or {}).get("metadata") or {}).get("workflow_name") == workflow_name
+            if as_object(as_object(event.get("attributes")).get("metadata")).get("workflow_name") == workflow_name
         ]
         fingerprints.append(
             {
@@ -199,7 +199,7 @@ def attribute_values(events: list[dict[str, Any]], field: str) -> set[str]:
 def metadata_values(events: list[dict[str, Any]], field: str) -> set[str]:
     values = set()
     for event in events:
-        metadata = (event.get("attributes") or {}).get("metadata") or {}
+        metadata = as_object(as_object(event.get("attributes")).get("metadata"))
         value = metadata.get(field)
         if value not in (None, ""):
             values.add(str(value))

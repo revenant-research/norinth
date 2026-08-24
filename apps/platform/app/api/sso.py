@@ -1,13 +1,7 @@
-"""SSO (OpenID Connect) configuration and login endpoints.
-
-- Org admins configure their organization's identity provider
-  (`/api/org/sso`), which runs OpenID discovery against the issuer.
-- Users sign in via `/api/auth/sso/{tenant_id}/start` -> IdP -> callback.
-"""
+"""sso (openid connect) configuration and login endpoints"""
 
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -22,6 +16,7 @@ from app.services.authorization import (
     AuthorizationError,
     require_permission,
 )
+from app.services.base_url import external_base_url
 from app.services.sso import SsoError, complete_login, discover, start_login
 from app.storage.audit import record_audit
 from app.storage.sso import (
@@ -38,7 +33,7 @@ class SsoConfigurationRequest(BaseModel):
     issuer: str = Field(min_length=1)
     client_id: str = Field(min_length=1)
     client_secret: str = Field(min_length=1)
-    default_role: str = Field(default="governance_reviewer", min_length=1)
+    default_role: str = Field(default="governance_viewer", min_length=1)
     allowed_email_domain: str | None = None
 
 
@@ -53,12 +48,8 @@ def _require_tenant_admin(actor: ActorContext) -> str:
 
 
 def _callback_url(request: Request) -> str:
-    # Allow an explicit public base URL (behind a proxy/ingress) to override the
-    # request-derived one, so the redirect_uri registered with the IdP matches.
-    base = os.getenv("NORINTH_PUBLIC_BASE_URL")
-    if base:
-        return base.rstrip("/") + "/api/auth/sso/callback"
-    return str(request.url_for("sso_callback"))
+    # public base url wins so redirect_uri matches the idp; else validate Host against allowlist
+    return external_base_url(request) + "/api/auth/sso/callback"
 
 
 @router.get("/api/org/sso")
@@ -114,19 +105,37 @@ def remove_sso(actor: ActorContext = Depends(current_actor)) -> dict[str, bool]:
     return {"ok": True}
 
 
+# binds the oidc flow to the browser; callback is a top-level GET so SameSite=Lax
+_SSO_STATE_COOKIE = "norinth_sso_state"
+
+
 @router.get("/api/auth/sso/{tenant_id}/start")
 def sso_start(tenant_id: str, request: Request):
     try:
-        url = start_login(tenant_id, _callback_url(request))
+        url, state = start_login(tenant_id, _callback_url(request))
     except SsoError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
-    return RedirectResponse(url, status_code=302)
+    redirect = RedirectResponse(url, status_code=302)
+    redirect.set_cookie(
+        _SSO_STATE_COOKIE,
+        state,
+        max_age=600,
+        httponly=True,
+        samesite="lax",
+        secure=request.url.scheme == "https",
+        path="/api/auth/sso",
+    )
+    return redirect
 
 
 @router.get("/api/auth/sso/callback", name="sso_callback")
 def sso_callback(request: Request, response: Response, code: str | None = None, state: str | None = None):
     if not code or not state:
         raise HTTPException(status_code=400, detail="missing code or state")
+    # login-csrf: idp state must match the state issued at /start
+    cookie_state = request.cookies.get(_SSO_STATE_COOKIE)
+    if not cookie_state or cookie_state != state:
+        raise HTTPException(status_code=401, detail="SSO state does not match this browser session")
     try:
         user = complete_login(code, state, _callback_url(request))
     except SsoError as error:
@@ -134,5 +143,6 @@ def sso_callback(request: Request, response: Response, code: str | None = None, 
     token = create_session(user["user_ref"])
     redirect = RedirectResponse("/", status_code=302)
     _set_session_cookie(redirect, token)
+    redirect.delete_cookie(_SSO_STATE_COOKIE, path="/api/auth/sso")
     record_audit(actor_ref=user["user_ref"], action="auth.sso_login", tenant_id=user.get("tenant_id"))
     return redirect

@@ -1,9 +1,0 @@
-fastapi>=0.110
-uvicorn>=0.29
-openai>=1.40
-anthropic>=0.34
-
-# Norinth telemetry SDK, added to this existing service for AI governance.
-# In a real repository this line would read: norinth-logger>=0.1
-# Here it points at the SDK that lives in this monorepo.
--e ../../packages/python-sdk

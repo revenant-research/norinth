@@ -1,4 +1,4 @@
-"""Regression tests for tamper-evident audit logging (audit H-9)."""
+"""tamper-evident audit logging"""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "apps" / "p
 
 
 def _generate_some_audit_events(super_admin_client):
-    # Provisioning an org records several audit entries (login, change_password,
-    # org.provision, role.assign, ...).
+    # provisioning an org records several audit entries (login, change_password,
+    # org.provision, role.assign, ...)
     super_admin_client.post(
         "/api/admin/organizations",
         json={
@@ -41,7 +41,7 @@ def test_modifying_a_row_breaks_the_chain(super_admin_client):
     with connect() as connection:
         row = connection.execute("SELECT id FROM audit_logs ORDER BY id LIMIT 1").fetchone()
         target_id = row["id"]
-        # Tamper: change the action of an existing entry without updating hashes.
+        # change an entry's action without updating hashes
         connection.execute(
             "UPDATE audit_logs SET action = 'tampered' WHERE id = ?", (target_id,)
         )
@@ -63,14 +63,13 @@ def test_deleting_a_row_breaks_the_chain(super_admin_client):
         connection.execute("DELETE FROM audit_logs WHERE id = ?", (middle_id,))
 
     result = verify_audit_chain()
-    # The entry after the deleted one now has a prev_hash that links to a missing
-    # row, so the chain breaks there.
+    # entry after the deleted one links to a missing prev_hash so chain breaks there
     assert result["ok"] is False
     assert result["broken_at"] is not None
 
 
 def test_verify_endpoint_requires_super_admin(super_admin_client):
-    # Provision an org and confirm its (non-super) admin cannot verify the chain.
+    # non-super org admin cannot verify the chain
     _generate_some_audit_events(super_admin_client)
     from app.main import app
     from fastapi.testclient import TestClient

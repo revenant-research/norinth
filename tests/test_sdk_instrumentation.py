@@ -1,10 +1,4 @@
-"""Tests for SDK auto-instrumentation coverage (audit H-14, A1/A2/A5).
-
-The provider patchers are exercised against fake resource classes, so no real
-OpenAI/Anthropic SDK or network call is needed — the point is the wrapper
-behavior: sync and async calls both emit a model.call AFTER the underlying call
-resolves, errors are captured, and usage is normalized across naming schemes.
-"""
+"""sdk auto-instrumentation: sync/async emit model.call after resolve, errors captured, usage normalized"""
 
 from __future__ import annotations
 
@@ -19,7 +13,7 @@ autoinstrument = importlib.import_module("norinth_logger.autoinstrument")
 
 
 class _CapturingClient:
-    """Minimal stand-in for NorinthClient that records model_call invocations."""
+    """minimal stand-in for norinthclient that records model_call invocations"""
 
     def __init__(self):
         from norinth_logger.config import NorinthConfig
@@ -32,7 +26,7 @@ class _CapturingClient:
 
 
 class _Usage:
-    # chat.completions naming, which the old normalizer dropped.
+    # chat.completions naming
     prompt_tokens = 11
     completion_tokens = 7
     total_tokens = 18
@@ -66,7 +60,7 @@ def test_sync_completion_is_instrumented_and_usage_normalized():
     assert call["provider"] == "openai"
     assert call["operation"] == "chat.completions.create"
     assert call["status"] == "success"
-    # chat.completions naming mapped to input/output tokens (audit A5).
+    # chat.completions naming mapped to input/output tokens
     assert call["usage"]["input_tokens"] == 11
     assert call["usage"]["output_tokens"] == 7
 
@@ -96,7 +90,7 @@ def test_async_completion_records_only_after_await():
 
     result = asyncio.run(run())
     assert isinstance(result, _Response)
-    # The model.call is emitted AFTER the coroutine actually ran (not before).
+    # model.call is emitted after the coroutine actually ran, not before
     assert order == ["call-ran"]
     assert len(client.calls) == 1
     assert client.calls[0]["status"] == "success"
@@ -127,6 +121,6 @@ def test_error_is_captured_and_reraised():
     assert len(client.calls) == 1
     call = client.calls[0]
     assert call["status"] == "error"
-    # The error message is summarized, not emitted raw (ties to H-13).
+    # error message is summarized, not emitted raw
     assert "message" not in call["error"]
     assert call["error"]["type"] == "ValueError"
