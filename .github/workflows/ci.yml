@@ -165,7 +165,30 @@ jobs:
           # Not in development mode: the well-known dev key must be rejected.
           status=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8002/v1/events/batch -H 'Authorization: Bearer dev' -H 'Content-Type: application/json' -d '{"events":[]}')
           test "$status" = "401" || { echo "dev key accepted ($status) — installer left development defaults"; exit 1; }
-          (cd .norinth-install && docker compose down -v)
+      - name: Backup and restore (real dump, empty dump refused, database replaced)
+        run: |
+          cd .norinth-install
+          # the scripts under test are the ones the installer shipped, not the repo copies
+          ./scripts/backup.sh
+          dump=$(ls -1 backups/norinth-*.sql.gz | head -1)
+          # a dump that restores to nothing is still valid gzip, so check for SQL
+          test "$(gunzip -c "$dump" | wc -c)" -gt 100 || { echo "backup carries no SQL"; exit 1; }
+          # a failed run must not leave anything that looks like a backup
+          ls backups/*.partial >/dev/null 2>&1 && { echo "a partial dump was left behind"; exit 1; }
+          # restore must refuse an empty dump before it drops the database
+          : | gzip > backups/empty.sql.gz
+          if printf 'restore\n' | ./scripts/restore.sh backups/empty.sql.gz; then
+            echo "restore accepted a dump with no SQL"; exit 1
+          fi
+          curl -fsS http://127.0.0.1:8002/health >/dev/null || { echo "refused restore still disturbed the database"; exit 1; }
+          # anything written after the backup is gone once the backup is restored
+          docker compose exec -T postgres psql -U norinth -d norinth -c "CREATE TABLE ci_marker (id int);"
+          printf 'restore\n' | ./scripts/restore.sh "$dump"
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:8002/health >/dev/null 2>&1 && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8002/health
+          marker=$(docker compose exec -T postgres psql -U norinth -d norinth -tAc "SELECT to_regclass('public.ci_marker');")
+          case "$marker" in *ci_marker*) echo "restore did not replace the database"; exit 1 ;; esac
+          docker compose down -v
       - name: Smoke test (health + built dashboard served)
         run: |
           docker run -d --name norinth -p 8001:8001 norinth-platform:ci
