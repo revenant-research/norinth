@@ -70,6 +70,13 @@ norinth.init(
 client = norinth.wrap(OpenAI())   # every model call this client makes is recorded
 ```
 
+`NORINTH_API_KEY` is an **ingestion key you mint inside your own Norinth** — not
+an account with anyone. Create one in the first-run setup wizard, or later under
+**Identity & Integrations → ingestion keys** (or `POST /api/ingestion-keys`); it
+is shown once, prefixed `nrk_`, and scopes every event to your tenant.
+`NORINTH_ENDPOINT` is your instance's own URL. Running from source in dev mode, a
+well-known `dev` key is seeded so you don't need to mint one.
+
 The SDK is fail-open: if Norinth is unreachable, your application keeps running
 and telemetry is retried (or spooled to disk if you set `NORINTH_SPOOL_DIR`).
 
