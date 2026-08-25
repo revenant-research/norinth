@@ -32,7 +32,7 @@ from datetime import UTC, datetime
 from email.message import EmailMessage
 from typing import Any
 
-from app.services.net_guard import validate_external_url
+from app.services.net_guard import safe_urlopen
 from app.storage import notifications as store
 from app.storage.raw_events import connect
 
@@ -159,7 +159,6 @@ def _post_webhook(hook: dict[str, Any], payload: dict[str, Any]) -> None:
     signed = f"{timestamp}.".encode() + body
     signature = hmac.new(secret.encode("utf-8"), signed, hashlib.sha256).hexdigest()
     delivery_id = uuid.uuid4().hex
-    validate_external_url(hook["url"])
     req = urllib.request.Request(
         hook["url"],
         data=body,
@@ -173,7 +172,7 @@ def _post_webhook(hook: dict[str, Any], payload: dict[str, Any]) -> None:
             "X-Norinth-Delivery": delivery_id,
         },
     )
-    with urllib.request.urlopen(req, timeout=15) as resp:  # noqa: S310 - operator-configured URL
+    with safe_urlopen(req, timeout=15) as resp:  # net_guard validates each hop
         if resp.status >= 300:
             raise RuntimeError(f"webhook returned {resp.status}")
 

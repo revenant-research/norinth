@@ -37,8 +37,9 @@ def test_signature_covers_timestamp_and_delivery_id_is_unique(monkeypatch):
         captured.append({"headers": dict(req.headers), "body": req.data})
         return _Resp()
 
-    monkeypatch.setattr(notifications.urllib.request, "urlopen", _fake_urlopen)
-    monkeypatch.setattr(notifications, "validate_external_url", lambda url: None)
+    # _post_webhook now sends through net_guard.safe_urlopen (validates every
+    # redirect hop); stub it so the test exercises signing, not real egress
+    monkeypatch.setattr(notifications, "safe_urlopen", _fake_urlopen)
     monkeypatch.setattr(notifications.store, "webhook_secret", lambda hook: "whs_test_secret")
 
     hook = {"url": "https://example.test/hook", "format": "json"}

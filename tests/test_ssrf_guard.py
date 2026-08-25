@@ -37,3 +37,46 @@ def test_public_url_is_allowed(monkeypatch):
 
     # a public ip literal is allowed (no dns needed)
     validate_external_url("https://93.184.216.34/ok")  # public ip literal
+
+
+def test_safe_urlopen_refuses_to_follow_a_redirect_to_a_blocked_host(monkeypatch):
+    """a target that passes the initial check but 302s to metadata is refused
+
+    validate_external_url only vets the first host; urllib follows redirects, so
+    without per-hop re-validation an allowed host could bounce the fetch to the
+    cloud metadata endpoint. safe_urlopen must re-run the guard on every hop
+    """
+    import http.server
+    import ipaddress
+    import threading
+
+    from app.services import net_guard
+
+    # keep the guard on, but treat loopback as public so the local decoy server
+    # is reachable; only the metadata endpoint stays blocked. this isolates the
+    # redirect-following behaviour from the initial-host check
+    monkeypatch.setattr(
+        net_guard,
+        "_is_blocked",
+        lambda ip: ipaddress.ip_address(ip) == ipaddress.ip_address("169.254.169.254"),
+    )
+
+    class _Redirector(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            self.send_response(302)
+            self.send_header("Location", "http://169.254.169.254/latest/meta-data/")
+            self.end_headers()
+
+        def log_message(self, *args):  # silence the test server
+            return
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), _Redirector)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with pytest.raises(net_guard.EgressError):
+            net_guard.safe_urlopen(f"http://127.0.0.1:{port}/", timeout=5)
+    finally:
+        server.shutdown()
+        thread.join()

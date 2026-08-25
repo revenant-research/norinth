@@ -15,6 +15,8 @@ from __future__ import annotations
 import ipaddress
 import os
 import socket
+import urllib.request
+from typing import Any
 from urllib.parse import urlparse
 
 
@@ -59,3 +61,28 @@ def validate_external_url(url: str) -> None:
         ip = str(info[4][0])
         if _is_blocked(ip):
             raise EgressError(f"host {host!r} resolves to a non-public address ({ip}); refusing to connect")
+
+
+class _ValidatingRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """re-run the egress guard on every redirect target
+
+    validate_external_url only vets the initial host. urllib follows redirects
+    by default, so without this a target that passes the check can 302 to the
+    cloud metadata endpoint or an internal service and the guard is bypassed
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        validate_external_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def safe_urlopen(url_or_request: Any, *, timeout: float = 10.0):
+    """urlopen that validates the initial target and every redirect hop
+
+    use this instead of urllib.request.urlopen for any fetch of an
+    operator-configured URL (webhooks, OIDC endpoints)
+    """
+    target = url_or_request.full_url if isinstance(url_or_request, urllib.request.Request) else url_or_request
+    validate_external_url(target)
+    opener = urllib.request.build_opener(_ValidatingRedirectHandler())
+    return opener.open(url_or_request, timeout=timeout)
