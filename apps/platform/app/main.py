@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
 from pathlib import Path
@@ -182,17 +183,79 @@ _CONTENT_SECURITY_POLICY = (
 _MAX_BODY_BYTES = int(os.getenv("NORINTH_MAX_BODY_BYTES", str(16 * 1024 * 1024)))
 
 
-@app.middleware("http")
-async def limit_body_size(request: Request, call_next):
-    if _MAX_BODY_BYTES and request.method in _MUTATING_METHODS:
-        declared = request.headers.get("content-length")
-        if declared is not None:
-            try:
-                if int(declared) > _MAX_BODY_BYTES:
-                    return JSONResponse(status_code=413, content={"detail": "Request body too large"})
-            except ValueError:
-                return JSONResponse(status_code=400, content={"detail": "Invalid Content-Length"})
-    return await call_next(request)
+class BodySizeLimitMiddleware:
+    """cap the request body at the byte level, not the declared Content-Length
+
+    checking only the Content-Length header lets a chunked request (which omits
+    it) stream an unbounded body into memory. this counts the bytes as they
+    arrive and rejects at the cap, so memory stays bounded whatever the client
+    declares. a body within the cap is buffered and replayed to the app
+    """
+
+    def __init__(self, app, max_bytes: int) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope, receive, send) -> None:
+        if self.max_bytes <= 0 or scope.get("type") != "http" or scope.get("method") not in _MUTATING_METHODS:
+            await self.app(scope, receive, send)
+            return
+
+        # honest oversize Content-Length is rejected without reading the body
+        for name, value in scope.get("headers", []):
+            if name == b"content-length":
+                try:
+                    if int(value) > self.max_bytes:
+                        await self._reject(send, 413, "Request body too large")
+                        return
+                except ValueError:
+                    await self._reject(send, 400, "Invalid Content-Length")
+                    return
+                break
+
+        body = bytearray()
+        more_body = True
+        while more_body:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            if message["type"] != "http.request":
+                break
+            body.extend(message.get("body", b""))
+            more_body = message.get("more_body", False)
+            if len(body) > self.max_bytes:
+                while more_body:  # drain the rest so the client is not left hanging
+                    drained = await receive()
+                    if drained["type"] == "http.disconnect":
+                        break
+                    more_body = drained.get("more_body", False)
+                await self._reject(send, 413, "Request body too large")
+                return
+
+        buffered = bytes(body)
+        replayed = False
+
+        async def replay():
+            nonlocal replayed
+            if replayed:
+                return {"type": "http.disconnect"}
+            replayed = True
+            return {"type": "http.request", "body": buffered, "more_body": False}
+
+        await self.app(scope, replay, send)
+
+    @staticmethod
+    async def _reject(send, status: int, detail: str) -> None:
+        body = json.dumps({"detail": detail}).encode("utf-8")
+        await send({
+            "type": "http.response.start",
+            "status": status,
+            "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())],
+        })
+        await send({"type": "http.response.body", "body": body})
+
+
+app.add_middleware(BodySizeLimitMiddleware, max_bytes=_MAX_BODY_BYTES)
 
 
 @app.middleware("http")

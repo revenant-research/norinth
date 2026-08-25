@@ -59,6 +59,39 @@ def test_oversized_body_rejected_by_content_length(client):
     assert resp.status_code == 413
 
 
+def test_oversized_chunked_body_without_content_length_is_rejected(client):
+    """a chunked request omits Content-Length, so a header-only check misses it;
+    the body must be capped as it streams or it reads unbounded into memory"""
+
+    def stream():
+        # 17 MB in 1 MB chunks, over the 16 MB default cap, with no Content-Length
+        for _ in range(17):
+            yield b"x" * (1024 * 1024)
+
+    resp = client.post(
+        "/v1/events/batch",
+        content=stream(),
+        headers={"Authorization": "Bearer nrk_x", "Content-Type": "application/json"},
+    )
+    assert resp.status_code == 413
+
+
+def test_valid_chunked_body_still_passes_the_limit(client):
+    """a body within the cap sent chunked is replayed to the handler, not lost"""
+
+    def stream():
+        yield b'{"events":'
+        yield b"[]}"
+
+    resp = client.post(
+        "/v1/events/batch",
+        content=stream(),
+        headers={"Authorization": "Bearer nrk_x", "Content-Type": "application/json"},
+    )
+    # rejected on the key, not on the body: the middleware let it through
+    assert resp.status_code != 413
+
+
 def test_batch_over_cap_is_rejected(super_admin_client):
     from app.main import app
     from fastapi.testclient import TestClient
