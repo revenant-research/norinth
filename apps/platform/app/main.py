@@ -50,6 +50,29 @@ app = FastAPI(title="Norinth Platform", description="AI governance platform API:
 # services/base_url.py), not globally: a global check would 400 health probes
 # that arrive with a localhost or pod-ip host
 
+def _validate_secret_key_at_startup() -> None:
+    """fail fast on a malformed NORINTH_SECRET_KEY
+
+    the key is used both as a raw HMAC key (any bytes) and, base64-decoded, as a
+    32-byte AES key for secret encryption. a key that is set but not valid
+    32-byte base64 lets the platform boot and pass health checks, then 500s the
+    first time a secret is written (a webhook or SSO config). validate it here so
+    the misconfiguration surfaces at startup with a clear message
+    """
+    if not os.getenv("NORINTH_SECRET_KEY"):
+        return
+    from app.services.secrets import SecretKeyMissing, master_key
+
+    try:
+        master_key()
+    except SecretKeyMissing as error:
+        raise RuntimeError(
+            f"NORINTH_SECRET_KEY is set but invalid: {error}. It must be 32 bytes, "
+            "base64-encoded (generate one with: openssl rand -base64 32)."
+        ) from error
+
+
+_validate_secret_key_at_startup()
 run_migrations()
 start_notification_worker()
 start_maintenance_worker()

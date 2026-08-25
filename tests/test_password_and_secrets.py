@@ -123,3 +123,28 @@ def test_password_floor_is_consistent_across_set_paths(super_admin_client):
         ok = org.post("/api/auth/change-password",
                       json={"current_password": "oa-strong-pw-1-rotated-1", "new_password": "twelve-chars-1"})
         assert ok.status_code == 200, ok.text
+
+
+def test_invalid_secret_key_is_refused_at_startup(monkeypatch):
+    """a malformed NORINTH_SECRET_KEY must fail fast, not 500 on the first secret
+
+    it booted and passed health checks with a bad key, then errored only when a
+    webhook or SSO secret was first written. the startup guard rejects it early
+    """
+    from app.main import _validate_secret_key_at_startup
+
+    # set but not 32-byte base64: refused with an actionable message
+    monkeypatch.setenv("NORINTH_SECRET_KEY", "too-short")
+    with pytest.raises(RuntimeError, match="NORINTH_SECRET_KEY is set but invalid"):
+        _validate_secret_key_at_startup()
+
+    # a valid 32-byte key is accepted
+    import base64
+    import os as _os
+
+    monkeypatch.setenv("NORINTH_SECRET_KEY", base64.urlsafe_b64encode(_os.urandom(32)).decode())
+    _validate_secret_key_at_startup()
+
+    # unset (development) is accepted; encryption fails closed later instead
+    monkeypatch.delenv("NORINTH_SECRET_KEY", raising=False)
+    _validate_secret_key_at_startup()
