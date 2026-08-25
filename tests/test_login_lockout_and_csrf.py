@@ -103,3 +103,21 @@ def test_csrf_accepts_https_origin_behind_trusted_proxy(client, monkeypatch):
                       headers={"Origin": "https://evil.example", "Host": "internal:8001",
                                "X-Forwarded-Proto": "https", "X-Forwarded-Host": "norinth.example.com"})
     assert bad.status_code == 403
+
+
+def test_session_cookie_has_httponly_samesite_and_secure(client, monkeypatch):
+    """the session cookie flags decide whether a session is stealable: HttpOnly
+    keeps it out of reach of XSS, SameSite blunts CSRF, Secure keeps it off
+    plaintext. a flag silently flipped off would ship without this"""
+    # force Secure on regardless of the test's development mode
+    monkeypatch.setenv("NORINTH_COOKIE_SECURE", "1")
+    resp = client.post("/api/auth/login", json=GOOD)
+    assert resp.status_code == 200, resp.text
+
+    set_cookie = resp.headers.get("set-cookie", "")
+    assert "norinth_session=" in set_cookie
+    lowered = set_cookie.lower()
+    assert "httponly" in lowered, set_cookie
+    assert "samesite=lax" in lowered, set_cookie
+    assert "secure" in lowered, set_cookie
+    assert "path=/" in lowered, set_cookie
