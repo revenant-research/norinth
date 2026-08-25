@@ -90,7 +90,7 @@ def test_retention_window_is_per_organization(super_admin_client):
 
 
 def test_a_window_shorter_than_the_floor_is_rejected(super_admin_client):
-    org, _ = _org(super_admin_client, "acme", "oa@acme.test", "acme-pw-111")
+    org, _ = _org(super_admin_client, "acme", "oa@acme.test", "acme-pw-111111")
     rejected = org.post("/api/retention-policy", json={"retention_days": 1})
     assert rejected.status_code == 400, rejected.text
     assert "at least" in rejected.json()["detail"]
@@ -101,7 +101,7 @@ def test_a_window_shorter_than_the_floor_is_rejected(super_admin_client):
 def test_no_window_means_nothing_is_deleted(super_admin_client):
     from app.services import maintenance
 
-    org, token = _org(super_admin_client, "acme", "oa@acme.test", "acme-pw-111")
+    org, token = _org(super_admin_client, "acme", "oa@acme.test", "acme-pw-111111")
     from app.main import app
     from fastapi.testclient import TestClient
 
@@ -119,7 +119,7 @@ def test_purge_is_recorded_in_the_audit_log(super_admin_client):
     from app.services import maintenance
     from app.storage.audit import list_audit_logs
 
-    org, token = _org(super_admin_client, "acme", "oa@acme.test", "acme-pw-111")
+    org, token = _org(super_admin_client, "acme", "oa@acme.test", "acme-pw-111111")
     from app.main import app
     from fastapi.testclient import TestClient
 

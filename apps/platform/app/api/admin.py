@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from app.api.pagination import PageParams
 from app.dependencies import ActorContext, current_actor
 from app.schemas.events import ScopeFilter
-from app.services.auth import hash_password
+from app.services.auth import MIN_PASSWORD_LENGTH, hash_password
 from app.services.authorization import (
     ORG_ADMIN,
     PERM_ROLE_ASSIGN,
@@ -93,7 +93,7 @@ class CreateOrganizationRequest(BaseModel):
     admin_email: str = Field(min_length=1)
     admin_display_name: str = Field(min_length=1)
     # when omitted a one-time password is generated and returned once
-    admin_password: str | None = Field(default=None, min_length=8)
+    admin_password: str | None = Field(default=None, min_length=MIN_PASSWORD_LENGTH)
 
 
 class OrganizationStatusRequest(BaseModel):
@@ -104,7 +104,7 @@ class CreateUserRequest(BaseModel):
     email: str = Field(min_length=1)
     display_name: str = Field(min_length=1)
     # when omitted a one-time password is generated and returned once
-    password: str | None = Field(default=None, min_length=8)
+    password: str | None = Field(default=None, min_length=MIN_PASSWORD_LENGTH)
     status: str = Field(default="active", min_length=1)
 
 

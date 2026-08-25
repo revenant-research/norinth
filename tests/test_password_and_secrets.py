@@ -84,3 +84,42 @@ def test_encrypt_allows_plaintext_only_with_explicit_optin(monkeypatch):
     monkeypatch.delenv("NORINTH_SECRET_KEY", raising=False)
     monkeypatch.setenv("NORINTH_ALLOW_PLAINTEXT_SECRETS", "1")
     assert encrypt("a-secret") == "a-secret"
+
+
+def test_password_floor_is_consistent_across_set_paths(super_admin_client):
+    """the change-password path enforces the same minimum as signup
+
+    the initial-set floor was 12 while change-password allowed 8, so the strong
+    minimum could be rotated away immediately. every path that sets a password
+    now uses one floor
+    """
+    from app.main import app
+    from app.services.auth import MIN_PASSWORD_LENGTH
+    from fastapi.testclient import TestClient
+
+    from tests.helpers import login_and_activate
+
+    assert MIN_PASSWORD_LENGTH == 12
+
+    # creating an org admin below the floor is refused
+    short = super_admin_client.post(
+        "/api/admin/organizations",
+        json={"tenant_id": "acme", "name": "Acme", "admin_email": "oa@acme.test",
+              "admin_display_name": "OA", "admin_password": "short-pw-1"},
+    )
+    assert short.status_code == 422, short.text
+
+    # a valid org, then a change-password to a sub-floor value is refused too
+    super_admin_client.post(
+        "/api/admin/organizations",
+        json={"tenant_id": "acme", "name": "Acme", "admin_email": "oa@acme.test",
+              "admin_display_name": "OA", "admin_password": "oa-strong-pw-1"},
+    )
+    with TestClient(app) as org:
+        login_and_activate(org, "oa@acme.test", "oa-strong-pw-1")
+        weak = org.post("/api/auth/change-password",
+                        json={"current_password": "oa-strong-pw-1-rotated-1", "new_password": "eleven-char"})
+        assert weak.status_code == 422, weak.text
+        ok = org.post("/api/auth/change-password",
+                      json={"current_password": "oa-strong-pw-1-rotated-1", "new_password": "twelve-chars-1"})
+        assert ok.status_code == 200, ok.text

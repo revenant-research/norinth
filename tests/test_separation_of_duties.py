@@ -69,7 +69,7 @@ def test_org_admin_can_delegate_decision_roles_to_others(super_admin_client):
     with _org_client(email, pw) as org:
         org.post(
             "/api/org/users",
-            json={"email": "owner@acme.test", "display_name": "Owner", "password": "owner-pw-1"},
+            json={"email": "owner@acme.test", "display_name": "Owner", "password": "owner-pw-11111"},
         )
         resp = org.post(
             "/api/org/role-assignments",

@@ -329,8 +329,8 @@ function ChangePasswordScreen({ user, onChanged }: { user: User; onChanged: (use
         </label>
         <label>
           New password
-          <input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required />
-          <span className="field-hint">At least 8 characters.</span>
+          <input type="password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} required minLength={12} />
+          <span className="field-hint">At least 12 characters.</span>
         </label>
         {error ? <div className="auth-error" role="alert">{error}</div> : null}
         <button type="submit" disabled={busy}>{busy ? "Saving" : "Update password"}</button>

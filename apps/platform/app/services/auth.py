@@ -26,6 +26,11 @@ _ALLOWED_ALGORITHMS = {"sha256", "sha512"}
 
 SESSION_TTL_HOURS = int(os.getenv("NORINTH_SESSION_TTL_HOURS", "12"))
 
+# one password floor for every place a password is set (signup, invite, change,
+# admin-set). without a single value the change-password path allowed 8 while
+# signup required 12, so the strong floor was bypassable by changing the password
+MIN_PASSWORD_LENGTH = 12
+
 
 def hash_password(password: str) -> str:
     if not password:
