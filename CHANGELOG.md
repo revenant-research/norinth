@@ -6,6 +6,17 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-24
+
+### Fixed
+
+- **The audit chain survives an algorithm change.** Each audit row now records
+  the hash algorithm that produced it, and verification dispatches on it, so a
+  future change leaves existing rows verifiable instead of reading as tampered.
+- **Upgrading keeps the installed port.** `install.sh --upgrade` read the port
+  back from the existing `.env`, so upgrading an install on a non-default port no
+  longer times out and reports failure for an upgrade that worked.
+
 ## [0.2.0] - 2026-08-24
 
 The first release hardened for production use. It carries the security and
