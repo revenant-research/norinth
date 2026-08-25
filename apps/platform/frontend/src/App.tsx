@@ -549,6 +549,15 @@ export function DetailRoute({ kind, id, scope, mutate }: { kind: DetailKind; id:
   const [graph, setGraph] = useState<Record<string, any> | null>(null);
   const [message, setMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  // a decision recorded from within a detail view (approve a gate, decide a
+  // review, close an incident) changes this record, but the load effect is keyed
+  // on kind/id/scope, none of which change. bump a token after each mutation so
+  // the detail re-fetches and the view reflects the action instead of going stale
+  const [reloadToken, setReloadToken] = useState(0);
+  const detailMutate: Mutate = async (path, payload, success) => {
+    await mutate(path, payload, success);
+    setReloadToken((n) => n + 1);
+  };
   const isCurrent = loaded.kind === kind && loaded.id === id;
   const detail = isCurrent ? loaded.detail : null;
   const setDetail = (value: Record<string, any> | null) => setLoaded({ kind, id, detail: value });
@@ -587,22 +596,22 @@ export function DetailRoute({ kind, id, scope, mutate }: { kind: DetailKind; id:
     return () => {
       cancelled = true;
     };
-  }, [kind, id, scope]);
+  }, [kind, id, scope, reloadToken]);
 
   if (isLoading || !isCurrent) return <div role="status" aria-live="polite"><EmptyState>Loading the selected record.</EmptyState></div>;
   if (!detail) return <EmptyState>{message || "The requested object was not found in the current scope."}</EmptyState>;
 
   switch (kind) {
     case "application":
-      return <ApplicationDetail detail={detail} graph={graph} mutate={mutate} />;
+      return <ApplicationDetail detail={detail} graph={graph} mutate={detailMutate} />;
     case "workflow":
-      return <WorkflowDetail detail={detail} graph={graph} mutate={mutate} />;
+      return <WorkflowDetail detail={detail} graph={graph} mutate={detailMutate} />;
     case "review":
-      return <ReviewDetail detail={detail} mutate={mutate} />;
+      return <ReviewDetail detail={detail} mutate={detailMutate} />;
     case "gate":
-      return <GateDetail detail={detail} mutate={mutate} />;
+      return <GateDetail detail={detail} mutate={detailMutate} />;
     case "incident":
-      return <IncidentDetail detail={detail} mutate={mutate} />;
+      return <IncidentDetail detail={detail} mutate={detailMutate} />;
     case "trace":
       return <TraceDetail detail={detail} />;
     default: {
