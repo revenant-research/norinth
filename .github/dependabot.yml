@@ -1,7 +1,20 @@
 version: 2
 updates:
+  # dev/test tooling (requirements-dev.txt)
   - package-ecosystem: pip
     directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  # runtime dependencies that ship in the platform image
+  - package-ecosystem: pip
+    directory: /apps/platform
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  # the published SDK's dependencies
+  - package-ecosystem: pip
+    directory: /packages/python-sdk
     schedule:
       interval: weekly
     open-pull-requests-limit: 5

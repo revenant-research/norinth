@@ -80,6 +80,8 @@ jobs:
           node-version: "20"
       - name: Install dependencies
         run: npm ci
+      - name: Dependency audit (production dashboard deps)
+        run: npm audit --omit=dev --audit-level=high
       - name: Unit tests (vitest)
         run: npm test
       - name: Type check + build
@@ -151,6 +153,15 @@ jobs:
           tags: norinth-platform:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Dependency audit of the built image (pip-audit on the shipped freeze)
+        run: |
+          # audit exactly what ships, not a fresh venv: a venv drags in build
+          # tools (setuptools, wheel) the slim image does not contain, which
+          # produce findings for packages that are never deployed
+          docker run --rm --entrypoint python norinth-platform:ci -m pip freeze > shipped-requirements.txt
+          echo "shipped packages:"; wc -l < shipped-requirements.txt
+          python -m pip install --upgrade pip pip-audit
+          pip-audit -r shipped-requirements.txt
       - name: Lint installer scripts (shellcheck)
         run: shellcheck scripts/install.sh scripts/backup.sh scripts/restore.sh
       - name: Installer end-to-end (compose + generated secrets + health)
