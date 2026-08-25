@@ -83,3 +83,34 @@ def _ed25519_pub() -> str:
     from cryptography.hazmat.primitives.asymmetric import ed25519
 
     return ed25519.Ed25519PrivateKey.generate().public_key().public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo).decode()
+
+
+def test_suspending_a_user_kills_their_active_session_immediately(super_admin_client):
+    """offboarding one person must revoke access on the next request, not at the
+    next login: every request re-checks the account status"""
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    super_admin_client.post(
+        "/api/admin/organizations",
+        json={"tenant_id": "acme", "name": "Acme", "admin_email": "oa@acme.test",
+              "admin_display_name": "OA", "admin_password": "oa-password-11"},
+    )
+    org_admin = TestClient(app)
+    login_and_activate(org_admin, "oa@acme.test", "oa-password-11")
+    org_admin.post("/api/org/users",
+                   json={"email": "emp@acme.test", "display_name": "Emp", "password": "emp-password-11"})
+    org_admin.post("/api/org/role-assignments",
+                   json={"user_ref": "emp@acme.test", "role": "governance_reviewer"})
+
+    employee = TestClient(app)
+    login_and_activate(employee, "emp@acme.test", "emp-password-11")
+    assert employee.get("/api/auth/me").status_code == 200
+
+    # the org admin suspends the employee while their session is live
+    suspended = org_admin.post("/api/org/users/emp@acme.test/status", json={"status": "suspended"})
+    assert suspended.status_code == 200, suspended.text
+
+    # the existing session is dead on the very next request, with no re-login
+    assert employee.get("/api/auth/me").status_code == 403
+    assert employee.get("/api/risk-register").status_code == 403
