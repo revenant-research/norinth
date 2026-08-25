@@ -118,6 +118,29 @@ def test_sdk_and_platform_statements_are_identical():
     for field in ("acme", "Claims", "triage", "safety-suite", "trc_parity", "spn_parity", "img:v1", "p1"):
         assert field.encode() in sdk_statement(event)
 
+    # the two builders are maintained separately, so drift on the edge paths the
+    # single case above does not touch would silently break signed evidence:
+    # the eval_name fallback (what the eval_result emitter actually sends), float
+    # score precision, unicode, missing optionals, and the name-only fallback
+    edge_cases = [
+        {"trace_id": "t", "span_id": "s", "timestamp": "2026-01-01T00:00:00Z", "name": "n",
+         "attributes": {"eval_name": "safety", "passed": True, "score": 0.5,
+                        "metadata": {"tenant_id": "a", "application_name": "App", "workflow_name": "w"}}},
+        {"trace_id": "t", "span_id": "s", "timestamp": "z",
+         "attributes": {"eval_id": "e", "passed": False, "score": 0.1 + 0.2, "metadata": {}}},
+        {"trace_id": "t", "span_id": "s", "timestamp": "z",
+         "attributes": {"eval_id": "e", "passed": True, "score": 1, "metadata": {"application_name": "Café- Køln"}}},
+        {"attributes": {"passed": True}},
+        {"trace_id": "t", "span_id": "s", "timestamp": "z", "name": "fallback",
+         "attributes": {"passed": True, "score": 0, "metadata": {}}},
+        # both ids present: the only shape where the eval_id/eval_name fallback
+        # ORDER matters, so a builder that reorders it diverges here
+        {"trace_id": "t", "span_id": "s", "timestamp": "z", "name": "n",
+         "attributes": {"eval_id": "the-id", "eval_name": "the-name", "passed": True, "score": 1, "metadata": {}}},
+    ]
+    for case in edge_cases:
+        assert sdk_statement(case) == platform_statement(case), case
+
 
 # --- ingestion ----------------------------------------------------------------------
 
