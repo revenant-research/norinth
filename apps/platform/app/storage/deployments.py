@@ -294,7 +294,7 @@ def upsert_deployment_gate(connection, version: dict[str, Any]) -> None:
     )
 
 
-def gate_evidence_counts(connection, version: dict[str, Any]) -> dict[str, int]:
+def gate_evidence_counts(connection, version: dict[str, Any]) -> dict[str, Any]:
     params = {
         "tenant_id": version.get("tenant_id"),
         "project": version["project"],

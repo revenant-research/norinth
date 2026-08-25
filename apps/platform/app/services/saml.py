@@ -57,7 +57,7 @@ def acs_url(base_url: str) -> str:
 # --- AuthnRequest -----------------------------------------------------------------
 
 
-def build_authn_redirect(tenant_id: str, base_url: str) -> str:
+def build_authn_redirect(tenant_id: str, base_url: str) -> tuple[str, str]:
     config = load_saml_configuration(tenant_id)
     if config is None or not config.get("enabled"):
         raise SamlError("SAML SSO is not configured for this organization")

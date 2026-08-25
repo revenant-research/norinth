@@ -72,3 +72,17 @@ def test_an_unknown_version_fails_loudly_rather_than_silently(fresh_db):
     assert result["ok"] is False
     assert result["broken_at"] == 1
     assert "unknown hash version" in result["reason"], result
+
+
+def test_record_audit_fails_loudly_if_the_current_hasher_is_missing(fresh_db, monkeypatch):
+    """a null row hash would break the chain silently; writing must refuse it"""
+    import pytest
+    from app.storage import audit
+
+    # point the current version at one with no registered hasher
+    monkeypatch.setattr(audit, "CURRENT_HASH_VERSION", 999)
+    with pytest.raises(RuntimeError, match="no audit hasher"):
+        audit.record_audit(actor_ref="u", action="a", tenant_id="acme", target_id="x")
+
+    # nothing was written: the chain is unbroken
+    assert audit.verify_audit_chain()["ok"] is True

@@ -54,6 +54,8 @@ def validate_external_url(url: str) -> None:
     except socket.gaierror as error:
         raise EgressError(f"could not resolve host {host!r}") from error
     for info in infos:
-        ip = info[4][0]
+        # sockaddr[0] is the address string for both IPv4 and IPv6; be explicit
+        # so the block check is never handed a non-string
+        ip = str(info[4][0])
         if _is_blocked(ip):
             raise EgressError(f"host {host!r} resolves to a non-public address ({ip}); refusing to connect")

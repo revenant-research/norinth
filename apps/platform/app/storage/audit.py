@@ -139,6 +139,10 @@ def record_audit(
         row_hash = _compute_row_hash(
             CURRENT_HASH_VERSION, prev_hash, created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json
         )
+        if row_hash is None:
+            # the current version must always have a registered hasher; writing a
+            # null hash would break the chain silently, so fail loudly instead
+            raise RuntimeError(f"no audit hasher registered for version {CURRENT_HASH_VERSION}")
         row_hmac = _compute_row_hmac(row_hash)
         connection.execute(
             """
