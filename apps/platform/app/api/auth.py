@@ -27,6 +27,7 @@ from app.storage.workflow import (
     get_user_by_email,
     load_platform_user,
     set_user_password,
+    upgrade_password_hash,
 )
 
 router = APIRouter()
@@ -96,9 +97,12 @@ def login(payload: LoginRequest, request: Request, response: Response) -> dict[s
         register_failure(source)
         raise HTTPException(status_code=401, detail="Invalid email or password")
     clear_attempts(account)
-    # rehash if kdf params are outdated, now that we have the verified plaintext
+    # rehash if kdf params are outdated, now that we have the verified plaintext.
+    # upgrade_password_hash, not set_user_password: a transparent rehash must not
+    # clear must_change_password, or logging in with a temporary credential would
+    # silently satisfy the forced-rotation gate
     if needs_rehash(user.get("password_hash")):
-        set_user_password(user["user_ref"], hash_password(payload.password))
+        upgrade_password_hash(user["user_ref"], hash_password(payload.password))
     token = create_session(user["user_ref"])
     _set_session_cookie(response, token)
     record_audit(actor_ref=user["user_ref"], action="auth.login", tenant_id=user.get("tenant_id"))

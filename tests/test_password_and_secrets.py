@@ -148,3 +148,39 @@ def test_invalid_secret_key_is_refused_at_startup(monkeypatch):
     # unset (development) is accepted; encryption fails closed later instead
     monkeypatch.delenv("NORINTH_SECRET_KEY", raising=False)
     _validate_secret_key_at_startup()
+
+
+def test_login_rehash_does_not_clear_forced_password_change(client):
+    """upgrading the KDF on login must not satisfy the forced-rotation gate
+
+    a temporary credential is issued with must_change_password set and, on an
+    upgraded install, an outdated hash. logging in re-hashes it, which must NOT
+    clear the flag, or the shared temp password becomes a permanent credential
+    """
+    import hashlib
+
+    from app.services import auth
+    from app.storage.workflow import create_platform_user, load_platform_user
+
+    # a temp password hashed at fewer iterations than the current default, with the
+    # forced-change flag set (what a pre-upgrade reset/provision produced)
+    salt = b"fedcba9876543210"
+    weak_rounds = 1000
+    assert weak_rounds < auth._PBKDF2_ITERATIONS
+    derived = hashlib.pbkdf2_hmac("sha256", b"temp-password-1", salt, weak_rounds)
+    weak_hash = f"pbkdf2_sha256${weak_rounds}${salt.hex()}${derived.hex()}"
+    create_platform_user(
+        user_ref="temp@acme.test", display_name="Temp", email="temp@acme.test",
+        password_hash=weak_hash, status="active", platform_role=None,
+        tenant_id="acme", must_change_password=True,
+    )
+    assert auth.needs_rehash(weak_hash)
+
+    resp = client.post("/api/auth/login", json={"email": "temp@acme.test", "password": "temp-password-1"})
+    assert resp.status_code == 200, resp.text
+    # the login re-hashed the password to current params...
+    user = load_platform_user("temp@acme.test")
+    assert not auth.needs_rehash(user["password_hash"])
+    # ...but the forced-rotation gate is still armed
+    assert user["must_change_password"] in (1, True), user["must_change_password"]
+    assert resp.json()["user"]["must_change_password"] is True

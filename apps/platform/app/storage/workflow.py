@@ -607,9 +607,24 @@ def create_platform_user(
 
 
 def set_user_password(user_ref: str, password_hash: str) -> None:
+    """the user chose a new password: store it and clear the forced-change flag"""
     with connect() as connection:
         connection.execute(
             "UPDATE platform_users SET password_hash = ?, must_change_password = 0, updated_at = datetime('now') WHERE user_ref = ?",
+            (password_hash, user_ref),
+        )
+
+
+def upgrade_password_hash(user_ref: str, password_hash: str) -> None:
+    """transparently re-hash the same password under stronger KDF params
+
+    unlike set_user_password this must NOT touch must_change_password: the user
+    has not chosen a password, so a login that happens to trigger a rehash must
+    not clear the forced-change flag on a temporary credential
+    """
+    with connect() as connection:
+        connection.execute(
+            "UPDATE platform_users SET password_hash = ?, updated_at = datetime('now') WHERE user_ref = ?",
             (password_hash, user_ref),
         )
 
