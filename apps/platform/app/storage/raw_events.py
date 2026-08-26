@@ -107,15 +107,32 @@ def init_storage() -> None:
             pass
 
 
-def insert_events(events: list[dict[str, Any]]) -> int:
-    """insert events idempotently, returning the number newly accepted
+def _existing_event_keys(connection, keys: list[tuple]) -> set[tuple]:
+    """the (tenant_id, trace_id, span_id) keys from `keys` already stored"""
+    trace_ids = sorted({key[1] for key in keys})
+    if not trace_ids:
+        return set()
+    placeholders = ",".join("?" for _ in trace_ids)
+    rows = connection.execute(
+        f"SELECT tenant_id, trace_id, span_id FROM sdk_events WHERE trace_id IN ({placeholders})",
+        tuple(trace_ids),
+    ).fetchall()
+    return {(row["tenant_id"], row["trace_id"], row["span_id"]) for row in rows}
 
-    INSERT OR IGNORE against the unique (trace_id, span_id) index so a retried
-    batch doesn't double-count; the return is the count inserted, not batch size
+
+def insert_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """insert events idempotently, returning the events actually inserted
+
+    INSERT OR IGNORE against the unique (tenant_id, trace_id, span_id) index so a
+    retried batch does not create duplicate rows. Only the newly inserted events
+    are returned, so the caller projects each event into governance state exactly
+    once — a retry that inserts nothing must not re-increment metrics.
     """
     rows = [event_to_row(event) for event in events]
+    keys = [(row["tenant_id"], row["trace_id"], row["span_id"]) for row in rows]
     with connect() as connection:
-        cursor = connection.executemany(
+        already = _existing_event_keys(connection, keys)
+        connection.executemany(
             """
             INSERT OR IGNORE INTO sdk_events (
                 event_type, schema_version, trace_id, span_id, parent_span_id, timestamp, service,
@@ -133,7 +150,16 @@ def insert_events(events: list[dict[str, Any]]) -> int:
             """,
             rows,
         )
-        return max(cursor.rowcount, 0)
+    # newly inserted = a key not already stored and not repeated earlier in this
+    # batch; preserves order, projects each event once
+    inserted: list[dict[str, Any]] = []
+    seen = set(already)
+    for event, key in zip(events, keys, strict=True):
+        if key in seen:
+            continue
+        seen.add(key)
+        inserted.append(event)
+    return inserted
 
 
 def event_to_row(event: dict[str, Any]) -> dict[str, Any]:
