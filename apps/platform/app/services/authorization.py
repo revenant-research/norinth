@@ -90,12 +90,21 @@ def actor_permissions(actor: ActorContext, target: dict[str, Any] | None = None)
     return permissions
 
 
-def require_permission(actor: ActorContext, permission: str, target: dict[str, Any] | None = None) -> None:
+def require_permission(
+    actor: ActorContext,
+    permission: str,
+    target: dict[str, Any] | None = None,
+    *,
+    adopt_missing_tenant: bool = False,
+) -> None:
     require_active_actor(actor)
     target = dict(target or {})
-    # a target with no tenant is scoped to the actor's own org so tenant-scoped
-    # role assignments apply to it
-    if target.get("tenant_id") is None and actor.tenant_id:
+    # only when the caller is creating a new, genuinely unscoped thing (a config
+    # write with no tenant of its own) do we scope it to the actor's org. for a
+    # LOADED record, a missing tenant is not adopted: it stays None and fails the
+    # scope check below, so an orphaned tenant-less record can't be reached by
+    # borrowing the acting tenant. fail-closed by default
+    if adopt_missing_tenant and target.get("tenant_id") is None and actor.tenant_id:
         target["tenant_id"] = actor.tenant_id
     require_actor_scope(actor, target)
     if permission in actor_permissions(actor, target):
@@ -104,7 +113,9 @@ def require_permission(actor: ActorContext, permission: str, target: dict[str, A
 
 
 def require_config_write(actor: ActorContext, payload: dict[str, Any] | None = None) -> None:
-    require_permission(actor, PERM_CONFIG_WRITE, payload or {})
+    # a config write may be unscoped (new config created in the actor's own org),
+    # so a missing tenant is adopted from the actor
+    require_permission(actor, PERM_CONFIG_WRITE, payload or {}, adopt_missing_tenant=True)
 
 
 def require_owner_assignment(actor: ActorContext, assignment: dict[str, Any]) -> None:
