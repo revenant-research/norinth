@@ -288,9 +288,26 @@ class NorinthClient:
         score: float,
         threshold: float,
         passed: bool,
+        prompt_version: str | None = None,
+        artifact_ref: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> None:
         context = get_context() or TraceContext(trace_id=new_id("trc"), span_id=new_id("spn"))
+        attributes: dict[str, Any] = {
+            "eval_name": eval_name,
+            "score": score,
+            "threshold": threshold,
+            "passed": passed,
+            "metadata": {**context.metadata, **(metadata or {})},
+        }
+        # the release gate only counts an eval as evidence if it names the build
+        # it ran against (artifact_ref preferred, prompt_version fallback), and the
+        # attestation signature covers these same fields; emit them so an eval
+        # produced through this emitter can actually satisfy a gate
+        if prompt_version is not None:
+            attributes["prompt_version"] = prompt_version
+        if artifact_ref is not None:
+            attributes["artifact_ref"] = artifact_ref
         self.record(
             NorinthEvent(
                 type="eval.result",
@@ -303,13 +320,7 @@ class NorinthClient:
                 system=context.system,
                 name=eval_name,
                 status="success" if passed else "error",
-                attributes={
-                    "eval_name": eval_name,
-                    "score": score,
-                    "threshold": threshold,
-                    "passed": passed,
-                    "metadata": {**context.metadata, **(metadata or {})},
-                },
+                attributes=attributes,
             )
         )
 
