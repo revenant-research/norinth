@@ -422,6 +422,8 @@ def set_deployment_gate_status(gate_id: str, status: str, actor_ref: str, ration
                 raise ValueError("deployment gate cannot be approved while risk findings are open; mitigate or accept them first")
             if int(evidence["missing_control_count"] or 0) > 0:
                 raise ValueError("deployment gate cannot be approved while controls are missing evidence")
+            if int(evidence["material_change_count"] or 0) > 0:
+                raise ValueError("deployment gate cannot be approved while material changes are unreviewed; review or accept them first")
         if not (rationale or "").strip():
             raise ValueError("a decision rationale is required")
         if evidence is not None:
