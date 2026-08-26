@@ -409,6 +409,13 @@ def set_deployment_gate_status(gate_id: str, status: str, actor_ref: str, ration
         if row is None:
             raise RecordNotFound("deployment gate not found")
         gate = dict(row)
+        # a gate decision is terminal: once a human approves or rejects this
+        # version's gate it cannot be silently re-decided (which would let a
+        # second admin flip an approval to a rejection, or re-approve a rejected
+        # release, with no distinct action). new telemetry already preserves a
+        # decided status; a superseding build gets its own gate
+        if gate["gate_status"] in {"approved", "rejected"}:
+            raise ValueError(f"deployment gate has already been {gate['gate_status']} and cannot be decided again")
         evidence = None
         if status == "approved":
             # recompute from current state: accepting a finding or waiving a
