@@ -98,6 +98,9 @@ def _verify_signed(root: etree._Element, certificate_pem: str) -> etree._Element
         verified = XMLVerifier().verify(root, x509_cert=certificate_pem, expect_references=1)
     except Exception as error:
         raise SamlError(f"SAML signature verification failed: {error}") from error
+    # expect_references=1 yields a single result; narrow the declared union
+    if isinstance(verified, list):
+        verified = verified[0]
     return verified.signed_xml
 
 

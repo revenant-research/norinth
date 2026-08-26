@@ -460,7 +460,7 @@ def event_satisfies_required_fields(event: dict[str, Any], required_fields: list
 
 def assess_risk_rules(connection, app_context: dict[str, Any], rules: list[dict[str, Any]], events: list[dict[str, Any]]) -> None:
     by_type = {event_type: [event for event in events if event.get("type") == event_type] for event_type in {event.get("type") for event in events}}
-    providers = sorted({(event.get("attributes") or {}).get("provider") for event in by_type.get("model.call", []) if (event.get("attributes") or {}).get("provider")})
+    providers = sorted({p for event in by_type.get("model.call", []) if isinstance(p := (event.get("attributes") or {}).get("provider"), str)})
     app_text = " ".join(
         [
             app_context["application_name"],
