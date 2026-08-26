@@ -39,7 +39,7 @@ def test_raw_event_is_ciphertext_but_columns_are_queryable(client, monkeypatch):
     with connect() as connection:
         row = connection.execute("SELECT raw_event, application_name, provider FROM sdk_events").fetchone()
     assert secret_text not in row["raw_event"]
-    assert row["raw_event"].startswith("enc:v1:")  # aes-gcm ciphertext, not json
+    assert row["raw_event"].startswith("enc:v2:")  # aes-gcm ciphertext, not json
     # extracted governance columns stay in plaintext for querying
     assert row["application_name"] == "Claims"
     assert row["provider"] == "openai"
