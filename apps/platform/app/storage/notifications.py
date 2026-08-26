@@ -138,10 +138,16 @@ def claim_pending(limit: int = 50, *, worker_id: str) -> list[dict[str, Any]]:
     a row. rows claimed by a dead worker return to 'pending' after
     STALE_CLAIM_MINUTES
     """
-    now_dt = datetime.now(UTC)
-    now = now_dt.strftime("%Y-%m-%d %H:%M:%S")
-    stale_before = (now_dt - timedelta(minutes=STALE_CLAIM_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
     with connect() as connection:
+        # anchor the reference time to the DATABASE server clock, not this
+        # process's clock. next_attempt_at is written with SQL datetime('now')
+        # (the server clock), so comparing it against a Python-computed now would
+        # be wrong by whatever the app-host and db-server clocks differ by, and a
+        # worker could skip due rows or reset live claims. reading the server time
+        # here keeps every outbox timestamp on one clock
+        now = connection.execute("SELECT datetime('now') AS now").fetchone()["now"]
+        now_dt = datetime.strptime(now, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
+        stale_before = (now_dt - timedelta(minutes=STALE_CLAIM_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
         connection.execute(
             "UPDATE notification_outbox SET status = 'pending', claimed_by = NULL, claimed_at = NULL "
             "WHERE status = 'delivering' AND claimed_at <= ?",
