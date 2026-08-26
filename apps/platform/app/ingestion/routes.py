@@ -10,7 +10,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.dependencies import ingestion_tenant
 from app.ingestion.otel import otel_spans_to_events
-from app.schemas.events import EventBatch
+from app.schemas.events import MAX_BATCH_EVENTS, EventBatch
 from app.services.attestation import AttestationError, verify_eval_attestation
 from app.storage.agents import refresh_agent_posture
 from app.storage.attestation_keys import load_active_attestation_key, touch_attestation_key
@@ -79,24 +79,30 @@ def _bind_events_to_tenant(events: list[dict[str, Any]], tenant_id: str) -> None
         metadata["tenant_id"] = tenant_id
 
 
+async def _verify_optional_signature(request: Request) -> None:
+    """when NORINTH_SIGNING_SECRET is set, require a valid HMAC over the raw body
+
+    applied to every ingest entrypoint so the OTLP path is not an unsigned way in
+    """
+    signing_secret = os.getenv("NORINTH_SIGNING_SECRET")
+    if not signing_secret:
+        return
+    signature_header = request.headers.get("X-Norinth-Signature")
+    if not signature_header or not signature_header.startswith("sha256="):
+        raise HTTPException(status_code=401, detail="Missing or invalid signature")
+    body = await request.body()
+    expected_mac = hmac.new(signing_secret.encode("utf-8"), msg=body, digestmod=hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(f"sha256={expected_mac}", signature_header):
+        raise HTTPException(status_code=401, detail="Signature mismatch")
+
+
 @router.post("/v1/events/batch")
 async def ingest_events(
     request: Request,
     batch: EventBatch,
     tenant_id: str = Depends(ingestion_tenant),
 ):
-    signing_secret = os.getenv("NORINTH_SIGNING_SECRET")
-    if signing_secret:
-        signature_header = request.headers.get("X-Norinth-Signature")
-        if not signature_header or not signature_header.startswith("sha256="):
-            raise HTTPException(status_code=401, detail="Missing or invalid signature")
-
-        body = await request.body()
-        expected_mac = hmac.new(signing_secret.encode("utf-8"), msg=body, digestmod=hashlib.sha256).hexdigest()
-
-        if not hmac.compare_digest(f"sha256={expected_mac}", signature_header):
-            raise HTTPException(status_code=401, detail="Signature mismatch")
-
+    await _verify_optional_signature(request)
     events = [event.model_dump() for event in batch.events]
     # ingest is sync db work; run off the event loop so a big recompute can't block the server
     return await run_in_threadpool(_ingest, events, tenant_id)
@@ -108,6 +114,7 @@ async def ingest_otel_traces(
     tenant_id: str = Depends(ingestion_tenant),
 ):
     """ingest opentelemetry gen_ai spans (otlp/http json)"""
+    await _verify_optional_signature(request)
     try:
         payload = await request.json()
     except Exception as error:
@@ -115,6 +122,10 @@ async def ingest_otel_traces(
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="OTLP payload must be a JSON object")
     events = otel_spans_to_events(payload)
+    # the same per-request cap the native batch endpoint enforces via its schema;
+    # otlp builds the event list itself, so it would otherwise be uncapped
+    if len(events) > MAX_BATCH_EVENTS:
+        raise HTTPException(status_code=413, detail=f"too many spans in one request; max {MAX_BATCH_EVENTS}")
     if not events:
         return {"accepted": 0, "skipped": "no GenAI spans found"}
     return await run_in_threadpool(_ingest, events, tenant_id)

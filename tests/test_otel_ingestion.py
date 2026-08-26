@@ -98,3 +98,60 @@ def test_otel_endpoint_handles_no_genai_spans(client):
     )
     assert resp.status_code == 200
     assert resp.json()["accepted"] == 0
+
+
+def test_otel_endpoint_enforces_the_body_signature_when_configured(client, monkeypatch):
+    """the OTLP path must not be an unsigned way in when body signing is required"""
+    import hashlib
+    import hmac
+    import json
+
+    monkeypatch.setenv("NORINTH_SIGNING_SECRET", "topsecret")
+    body = json.dumps(_otlp_chat_span()).encode("utf-8")
+    common = {"Authorization": "Bearer dev", "Content-Type": "application/json"}
+
+    # no signature is rejected
+    missing = client.post("/v1/otel/traces", content=body, headers=common)
+    assert missing.status_code == 401, missing.text
+
+    # a wrong signature is rejected
+    bad = client.post("/v1/otel/traces", content=body, headers={**common, "X-Norinth-Signature": "sha256=deadbeef"})
+    assert bad.status_code == 401, bad.text
+
+    # the correct signature over the raw body is accepted
+    sig = "sha256=" + hmac.new(b"topsecret", body, hashlib.sha256).hexdigest()
+    ok = client.post("/v1/otel/traces", content=body, headers={**common, "X-Norinth-Signature": sig})
+    assert ok.status_code == 200, ok.text
+
+
+def _many_genai_spans(n: int) -> dict:
+    spans = [
+        {
+            "name": "chat gpt-4o",
+            "traceId": f"t{i}",
+            "spanId": f"s{i}",
+            "attributes": [
+                {"key": "gen_ai.operation.name", "value": {"stringValue": "chat"}},
+                {"key": "gen_ai.provider.name", "value": {"stringValue": "openai"}},
+                {"key": "gen_ai.request.model", "value": {"stringValue": "gpt-4o"}},
+            ],
+        }
+        for i in range(n)
+    ]
+    return {"resourceSpans": [{
+        "resource": {"attributes": [{"key": "service.name", "value": {"stringValue": "otel-app"}}]},
+        "scopeSpans": [{"spans": spans}],
+    }]}
+
+
+def test_otel_endpoint_caps_the_number_of_spans_per_request(client):
+    """OTLP builds its own event list, so it must enforce the same per-request
+    cap the native batch endpoint gets from its schema"""
+    from app.schemas.events import MAX_BATCH_EVENTS
+
+    over = client.post(
+        "/v1/otel/traces",
+        json=_many_genai_spans(MAX_BATCH_EVENTS + 1),
+        headers={"Authorization": "Bearer dev"},
+    )
+    assert over.status_code == 413, over.text
