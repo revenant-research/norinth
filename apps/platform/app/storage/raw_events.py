@@ -79,7 +79,8 @@ def init_storage() -> None:
                 operation TEXT,
                 input_tokens INTEGER NOT NULL DEFAULT 0,
                 output_tokens INTEGER NOT NULL DEFAULT 0,
-                raw_event TEXT NOT NULL
+                raw_event TEXT NOT NULL,
+                ingested_at TEXT
             )
             """
         )
@@ -120,14 +121,14 @@ def insert_events(events: list[dict[str, Any]]) -> int:
                 event_type, schema_version, trace_id, span_id, parent_span_id, timestamp, service,
                 environment, project, system, name, status, duration_ms, tenant_id, user_id,
                 application_name, workflow_name, use_case, model_purpose, provider, model,
-                operation, input_tokens, output_tokens, raw_event
+                operation, input_tokens, output_tokens, raw_event, ingested_at
             )
             VALUES (
                 :event_type, :schema_version, :trace_id, :span_id, :parent_span_id, :timestamp,
                 :service, :environment, :project, :system, :name, :status, :duration_ms,
                 :tenant_id, :user_id, :application_name, :workflow_name, :use_case,
                 :model_purpose, :provider, :model, :operation, :input_tokens, :output_tokens,
-                :raw_event
+                :raw_event, datetime('now')
             )
             """,
             rows,

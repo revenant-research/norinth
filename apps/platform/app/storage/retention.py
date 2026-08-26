@@ -99,11 +99,18 @@ def purge_events_older_than(retention_days: int, tenant_id: str | None = None) -
     """
     cutoff = (datetime.now(UTC) - timedelta(days=retention_days)).isoformat()
     with connect() as connection:
+        # age out an event when either its telemetry timestamp or the time the
+        # platform ingested it is beyond the window. the ingest-time backstop
+        # means a client that future-dates its events can no longer keep them
+        # past the window, while a genuinely old event still ages out at once
         if tenant_id is None:
-            cur = connection.execute("DELETE FROM sdk_events WHERE timestamp < ?", (cutoff,))
+            cur = connection.execute(
+                "DELETE FROM sdk_events WHERE timestamp < ? OR ingested_at < ?", (cutoff, cutoff)
+            )
         else:
             cur = connection.execute(
-                "DELETE FROM sdk_events WHERE timestamp < ? AND tenant_id = ?", (cutoff, tenant_id)
+                "DELETE FROM sdk_events WHERE (timestamp < ? OR ingested_at < ?) AND tenant_id = ?",
+                (cutoff, cutoff, tenant_id),
             )
         return cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
 

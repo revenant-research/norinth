@@ -304,6 +304,20 @@ def _0014_org_retention_window(connection) -> None:
         connection.execute("ALTER TABLE organizations ADD COLUMN retention_days INTEGER")
 
 
+def _0016_event_ingested_at(connection) -> None:
+    """server-stamped ingest time on raw events
+
+    retention compared only the client-supplied event timestamp, so a client that
+    future-dates its events could keep them past the window forever. record when
+    the platform actually ingested each event; retention now also ages out on
+    this. existing rows are backfilled to their event timestamp, the only signal
+    available for already-stored rows
+    """
+    if not _has_column(connection, "sdk_events", "ingested_at"):
+        connection.execute("ALTER TABLE sdk_events ADD COLUMN ingested_at TEXT")
+        connection.execute("UPDATE sdk_events SET ingested_at = timestamp WHERE ingested_at IS NULL")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
@@ -320,6 +334,7 @@ MIGRATIONS: list[Migration] = [
     Migration(13, "drop leads table (landing-page lead capture removed)", _0013_drop_leads),
     Migration(14, "per-organization telemetry retention window", _0014_org_retention_window),
     Migration(15, "versioned audit-chain hash algorithm", _0015_audit_hash_version),
+    Migration(16, "server-stamped ingest time on raw events", _0016_event_ingested_at),
 ]
 
 

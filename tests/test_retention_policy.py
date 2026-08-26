@@ -115,6 +115,47 @@ def test_no_window_means_nothing_is_deleted(super_admin_client):
     org.close()
 
 
+def test_ingest_time_backstops_a_future_dated_event(super_admin_client):
+    """a client cannot dodge retention by future-dating its event timestamp
+
+    retention ages out an event when either its telemetry timestamp or the time
+    the platform ingested it is beyond the window. a freshly ingested event stays
+    (its ingest time is recent) no matter how its timestamp reads; once the ingest
+    time falls outside the window it is aged out even with a future timestamp.
+    """
+    from app.services import maintenance
+    from app.storage.raw_events import connect
+
+    org, token = _org(super_admin_client, "future", "oa@future.test", "future-pw-11")
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as anon:
+        resp = anon.post("/v1/events/batch", json={"events": [
+            _event("future", "future_evt", "2035-01-01T00:00:00Z"),
+        ]}, headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200, resp.text
+    assert _count_events("future") == 1
+
+    org.post("/api/retention-policy", json={"retention_days": 30})
+
+    # freshly ingested: ingest time is now, so the event is inside the window
+    assert maintenance.run_once()["purged_events"].get("future") in (None, 0)
+    assert _count_events("future") == 1
+
+    # simulate the event having been ingested long ago; the ingest-time backstop
+    # ages it out despite its telemetry timestamp being years in the future
+    with connect() as connection:
+        connection.execute(
+            "UPDATE sdk_events SET ingested_at = ? WHERE tenant_id = ?",
+            ("2020-01-01T00:00:00Z", "future"),
+        )
+    result = maintenance.run_once()
+    assert result["purged_events"].get("future") == 1, result
+    assert _count_events("future") == 0
+    org.close()
+
+
 def test_purge_is_recorded_in_the_audit_log(super_admin_client):
     from app.services import maintenance
     from app.storage.audit import list_audit_logs
