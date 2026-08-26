@@ -18,5 +18,8 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.test.{ts,tsx}"],
+    // restore spies to their originals before each test so a spy installed in
+    // one test cannot stack on or capture a late call from another
+    restoreMocks: true,
   },
 });
