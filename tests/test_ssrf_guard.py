@@ -39,6 +39,32 @@ def test_public_url_is_allowed(monkeypatch):
     validate_external_url("https://93.184.216.34/ok")  # public ip literal
 
 
+def test_safe_urlopen_refuses_a_dns_rebinding_host(monkeypatch):
+    """a host that resolves to a public address at validation time and a private
+    one at connect time must be refused: the connection re-validates and pins to
+    the address it actually connects to
+
+    the fake resolver returns a public address on the first lookup (the pre-check)
+    and a loopback address on the next (the connection), simulating rebinding.
+    """
+    import socket
+
+    from app.services import net_guard
+
+    calls = {"n": 0}
+
+    def fake_getaddrinfo(host, port, *args, **kwargs):
+        calls["n"] += 1
+        ip = "93.184.216.34" if calls["n"] == 1 else "127.0.0.1"
+        return [(socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (ip, port))]
+
+    monkeypatch.setattr(net_guard.socket, "getaddrinfo", fake_getaddrinfo)
+    with pytest.raises(net_guard.EgressError):
+        net_guard.safe_urlopen("http://rebind.example/", timeout=5)
+    # it re-resolved at connect rather than trusting the single pre-check lookup
+    assert calls["n"] >= 2
+
+
 def test_safe_urlopen_refuses_to_follow_a_redirect_to_a_blocked_host(monkeypatch):
     """a target that passes the initial check but 302s to metadata is refused
 

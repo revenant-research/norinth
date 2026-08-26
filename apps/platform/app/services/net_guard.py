@@ -12,6 +12,7 @@ webhook receiver runs on 127.0.0.1)
 
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import os
 import socket
@@ -63,6 +64,57 @@ def validate_external_url(url: str) -> None:
             raise EgressError(f"host {host!r} resolves to a non-public address ({ip}); refusing to connect")
 
 
+def _resolve_validated_ip(host: str, port: int) -> str:
+    """resolve host, refuse if any address is non-public, and return one to pin
+
+    the connection binds to the address returned here, so the address that was
+    checked is the address actually connected to — closing the dns-rebinding gap
+    where a hostname passes validation and then re-resolves to a private address
+    at connect time
+    """
+    try:
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    except socket.gaierror as error:
+        raise EgressError(f"could not resolve host {host!r}") from error
+    ips = [str(info[4][0]) for info in infos]
+    if not ips:
+        raise EgressError(f"could not resolve host {host!r}")
+    for ip in ips:
+        if _is_blocked(ip):
+            raise EgressError(f"host {host!r} resolves to a non-public address ({ip}); refusing to connect")
+    return ips[0]
+
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    """connect to a freshly validated address for this host rather than letting
+    the socket layer re-resolve the name"""
+
+    def connect(self) -> None:
+        ip = _resolve_validated_ip(self.host, self.port)
+        self.sock = socket.create_connection((ip, self.port), self.timeout, self.source_address)
+        if self._tunnel_host:
+            self._tunnel()
+
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    def connect(self) -> None:
+        ip = _resolve_validated_ip(self.host, self.port)
+        sock = socket.create_connection((ip, self.port), self.timeout, self.source_address)
+        # keep the original hostname for SNI and certificate verification while
+        # the tcp connection targets the validated ip
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+
+
+class _PinnedHTTPHandler(urllib.request.HTTPHandler):
+    def http_open(self, req):  # noqa: ANN001
+        return self.do_open(_PinnedHTTPConnection, req)
+
+
+class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+    def https_open(self, req):  # noqa: ANN001
+        return self.do_open(_PinnedHTTPSConnection, req, context=self._context, check_hostname=self._check_hostname)
+
+
 class _ValidatingRedirectHandler(urllib.request.HTTPRedirectHandler):
     """re-run the egress guard on every redirect target
 
@@ -77,12 +129,20 @@ class _ValidatingRedirectHandler(urllib.request.HTTPRedirectHandler):
 
 
 def safe_urlopen(url_or_request: Any, *, timeout: float = 10.0):
-    """urlopen that validates the initial target and every redirect hop
+    """urlopen that validates the initial target and every redirect hop, and pins
+    each connection to a validated address
 
     use this instead of urllib.request.urlopen for any fetch of an
-    operator-configured URL (webhooks, OIDC endpoints)
+    operator-configured URL (webhooks, OIDC endpoints). the connection binds to
+    the address validated at connect time, so a rebinding host cannot pass the
+    check and then connect to a private address
     """
     target = url_or_request.full_url if isinstance(url_or_request, urllib.request.Request) else url_or_request
     validate_external_url(target)
-    opener = urllib.request.build_opener(_ValidatingRedirectHandler())
+    if _allow_private():
+        # dev bypass: no pinning, plain opener (still follows redirects)
+        return urllib.request.build_opener().open(url_or_request, timeout=timeout)
+    opener = urllib.request.build_opener(
+        _PinnedHTTPHandler(), _PinnedHTTPSHandler(), _ValidatingRedirectHandler()
+    )
     return opener.open(url_or_request, timeout=timeout)

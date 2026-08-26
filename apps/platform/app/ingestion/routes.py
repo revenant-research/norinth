@@ -196,21 +196,24 @@ def _ingest(events: list[dict[str, Any]], tenant_id: str) -> dict[str, Any]:
     _validate_event_attributes(events)
     _bind_events_to_tenant(events, tenant_id)
     _verify_eval_attestations(events, tenant_id)
-    accepted = insert_events(events)
-    process_events(events)
-    process_prompt_events(events)
-    process_deployment_events(events)
-    process_incident_events(events)
-    # expire lapsed exceptions (reopens their findings) before recompute
-    expire_due_exceptions()
-    # recompute derived state only for touched scopes
-    scopes = batch_scopes(events)
-    refresh_lifecycle_state(scopes)
-    refresh_governance_assessments(scopes)
-    refresh_agent_posture([tenant_id])
-    refresh_workflow_state(scopes)
-    refresh_deployment_gates(scopes)
-    return {"accepted": accepted}
+    # project only the newly inserted events; a retried batch inserts nothing, so
+    # it must not re-run the increment projections and double-count metrics
+    inserted = insert_events(events)
+    if inserted:
+        process_events(inserted)
+        process_prompt_events(inserted)
+        process_deployment_events(inserted)
+        process_incident_events(inserted)
+        # expire lapsed exceptions (reopens their findings) before recompute
+        expire_due_exceptions()
+        # recompute derived state only for touched scopes
+        scopes = batch_scopes(inserted)
+        refresh_lifecycle_state(scopes)
+        refresh_governance_assessments(scopes)
+        refresh_agent_posture([tenant_id])
+        refresh_workflow_state(scopes)
+        refresh_deployment_gates(scopes)
+    return {"accepted": len(inserted)}
 
 
 @router.get("/v1/gates/check")
