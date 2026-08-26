@@ -212,4 +212,6 @@ def process_response(saml_response_b64: str, base_url: str, expected_request_id:
         or attributes.get("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name")
         or attributes.get("name"),
     }
-    return _provision_user(tenant_id, email, claims, {"default_role": config.get("default_role")})
+    # the assertion carrying this email is signed by the pinned idp cert, so the
+    # email is idp-asserted, not user-self-asserted; treat it as verified
+    return _provision_user(tenant_id, email, claims, {"default_role": config.get("default_role")}, email_verified=True)

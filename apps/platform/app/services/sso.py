@@ -175,10 +175,29 @@ def complete_login(code: str, state: str, redirect_uri: str) -> dict[str, Any]:
     if domain and not email.endswith("@" + domain.lower()):
         raise SsoError("email domain is not permitted for this organization")
 
-    return _provision_user(tenant_id, email, claims, config)
+    return _provision_user(tenant_id, email, claims, config, email_verified=_email_verified(claims))
 
 
-def _provision_user(tenant_id: str, email: str, claims: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+def _email_verified(claims: dict[str, Any]) -> bool | None:
+    """tri-state read of the OIDC email_verified claim: True / False / None(absent)
+
+    the spec says boolean, but some providers send the string "true"/"false"
+    """
+    raw = claims.get("email_verified")
+    if raw is None:
+        return None
+    if isinstance(raw, bool):
+        return raw
+    return str(raw).strip().lower() == "true"
+
+
+def _provision_user(
+    tenant_id: str,
+    email: str,
+    claims: dict[str, Any],
+    config: dict[str, Any],
+    email_verified: bool | None = None,
+) -> dict[str, Any]:
     existing = get_user_by_email(email)
     if existing is not None:
         if existing.get("tenant_id") != tenant_id:
@@ -187,7 +206,19 @@ def _provision_user(tenant_id: str, email: str, claims: dict[str, Any], config: 
             raise SsoError("this account belongs to a different organization")
         if existing.get("status") != "active":
             raise SsoError("account is not active")
+        # binding a federated login to an ALREADY EXISTING account (which may be a
+        # password or SCIM account) requires the idp to assert the email is
+        # verified. otherwise an idp that lets a user self-assert an unverified
+        # email could take over an existing account by claiming its address. SAML
+        # passes email_verified=True because the assertion itself is signed
+        if email_verified is not True:
+            raise SsoError("the identity provider did not assert this email as verified; it cannot be used to sign in to an existing account")
         return existing
+
+    # a brand-new account may be provisioned when the claim is absent (many idps
+    # omit it), but never when the idp explicitly reports the email as unverified
+    if email_verified is False:
+        raise SsoError("the identity provider reported this email address as unverified")
 
     display_name = claims.get("name") or claims.get("preferred_username") or email
     user = create_platform_user(
