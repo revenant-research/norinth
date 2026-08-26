@@ -149,7 +149,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v7
-      - uses: azure/setup-helm@v5.0.1
+      - uses: azure/setup-helm@v5
       - name: Lint
         run: helm lint deploy/helm/norinth
       - name: Package with the release version
