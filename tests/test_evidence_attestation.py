@@ -267,7 +267,14 @@ def test_gate_counts_only_attested_evals_once_a_key_is_registered(org):
     key_id = client.post("/api/attestation-keys", json={"name": "ci", "public_key_pem": public_pem}).json()[
         "attestation_key"
     ]["key_id"]
-    resp = client.post("/v1/events/batch", json={"events": [_deployment("v1")]}, headers=headers)  # forces recompute
+    # genuinely new telemetry in the same scope forces a gate recompute (a
+    # duplicate event would now be a no-op and not re-evaluate the gate)
+    recompute_ping = {
+        **BASE, "type": "model.call", "trace_id": "trc_recompute", "span_id": "spn_recompute",
+        "timestamp": "2026-08-22T00:00:05Z", "status": "success",
+        "attributes": {"provider": "openai", "model": "gpt-4o", "usage": {"input_tokens": 1, "output_tokens": 1}, "metadata": META},
+    }
+    resp = client.post("/v1/events/batch", json={"events": [recompute_ping]}, headers=headers)
     assert resp.status_code == 200
     gate = _gate(client)
     assert gate["passing_eval_count"] == 0
