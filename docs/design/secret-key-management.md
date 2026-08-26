@@ -1,6 +1,8 @@
 # RFC: Secret key management and rotation
 
-**Status:** Draft — for discussion. Nothing here is implemented yet.
+**Status:** Accepted. Phases 1–2 (the encryption keyring and the audit-HMAC
+keyring) are implemented; phases 4–5 (the rewrap tool and the optional KMS mode)
+remain. The decisions are recorded at the end.
 
 ## Problem
 
@@ -145,23 +147,33 @@ rotation *finishable*, not just additive.
 
 Phases 1–3 deliver rotation with only local keys; 4–5 are follow-ups.
 
-## Decisions needed
+## Decisions (made)
 
-1. **Local keyring vs KMS-first.** Is a local multi-key ring an acceptable
-   long-term answer for the default (self-hosted) deployment, with KMS as opt-in?
-   Or should KMS be the recommended path for the F500/medical target and the
-   local ring only a dev convenience?
-2. **Config surface.** JSON blob env vars (`NORINTH_SECRET_KEYS`) vs a mounted
-   key directory vs a small keys table. JSON env keeps parity with the current
-   single-var approach; a directory/secret-mount is friendlier to k8s secrets.
-3. **Audit re-anchoring.** Do we ever want a tool that *re-anchors* the whole
-   historical chain to a new key (recompute every `row_hmac`), or is
-   "old rows stay under their old key, new rows under the new key" sufficient?
-   Re-anchoring is simpler to reason about for auditors but rewrites history's
-   HMACs (not the hashes), which some auditors dislike.
-4. **Scope of rewrap.** Include `sdk_events` (potentially large) in the rewrap,
-   or only the small config secrets and let raw events age out under their key
-   via retention?
+1. **Local keyring is the default; KMS is opt-in.** The self-hosted OSS default
+   must work with zero external dependencies. KMS (phase 5) is a later opt-in for
+   deployments that want it, behind the same keyring interface.
+2. **Config is JSON env vars** (`NORINTH_SECRET_KEYS` + `NORINTH_SECRET_PRIMARY`,
+   and the audit equivalents) — same shape as today's single variable, and mounts
+   cleanly from a k8s secret. No new key directory or keys table.
+3. **No audit re-anchoring.** Old rows stay verifiable under their original key
+   via `hmac_key_id`; new rows use the new key. A tamper-evident log should be
+   additive, never rewritten — recomputing historical HMACs is exactly what an
+   auditor does not want to see.
+4. **Rewrap covers the config secrets only** (SSO client secret, webhook secret).
+   `sdk_events` are left to age out under retention rather than rewrapping a
+   potentially large table.
+
+## Implementation status
+
+- **Phase 1 (encryption keyring)** — done. `services/secrets.py` resolves a
+  keyring, writes `enc:v2:<key_id>:…`, and decrypts `enc:v1` by trying each key.
+- **Phase 2 (audit HMAC keyring)** — done. `storage/audit.py` has an independent
+  audit keyring; migration 17 adds `hmac_key_id`; each row verifies under its own
+  key.
+- **Phase 3 (multi-key config)** — usable now: set `NORINTH_SECRET_KEYS` /
+  `NORINTH_SECRET_PRIMARY` (and the audit equivalents) to rotate.
+- **Phase 4 (rewrap tool)** — not yet built.
+- **Phase 5 (KMS provider)** — not yet built.
 
 ## Notes on effort
 
