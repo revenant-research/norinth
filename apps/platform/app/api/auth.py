@@ -18,7 +18,6 @@ from app.services.auth import (
     verify_password,
 )
 from app.services.authorization import effective_permissions
-from app.services.bootstrap import using_development_defaults
 from app.storage.audit import record_audit
 from app.storage.login_attempts import clear_attempts, email_subject, ip_subject, is_locked, register_failure
 from app.storage.notifications import consume_invite, peek_invite
@@ -33,21 +32,32 @@ from app.storage.workflow import (
 router = APIRouter()
 
 
-def _cookie_secure() -> bool:
-    """mark session cookie Secure; env override wins, else on outside dev"""
+def _cookie_secure(request: Request) -> bool:
+    """mark the session cookie Secure whenever the deployment serves over https
+
+    the env override wins; otherwise Secure iff the effective request scheme is
+    https — directly or via a trusted proxy's x-forwarded-proto, the same signal
+    the HSTS header uses. this is decided by how the request actually arrived,
+    not by whether an unrelated bootstrap variable happens to be set, so a tls
+    deployment is not left issuing cookies without Secure. plain-http dev stays
+    non-Secure so the browser does not silently drop the cookie
+    """
     override = os.getenv("NORINTH_COOKIE_SECURE")
     if override is not None:
         return override.lower() not in {"0", "false", "no"}
-    return not using_development_defaults()
+    scheme = request.url.scheme
+    if os.getenv("NORINTH_TRUST_PROXY", "0").lower() in {"1", "true", "yes"}:
+        scheme = (request.headers.get("x-forwarded-proto", scheme).split(",")[0].strip()) or scheme
+    return scheme == "https"
 
 
-def _set_session_cookie(response: Response, token: str) -> None:
+def _set_session_cookie(request: Request, response: Response, token: str) -> None:
     response.set_cookie(
         key=SESSION_COOKIE,
         value=token,
         max_age=SESSION_TTL_HOURS * 3600,
         httponly=True,
-        secure=_cookie_secure(),
+        secure=_cookie_secure(request),
         samesite="lax",
         path="/",
     )
@@ -104,7 +114,7 @@ def login(payload: LoginRequest, request: Request, response: Response) -> dict[s
     if needs_rehash(user.get("password_hash")):
         upgrade_password_hash(user["user_ref"], hash_password(payload.password))
     token = create_session(user["user_ref"])
-    _set_session_cookie(response, token)
+    _set_session_cookie(request, response, token)
     record_audit(actor_ref=user["user_ref"], action="auth.login", tenant_id=user.get("tenant_id"))
     actor = ActorContext(
         user_ref=user["user_ref"],
@@ -129,6 +139,7 @@ def me(actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
 @router.post("/api/auth/change-password")
 def change_password(
     payload: ChangePasswordRequest,
+    request: Request,
     response: Response,
     norinth_session: str | None = Cookie(default=None),
     actor: ActorContext = Depends(current_actor),
@@ -142,7 +153,7 @@ def change_password(
     # drop all sessions (leaked token shouldn't survive), reissue for this browser
     end_all_sessions(actor.user_ref)
     token = create_session(actor.user_ref)
-    _set_session_cookie(response, token)
+    _set_session_cookie(request, response, token)
     record_audit(actor_ref=actor.user_ref, action="auth.change_password", tenant_id=actor.tenant_id)
     return {"ok": True, "must_change_password": False}
 
@@ -164,7 +175,7 @@ class AcceptInviteRequest(BaseModel):
 
 
 @router.post("/api/auth/accept-invite")
-def accept_invite(payload: AcceptInviteRequest, response: Response) -> dict[str, Any]:
+def accept_invite(payload: AcceptInviteRequest, request: Request, response: Response) -> dict[str, Any]:
     invite = consume_invite(payload.token)
     if invite is None:
         raise HTTPException(status_code=404, detail="This invite link is invalid, expired, or already used")
@@ -174,7 +185,7 @@ def accept_invite(payload: AcceptInviteRequest, response: Response) -> dict[str,
     set_user_password(invite["user_ref"], hash_password(payload.password))  # also clears must_change_password
     end_all_sessions(invite["user_ref"])
     token = create_session(invite["user_ref"])
-    _set_session_cookie(response, token)
+    _set_session_cookie(request, response, token)
     record_audit(actor_ref=invite["user_ref"], action="auth.accept_invite", tenant_id=invite["tenant_id"], target_type="user", target_id=invite["user_ref"])
     actor = ActorContext(user_ref=invite["user_ref"], tenant_id=invite["tenant_id"], platform_role=None)
     return {"user": _actor_profile(actor)}
