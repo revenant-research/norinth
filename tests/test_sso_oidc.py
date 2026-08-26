@@ -47,7 +47,7 @@ class FakeIdP:
             "jwks_uri": f"{ISSUER}/jwks",
         }
 
-    def mint_id_token(self, nonce: str, *, issuer: str = ISSUER, audience: str = CLIENT_ID, email: str | None = None) -> str:
+    def mint_id_token(self, nonce: str, *, issuer: str = ISSUER, audience: str = CLIENT_ID, email: str | None = None, email_verified=...) -> str:
         now = int(time.time())
         claims = {
             "iss": issuer,
@@ -59,6 +59,9 @@ class FakeIdP:
             "exp": now + 300,
             "nonce": nonce,
         }
+        # sentinel default (...) omits the claim entirely; pass True/False to set it
+        if email_verified is not ...:
+            claims["email_verified"] = email_verified
         return jwt.encode(claims, self.private_key, algorithm="RS256", headers={"kid": self.kid})
 
     # http substitutes
@@ -279,6 +282,73 @@ def test_admin_can_configure_a_decision_default(super_admin_client, idp):
         browser.get(f"/api/auth/sso/callback?code=good-code&state={state}", follow_redirects=False)
         perms = browser.get("/api/auth/me").json()["user"]["permissions"]
         assert "review.decide" in perms
+    org.close()
+
+
+def test_unverified_email_cannot_take_over_an_existing_account(super_admin_client, idp):
+    """an idp that asserts an unverified email must not log into an existing account
+
+    the org already has a password account for alice@acme.test. an attacker who
+    controls an idp identity and self-asserts that address (email_verified false
+    or absent) must not be handed alice's account.
+    """
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    org = _org_admin(super_admin_client)
+    _configure(org)
+    # a pre-existing password account in the same tenant
+    assert org.post("/api/org/users", json={
+        "email": "alice@acme.test", "display_name": "Alice", "password": "alice-password-1",
+    }).status_code in (200, 201)
+
+    def token_for(email_verified):
+        def post_form(url, data, timeout=10.0):
+            return {"id_token": idp.mint_id_token(idp.pending_nonce, email="alice@acme.test", email_verified=email_verified)}
+        return post_form
+
+    import app.services.sso as sso_service
+
+    # email_verified: false -> rejected
+    with TestClient(app) as browser:
+        state = _start_and_capture(browser, idp)
+        sso_service.http_post_form = token_for(False)
+        resp = browser.get(f"/api/auth/sso/callback?code=good-code&state={state}", follow_redirects=False)
+        assert resp.status_code == 401, resp.text
+        assert "verified" in resp.json()["detail"].lower()
+
+    # email_verified absent -> also rejected for an existing account
+    with TestClient(app) as browser:
+        state = _start_and_capture(browser, idp)
+        sso_service.http_post_form = token_for(...)
+        resp = browser.get(f"/api/auth/sso/callback?code=good-code&state={state}", follow_redirects=False)
+        assert resp.status_code == 401, resp.text
+
+    org.close()
+
+
+def test_verified_email_may_bind_to_an_existing_account(super_admin_client, idp):
+    """the legitimate case: a verified email links the federated login to the account"""
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    org = _org_admin(super_admin_client)
+    _configure(org)
+    assert org.post("/api/org/users", json={
+        "email": "alice@acme.test", "display_name": "Alice", "password": "alice-password-1",
+    }).status_code in (200, 201)
+
+    def post_form(url, data, timeout=10.0):
+        return {"id_token": idp.mint_id_token(idp.pending_nonce, email="alice@acme.test", email_verified=True)}
+
+    import app.services.sso as sso_service
+
+    with TestClient(app) as browser:
+        state = _start_and_capture(browser, idp)
+        sso_service.http_post_form = post_form
+        resp = browser.get(f"/api/auth/sso/callback?code=good-code&state={state}", follow_redirects=False)
+        assert resp.status_code == 302, resp.text
+        assert "norinth_session" in resp.headers.get("set-cookie", "")
     org.close()
 
 
