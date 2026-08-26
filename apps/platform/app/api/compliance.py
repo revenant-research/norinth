@@ -133,7 +133,7 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
     for event in model_calls:
         attrs = event.get("attributes", {})
         metadata = attrs.get("metadata", {})
-        
+
         app_name = metadata.get("application_name", "unknown")
         workflow = metadata.get("workflow_name", "unknown")
         provider = attrs.get("provider", "unknown")
@@ -251,7 +251,7 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
         dependencies.append({"ref": f"system:{sys_key}", "dependsOn": depends_on})
 
     portfolio_ref = "urn:norinth:ai-portfolio"
-    metadata: dict[str, Any] = {
+    bom_metadata: dict[str, Any] = {
         "timestamp": model_calls[0].get("timestamp") if model_calls else now(),
         "component": {
             "type": "application",
@@ -267,7 +267,7 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
     }
     if truncated:
         # disclose that the ceiling was reached
-        metadata["properties"] = [
+        bom_metadata["properties"] = [
             {"name": "norinth:truncated", "value": "true"},
             {"name": "norinth:max_events_scanned", "value": str(_AIBOM_MAX_EVENTS)},
         ]
@@ -282,7 +282,7 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
         "specVersion": "1.6",
         "serialNumber": f"urn:uuid:{serial}",
         "version": 1,
-        "metadata": metadata,
+        "metadata": bom_metadata,
         "components": components,
         "dependencies": dependencies,
     }

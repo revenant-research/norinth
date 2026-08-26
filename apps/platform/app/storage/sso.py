@@ -101,7 +101,10 @@ def upsert_sso_configuration(
                 created_by,
             ),
         )
-        return public_sso_configuration(load_sso_configuration(tenant_id, connection))
+        # the row was just written, so the reload is never None
+        public = public_sso_configuration(load_sso_configuration(tenant_id, connection))
+        assert public is not None
+        return public
 
 
 def _decrypted(row: Any, tenant_id: str) -> dict[str, Any] | None:

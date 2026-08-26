@@ -19,8 +19,8 @@ fmt: ## Auto-format and fix lint
 	ruff check --fix apps/platform/app packages/python-sdk/norinth_logger tests scripts
 	ruff format apps/platform/app packages/python-sdk/norinth_logger tests
 
-type: ## Type-check the SDK
-	mypy packages/python-sdk/norinth_logger
+type: ## Type-check the platform and SDK
+	mypy apps/platform/app packages/python-sdk/norinth_logger
 
 test: ## Run the test suite
 	pytest

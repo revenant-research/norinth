@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from os import getenv
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -33,7 +34,7 @@ class NorinthConfig:
 
     @classmethod
     def from_env(cls, **overrides: object) -> NorinthConfig:
-        values = {
+        values: dict[str, Any] = {
             "api_key": getenv("NORINTH_API_KEY", "dev"),
             "signing_secret": getenv("NORINTH_SIGNING_SECRET"),
             "endpoint": getenv("NORINTH_ENDPOINT", "http://localhost:8001"),

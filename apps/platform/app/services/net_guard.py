@@ -91,18 +91,17 @@ class _PinnedHTTPConnection(http.client.HTTPConnection):
 
     def connect(self) -> None:
         ip = _resolve_validated_ip(self.host, self.port)
-        self.sock = socket.create_connection((ip, self.port), self.timeout, self.source_address)
-        if self._tunnel_host:
-            self._tunnel()
+        self.sock = socket.create_connection((ip, self.port), self.timeout)
 
 
 class _PinnedHTTPSConnection(http.client.HTTPSConnection):
     def connect(self) -> None:
         ip = _resolve_validated_ip(self.host, self.port)
-        sock = socket.create_connection((ip, self.port), self.timeout, self.source_address)
+        sock = socket.create_connection((ip, self.port), self.timeout)
         # keep the original hostname for SNI and certificate verification while
-        # the tcp connection targets the validated ip
-        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)
+        # the tcp connection targets the validated ip. _context is the ssl
+        # context http.client sets from the handler; it is not in the public stub
+        self.sock = self._context.wrap_socket(sock, server_hostname=self.host)  # type: ignore[attr-defined]
 
 
 class _PinnedHTTPHandler(urllib.request.HTTPHandler):

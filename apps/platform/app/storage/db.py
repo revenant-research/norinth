@@ -109,7 +109,15 @@ def translate_sql(sql: str, params: Any = None) -> str:
     out = out.replace("datetime('now')", _NOW_TEXT)
     if "INSERT OR IGNORE" in out.upper():
         out = re.sub(r"INSERT OR IGNORE", "INSERT", out, flags=re.IGNORECASE)
-        out = out.rstrip().rstrip(";") + " ON CONFLICT DO NOTHING"
+        body = out.rstrip().rstrip(";")
+        # place ON CONFLICT DO NOTHING before any trailing RETURNING so the two
+        # compose (postgres requires that order); without a RETURNING it just
+        # goes at the end as before
+        match = re.search(r"\bRETURNING\b", body, flags=re.IGNORECASE)
+        if match:
+            out = body[: match.start()].rstrip() + " ON CONFLICT DO NOTHING " + body[match.start() :]
+        else:
+            out = body + " ON CONFLICT DO NOTHING"
     if "INSERT OR REPLACE" in out.upper():
         out = _translate_replace(out)
     if isinstance(params, dict):

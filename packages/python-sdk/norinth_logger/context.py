@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 
 
@@ -23,5 +23,5 @@ def set_context(context: TraceContext):
     return _current_context.set(context)
 
 
-def reset_context(token: object) -> None:
+def reset_context(token: Token[TraceContext | None]) -> None:
     _current_context.reset(token)

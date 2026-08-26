@@ -107,58 +107,55 @@ def init_storage() -> None:
             pass
 
 
-def _existing_event_keys(connection, keys: list[tuple]) -> set[tuple]:
-    """the (tenant_id, trace_id, span_id) keys from `keys` already stored"""
-    trace_ids = sorted({key[1] for key in keys})
-    if not trace_ids:
-        return set()
-    placeholders = ",".join("?" for _ in trace_ids)
-    rows = connection.execute(
-        f"SELECT tenant_id, trace_id, span_id FROM sdk_events WHERE trace_id IN ({placeholders})",
-        tuple(trace_ids),
-    ).fetchall()
-    return {(row["tenant_id"], row["trace_id"], row["span_id"]) for row in rows}
+# columns written per event; ingested_at is stamped by SQL, not a bound param
+_EVENT_COLUMNS = [
+    "event_type", "schema_version", "trace_id", "span_id", "parent_span_id", "timestamp", "service",
+    "environment", "project", "system", "name", "status", "duration_ms", "tenant_id", "user_id",
+    "application_name", "workflow_name", "use_case", "model_purpose", "provider", "model",
+    "operation", "input_tokens", "output_tokens", "raw_event",
+]
+# keep each multi-row INSERT well under postgres's 65535 bound-parameter limit
+_INSERT_CHUNK = 500
 
 
 def insert_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """insert events idempotently, returning the events actually inserted
 
     INSERT OR IGNORE against the unique (tenant_id, trace_id, span_id) index so a
-    retried batch does not create duplicate rows. Only the newly inserted events
-    are returned, so the caller projects each event into governance state exactly
-    once — a retry that inserts nothing must not re-increment metrics.
+    retried batch does not create duplicate rows, and RETURNING reports the rows
+    this statement actually inserted. Because the database (not a pre-check)
+    decides what was inserted, two concurrent identical batches each learn the
+    truth: exactly one of them inserts a given event. Only the newly inserted
+    events are returned, so the caller projects each event exactly once — a retry
+    that inserts nothing must not re-increment metrics.
     """
     rows = [event_to_row(event) for event in events]
-    keys = [(row["tenant_id"], row["trace_id"], row["span_id"]) for row in rows]
+    if not rows:
+        return []
+    column_sql = ", ".join(_EVENT_COLUMNS)
+    row_placeholder = "(" + ", ".join("?" for _ in _EVENT_COLUMNS) + ", datetime('now'))"
+    inserted_keys: set[tuple] = set()
     with connect() as connection:
-        already = _existing_event_keys(connection, keys)
-        connection.executemany(
-            """
-            INSERT OR IGNORE INTO sdk_events (
-                event_type, schema_version, trace_id, span_id, parent_span_id, timestamp, service,
-                environment, project, system, name, status, duration_ms, tenant_id, user_id,
-                application_name, workflow_name, use_case, model_purpose, provider, model,
-                operation, input_tokens, output_tokens, raw_event, ingested_at
-            )
-            VALUES (
-                :event_type, :schema_version, :trace_id, :span_id, :parent_span_id, :timestamp,
-                :service, :environment, :project, :system, :name, :status, :duration_ms,
-                :tenant_id, :user_id, :application_name, :workflow_name, :use_case,
-                :model_purpose, :provider, :model, :operation, :input_tokens, :output_tokens,
-                :raw_event, datetime('now')
-            )
-            """,
-            rows,
-        )
-    # newly inserted = a key not already stored and not repeated earlier in this
-    # batch; preserves order, projects each event once
+        for start in range(0, len(rows), _INSERT_CHUNK):
+            chunk = rows[start : start + _INSERT_CHUNK]
+            values_sql = ", ".join(row_placeholder for _ in chunk)
+            params = [row[column] for row in chunk for column in _EVENT_COLUMNS]
+            returned = connection.execute(
+                f"INSERT OR IGNORE INTO sdk_events ({column_sql}, ingested_at) "
+                f"VALUES {values_sql} RETURNING tenant_id, trace_id, span_id",
+                tuple(params),
+            ).fetchall()
+            for row in returned:
+                inserted_keys.add((row["tenant_id"], row["trace_id"], row["span_id"]))
+    # return the first event for each key the database actually inserted, in
+    # order; a within-batch duplicate maps to one returned key, so emit it once
     inserted: list[dict[str, Any]] = []
-    seen = set(already)
-    for event, key in zip(events, keys, strict=True):
-        if key in seen:
-            continue
-        seen.add(key)
-        inserted.append(event)
+    seen: set[tuple] = set()
+    for event, row in zip(events, rows, strict=True):
+        key = (row["tenant_id"], row["trace_id"], row["span_id"])
+        if key in inserted_keys and key not in seen:
+            seen.add(key)
+            inserted.append(event)
     return inserted
 
 

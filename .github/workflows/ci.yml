@@ -30,7 +30,7 @@ jobs:
       - name: Lint (ruff)
         run: ruff check apps/platform/app packages/python-sdk/norinth_logger tests scripts
       - name: Type check (mypy)
-        run: mypy packages/python-sdk/norinth_logger || true  # non-blocking baseline; tightened over time
+        run: mypy apps/platform/app packages/python-sdk/norinth_logger
       - name: Test (pytest)
         run: pytest
 

@@ -21,6 +21,33 @@ def _model_call() -> dict:
     }
 
 
+def test_insert_events_returns_only_the_rows_it_inserted(client):
+    """RETURNING drives the inserted set: already-stored and within-batch
+    duplicate events are not returned, so projections run once each"""
+    from app.storage.raw_events import event_to_row, insert_events  # noqa: F401
+
+    def _ev(span: str) -> dict:
+        return {
+            "type": "model.call", "schema_version": "2026-01", "trace_id": f"t_{span}", "span_id": span,
+            "timestamp": "2026-08-22T00:00:00Z", "service": "svc", "environment": "prod", "project": "p1",
+            "status": "success",
+            "attributes": {"provider": "openai", "model": "gpt-4o", "usage": {"input_tokens": 1, "output_tokens": 1},
+                           "metadata": {"tenant_id": "acme", "application_name": "A", "workflow_name": "w"}},
+        }
+
+    # first insert of A and B
+    first = insert_events([_ev("A"), _ev("B")])
+    assert {e["span_id"] for e in first} == {"A", "B"}
+
+    # a batch overlapping the stored A plus a new C, with C duplicated in-batch:
+    # only one C is returned, and A (already stored) is not
+    second = insert_events([_ev("A"), _ev("C"), _ev("C")])
+    assert [e["span_id"] for e in second] == ["C"]
+
+    # replay of everything already stored: nothing returned
+    assert insert_events([_ev("A"), _ev("B"), _ev("C")]) == []
+
+
 def test_replaying_a_batch_does_not_double_count(super_admin_client):
     from app.main import app
     from fastapi.testclient import TestClient
