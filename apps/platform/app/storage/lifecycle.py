@@ -4,7 +4,7 @@ from hashlib import sha256
 from typing import Any
 
 from .entities import as_object, decode_json, encode_json, entity_id
-from .raw_events import connect
+from .raw_events import connect, deserialize_raw_event
 
 MATERIAL_FIELDS = {
     "agents",
@@ -129,7 +129,10 @@ def list_application_events(connection, app_context: dict[str, Any]) -> list[dic
         """,
         app_context,
     ).fetchall()
-    return [decode_json(row["raw_event"], {}) for row in rows]
+    # deserialize_raw_event decrypts when NORINTH_ENCRYPT_RAW_EVENTS=1 and passes
+    # plaintext through otherwise; a plain json decode would silently yield {} for
+    # every encrypted row, disabling material-change detection
+    return [deserialize_raw_event(row["raw_event"]) for row in rows]
 
 
 def build_fingerprints(app_context: dict[str, Any], events: list[dict[str, Any]]) -> list[dict[str, Any]]:
