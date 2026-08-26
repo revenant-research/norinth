@@ -318,6 +318,19 @@ def _0016_event_ingested_at(connection) -> None:
         connection.execute("UPDATE sdk_events SET ingested_at = timestamp WHERE ingested_at IS NULL")
 
 
+def _0017_audit_hmac_key_id(connection) -> None:
+    """record which hmac key anchored each audit row
+
+    lets the audit hmac key rotate without previously written rows reading as
+    tampered: verification checks each row under the key named here. rows written
+    before this migration carried an hmac under the single legacy key, so backfill
+    them to 'legacy'
+    """
+    if not _has_column(connection, "audit_logs", "hmac_key_id"):
+        connection.execute("ALTER TABLE audit_logs ADD COLUMN hmac_key_id TEXT")
+        connection.execute("UPDATE audit_logs SET hmac_key_id = 'legacy' WHERE row_hmac IS NOT NULL AND hmac_key_id IS NULL")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
@@ -335,6 +348,7 @@ MIGRATIONS: list[Migration] = [
     Migration(14, "per-organization telemetry retention window", _0014_org_retention_window),
     Migration(15, "versioned audit-chain hash algorithm", _0015_audit_hash_version),
     Migration(16, "server-stamped ingest time on raw events", _0016_event_ingested_at),
+    Migration(17, "audit-chain hmac key id for rotation", _0017_audit_hmac_key_id),
 ]
 
 

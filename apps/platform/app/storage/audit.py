@@ -52,11 +52,50 @@ def init_audit() -> None:
         connection.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor_ref)")
 
 
-def _audit_hmac_key() -> bytes | None:
-    """key the chain to a secret outside the db (NORINTH_SECRET_KEY) so db write
-    access alone can't recompute a valid chain; absent in dev, hash-only there"""
-    key = os.getenv("NORINTH_SECRET_KEY")
-    return key.encode("utf-8") if key else None
+def _audit_keyring() -> dict[str, bytes]:
+    """hmac keys available to anchor/verify rows, id -> raw bytes
+
+    keys the chain to a secret outside the db so db-write access alone can't
+    recompute a valid chain. a legacy NORINTH_SECRET_KEY is included under the id
+    "legacy" so rows written before the keyring still verify; a rotated setup adds
+    NORINTH_AUDIT_HMAC_KEYS (a JSON id->secret map) and NORINTH_AUDIT_HMAC_PRIMARY
+    """
+    ring: dict[str, bytes] = {}
+    legacy = os.getenv("NORINTH_SECRET_KEY")
+    if legacy:
+        ring["legacy"] = legacy.encode("utf-8")
+    raw = os.getenv("NORINTH_AUDIT_HMAC_KEYS")
+    if raw:
+        try:
+            entries = json.loads(raw)
+        except Exception as error:
+            raise RuntimeError("NORINTH_AUDIT_HMAC_KEYS is not valid JSON") from error
+        if not isinstance(entries, dict) or not entries:
+            raise RuntimeError("NORINTH_AUDIT_HMAC_KEYS must be a non-empty JSON object of {id: secret}")
+        for kid, value in entries.items():
+            if not isinstance(kid, str) or not kid:
+                raise RuntimeError("audit hmac key ids must be non-empty strings")
+            ring[kid] = value.encode("utf-8")
+    return ring
+
+
+def _audit_primary_id() -> str | None:
+    """id of the key that anchors new rows, or None when no key is configured"""
+    ring = _audit_keyring()
+    explicit = os.getenv("NORINTH_AUDIT_HMAC_PRIMARY")
+    if explicit:
+        if explicit not in ring:
+            raise RuntimeError(f"NORINTH_AUDIT_HMAC_PRIMARY '{explicit}' is not in the audit hmac keyring")
+        return explicit
+    if os.getenv("NORINTH_AUDIT_HMAC_KEYS"):
+        raise RuntimeError("NORINTH_AUDIT_HMAC_KEYS is set; also set NORINTH_AUDIT_HMAC_PRIMARY to name the active key")
+    if "legacy" in ring:
+        return "legacy"
+    return None
+
+
+def _hmac(key: bytes, row_hash: str) -> str:
+    return hmac.new(key, row_hash.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 # each row records the hash algorithm that produced it (hash_version), and
@@ -106,11 +145,12 @@ def _compute_row_hash(
     return hasher(prev_hash, created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json)
 
 
-def _compute_row_hmac(row_hash: str) -> str | None:
-    key = _audit_hmac_key()
-    if key is None:
-        return None
-    return hmac.new(key, row_hash.encode("utf-8"), hashlib.sha256).hexdigest()
+def _compute_row_hmac(row_hash: str) -> tuple[str | None, str | None]:
+    """(hmac, key_id) for a new row under the primary key, or (None, None)"""
+    primary = _audit_primary_id()
+    if primary is None:
+        return None, None
+    return _hmac(_audit_keyring()[primary], row_hash), primary
 
 
 def record_audit(
@@ -143,14 +183,14 @@ def record_audit(
             # the current version must always have a registered hasher; writing a
             # null hash would break the chain silently, so fail loudly instead
             raise RuntimeError(f"no audit hasher registered for version {CURRENT_HASH_VERSION}")
-        row_hmac = _compute_row_hmac(row_hash)
+        row_hmac, hmac_key_id = _compute_row_hmac(row_hash)
         connection.execute(
             """
             INSERT INTO audit_logs
-                (created_at, actor_ref, tenant_id, action, target_type, target_id, detail, prev_hash, row_hash, row_hmac, hash_version)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (created_at, actor_ref, tenant_id, action, target_type, target_id, detail, prev_hash, row_hash, row_hmac, hmac_key_id, hash_version)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json, prev_hash, row_hash, row_hmac, CURRENT_HASH_VERSION),
+            (created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json, prev_hash, row_hash, row_hmac, hmac_key_id, CURRENT_HASH_VERSION),
         )
         connection.execute("COMMIT")
     finally:
@@ -168,11 +208,11 @@ def verify_audit_chain(*, tenant_id: str | None = None) -> dict[str, Any]:
     with connect() as connection:
         rows = connection.execute(
             """
-            SELECT id, created_at, actor_ref, tenant_id, action, target_type, target_id, detail, prev_hash, row_hash, row_hmac, hash_version
+            SELECT id, created_at, actor_ref, tenant_id, action, target_type, target_id, detail, prev_hash, row_hash, row_hmac, hmac_key_id, hash_version
             FROM audit_logs ORDER BY id
             """
         ).fetchall()
-    key = _audit_hmac_key()
+    ring = _audit_keyring()
     expected_prev = GENESIS_HASH
     for row in rows:
         version = int(row["hash_version"]) if row["hash_version"] is not None else CURRENT_HASH_VERSION
@@ -191,10 +231,12 @@ def verify_audit_chain(*, tenant_id: str | None = None) -> dict[str, Any]:
             return {"ok": False, "entries": len(rows), "broken_at": row["id"], "reason": f"unknown hash version {version}"}
         if row["prev_hash"] != expected_prev or row["row_hash"] != recomputed:
             return {"ok": False, "entries": len(rows), "broken_at": row["id"], "reason": "hash chain"}
-        # a row written with an hmac must verify under the current key; without
-        # the key the chain can't be reproduced
+        # a row written with an hmac must verify under the key that anchored it
+        # (its hmac_key_id, or the legacy key for rows written before the keyring);
+        # without that key in the ring the chain can't be reproduced
         if row["row_hmac"] is not None:
-            if key is None or not hmac.compare_digest(row["row_hmac"], _compute_row_hmac(row["row_hash"]) or ""):
+            key = ring.get(row["hmac_key_id"] or "legacy")
+            if key is None or not hmac.compare_digest(row["row_hmac"], _hmac(key, row["row_hash"])):
                 return {"ok": False, "entries": len(rows), "broken_at": row["id"], "reason": "hmac"}
         expected_prev = row["row_hash"]
     return {"ok": True, "entries": len(rows), "broken_at": None}
