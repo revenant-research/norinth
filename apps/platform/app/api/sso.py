@@ -142,7 +142,7 @@ def sso_callback(request: Request, response: Response, code: str | None = None, 
         raise HTTPException(status_code=401, detail=str(error)) from error
     token = create_session(user["user_ref"])
     redirect = RedirectResponse("/", status_code=302)
-    _set_session_cookie(redirect, token)
+    _set_session_cookie(request, redirect, token)
     redirect.delete_cookie(_SSO_STATE_COOKIE, path="/api/auth/sso")
     record_audit(actor_ref=user["user_ref"], action="auth.sso_login", tenant_id=user.get("tenant_id"))
     return redirect

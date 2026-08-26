@@ -105,6 +105,34 @@ def test_csrf_accepts_https_origin_behind_trusted_proxy(client, monkeypatch):
     assert bad.status_code == 403
 
 
+def test_session_cookie_is_secure_over_https_even_without_the_admin_password_var(client, monkeypatch):
+    """Secure is decided by how the request arrived, not by an unrelated env var
+
+    the test env runs in development-defaults mode (NORINTH_SUPER_ADMIN_PASSWORD
+    unset), which is exactly the tls deployment that seeds its admin some other
+    way. an https request (here via a trusted proxy's x-forwarded-proto) must
+    still yield a Secure cookie; the old logic tied Secure to the admin-password
+    var and would ship it without Secure
+    """
+    monkeypatch.delenv("NORINTH_COOKIE_SECURE", raising=False)
+    monkeypatch.setenv("NORINTH_TRUST_PROXY", "1")
+    resp = client.post("/api/auth/login", json=GOOD, headers={
+        "Origin": "https://testserver",
+        "X-Forwarded-Proto": "https",
+        "X-Forwarded-Host": "testserver",
+    })
+    assert resp.status_code == 200, resp.text
+    assert "secure" in resp.headers.get("set-cookie", "").lower(), resp.headers.get("set-cookie")
+
+
+def test_session_cookie_is_not_secure_over_plain_http_dev(client, monkeypatch):
+    """plain-http dev must not get a Secure cookie or the browser drops it"""
+    monkeypatch.delenv("NORINTH_COOKIE_SECURE", raising=False)
+    resp = client.post("/api/auth/login", json=GOOD, headers={"Origin": "http://testserver"})
+    assert resp.status_code == 200, resp.text
+    assert "secure" not in resp.headers.get("set-cookie", "").lower(), resp.headers.get("set-cookie")
+
+
 def test_session_cookie_has_httponly_samesite_and_secure(client, monkeypatch):
     """the session cookie flags decide whether a session is stealable: HttpOnly
     keeps it out of reach of XSS, SameSite blunts CSRF, Secure keeps it off

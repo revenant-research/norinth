@@ -138,7 +138,7 @@ def saml_acs(request: Request, SAMLResponse: str = Form(...), RelayState: str | 
         raise HTTPException(status_code=401, detail=str(error)) from error
     token = create_session(user["user_ref"])
     redirect = RedirectResponse("/", status_code=303)
-    _set_session_cookie(redirect, token)
+    _set_session_cookie(request, redirect, token)
     redirect.delete_cookie(_SAML_REQUEST_COOKIE, path="/api/auth/saml")
     record_audit(actor_ref=user["user_ref"], action="auth.saml_login", tenant_id=user.get("tenant_id"))
     return redirect
