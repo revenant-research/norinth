@@ -8,6 +8,37 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "apps" / "platform"))
 
 
+def test_claim_uses_the_db_clock_not_the_app_clock(client, monkeypatch):
+    """a delivery worker must claim due rows on the db server's clock
+
+    next_attempt_at is written with the server clock (SQL datetime('now')). If the
+    claim compared it against this process's clock instead, an app host whose
+    clock lagged the db server would skip due rows. Simulate that lag and assert
+    the rows are still claimed.
+    """
+    import datetime as real_datetime
+
+    from app.storage import notifications as store
+    from app.storage.notifications import claim_pending, enqueue
+    from app.storage.raw_events import connect
+
+    class LaggingClock(real_datetime.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            # this process believes it is an hour behind the db server
+            return real_datetime.datetime.now(tz) - real_datetime.timedelta(hours=1)
+
+    monkeypatch.setattr(store, "datetime", LaggingClock)
+
+    with connect() as connection:
+        for i in range(3):
+            enqueue(connection, tenant_id="acme", channel="webhook", event_type="test.event",
+                    target=f"https://example.test/{i}", subject=None, payload={"i": i})
+
+    claimed = claim_pending(limit=10, worker_id="worker-a")
+    assert len(claimed) == 3, "due rows must be claimed on the server clock despite the lagging app clock"
+
+
 def test_migrations_are_idempotent(client):
     from app.storage.migrations import pending_migrations, run_migrations
 
