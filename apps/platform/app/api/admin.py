@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from app.api.pagination import PageParams
 from app.dependencies import ActorContext, current_actor
 from app.schemas.events import ScopeFilter
-from app.services.auth import MIN_PASSWORD_LENGTH, hash_password
+from app.services.auth import MIN_PASSWORD_LENGTH, end_all_sessions, hash_password
 from app.services.authorization import (
     ORG_ADMIN,
     PERM_ROLE_ASSIGN,
@@ -382,6 +382,9 @@ def reset_account_password(user_ref: str, actor: ActorContext = Depends(current_
         raise HTTPException(status_code=404, detail="User not found")
     temp_password = _temp_password()
     reset_user_password(user_ref, hash_password(temp_password))
+    # a reset is a clean break: drop the target's live sessions so an existing
+    # login cannot continue past the reset
+    end_all_sessions(user_ref)
     record_audit(
         actor_ref=actor.user_ref,
         action="account.reset_password",
@@ -389,6 +392,26 @@ def reset_account_password(user_ref: str, actor: ActorContext = Depends(current_
         target_type="user",
         target_id=user_ref,
     )
+    # the platform operator is otherwise walled out of tenant data, so a reset of
+    # one of an organization's own users is made visible to that organization
+    # rather than being a silent way to take over an account
+    tenant_id = target.get("tenant_id")
+    if tenant_id:
+        with connect() as connection:
+            notify(
+                connection,
+                tenant_id=tenant_id,
+                event_type="account.reset_by_operator",
+                subject=f"A platform operator reset the password for {user_ref}",
+                text=(
+                    f"A platform operator ({actor.user_ref}) issued a one-time password reset for "
+                    f"{user_ref} in your organization. If this was not expected, review the account "
+                    f"and rotate its credentials."
+                ),
+                data={"user_ref": user_ref, "reset_by": actor.user_ref},
+                to_roles=["org_admin"],
+                link=f"{public_base_url()}/#users",
+            )
     return {"user_ref": user_ref, "temporary_password": temp_password}
 
 
