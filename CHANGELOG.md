@@ -6,6 +6,55 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The content boundary now covers application `metadata`.** With
+  `capture_content` off, the SDK hashed prompts and completions but passed
+  `metadata` through verbatim, so an application that put a patient name or an
+  MRN in it wrote that value to storage on an install that had explicitly turned
+  capture off. Metadata is now treated as content: a fixed set of governance
+  labels passes through (redacted, length-capped) and every other key is reduced
+  to a type+hash summary. `NORINTH_METADATA_ALLOWLIST` opts individual keys back
+  into the clear.
+- **Incident descriptions obey the content boundary.** They were captured
+  unconditionally, on the reasoning that a governance record needs the narrative.
+  They are now hashed unless `NORINTH_CAPTURE_INCIDENT_DETAILS=true`. The
+  incident `title` stays readable — it labels the incident in every list and
+  alert — but is redacted and capped at 200 characters.
+- **Raw event bodies are encrypted at rest by default.** Encryption was opt-in
+  via `NORINTH_ENCRYPT_RAW_EVENTS=1`, so an install with a secret key configured
+  still wrote captured content in plaintext until someone found the flag. It now
+  follows the key; `NORINTH_ENCRYPT_RAW_EVENTS=0` is an explicit opt-out, and a
+  keyless install still stores plaintext because encryption fails closed.
+- **AI BOM vendor attribution is correct and deterministic.** Models and
+  providers were collected into two independent sets and every model was then
+  attributed to `next(iter(providers))`, so a system using two vendors
+  mis-attributed at least one model, and which one changed with the interpreter's
+  hash seed. Models now carry the `(provider, model)` pair their telemetry named,
+  and the document is byte-identical across hash seeds.
+- **OIDC endpoints must be HTTPS.** Discovery accepted whatever endpoints the
+  document returned, so a hostile or tampered response could point the token
+  exchange at an HTTP URL and receive the client secret and PKCE verifier in
+  cleartext. Endpoint schemes are now validated at discovery and re-validated at
+  use, and the document's `issuer` must match the configured one.
+- **SSO and SAML state cookies are proxy-aware.** They decided `Secure` from
+  `request.url.scheme`, which is HTTP behind a TLS-terminating proxy. They now
+  use the same signal as the session cookie.
+
+### Added
+
+- **`NORINTH_DURABLE`.** Delivery defaults are tuned for observability — async,
+  fail-open, bounded queue — and drop events when the queue fills with no spool
+  configured. A deployment treating telemetry as evidence can set this to refuse
+  to start without `NORINTH_SPOOL_DIR`, failing at boot rather than at audit.
+
+### Changed
+
+- **Base images are digest-pinned and Python dependencies are locked.** The image
+  now installs `apps/platform/requirements.lock.txt` with `--require-hashes`
+  (regenerate with `make lock`), and base images carry digests as well as tags,
+  so the artifact that was reviewed is the artifact that ships.
+
 ## [0.2.1] - 2026-08-24
 
 ### Fixed

@@ -11,8 +11,9 @@ cryptographic jobs:
 
 - **Secret encryption at rest** — `services/secrets.py` base64-decodes it to a
   32-byte AES-256-GCM key. It encrypts SSO OIDC client secrets (AAD =
-  `tenant_id`), webhook signing secrets (AAD = `webhook:<tenant>:<id>`), and,
-  when `NORINTH_ENCRYPT_RAW_EVENTS=1`, raw SDK events (AAD = `sdk_event`). Stored
+  `tenant_id`), webhook signing secrets (AAD = `webhook:<tenant>:<id>`), and
+  raw SDK events (AAD = `sdk_event`), which are encrypted whenever a key is
+  configured unless `NORINTH_ENCRYPT_RAW_EVENTS=0` opts out. Stored
   form: `enc:v1:<b64 nonce>:<b64 ciphertext+tag>`.
 - **Audit-chain anchoring** — `storage/audit.py` uses the same variable's raw
   UTF-8 bytes as the HMAC-SHA256 key for each row's `row_hmac`, so a DB-write

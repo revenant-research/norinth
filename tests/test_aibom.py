@@ -102,3 +102,70 @@ def test_aibom_dependencies_have_no_dangling_refs(org_with_events):
         assert edge["ref"] in refs
         for dep in edge["dependsOn"]:
             assert dep in refs, f"dangling dependency ref: {dep}"
+
+
+def test_model_vendor_attribution_comes_from_the_telemetry(org_with_events):
+    """each model is published by the provider its own events named
+
+    models and providers used to be collected into two independent sets and every
+    model was then assigned next(iter(providers)) -- so with two vendors on one
+    system, at least one model was attributed to the wrong vendor, and which one
+    changed with the hash seed. an inventory that misnames a vendor is not
+    evidence, so attribution is pinned here
+    """
+    bom = org_with_events.get("/api/compliance/aibom").json()
+    publishers = {
+        component["name"]: component["publisher"]
+        for component in bom["components"]
+        if component["type"] == "machine-learning-model"
+    }
+    assert publishers == {"gpt-4o": "openai", "claude-haiku-4-5": "anthropic"}
+
+
+def test_model_refs_agree_with_their_publisher(org_with_events):
+    """the bom-ref encodes the provider, so a mis-attribution also corrupts the dependency graph"""
+    bom = org_with_events.get("/api/compliance/aibom").json()
+    for component in bom["components"]:
+        if component["type"] == "machine-learning-model":
+            assert component["bom-ref"] == f"model:{component['publisher']}/{component['name']}"
+
+
+def test_aibom_is_identical_across_hash_seeds(org_with_events, fresh_db):
+    """same telemetry, same document, whatever the interpreter's hash seed is
+
+    set iteration order is stable within a process, so a same-process rerun cannot
+    catch seed-dependent output. the generator is re-run against the same database
+    in subprocesses under explicit, different PYTHONHASHSEED values instead
+    """
+    import json
+    import os
+    import pathlib
+    import subprocess
+    import sys
+
+    platform_dir = str(pathlib.Path(__file__).resolve().parents[1] / "apps" / "platform")
+    script = (
+        "import json, sys;"
+        f"sys.path.insert(0, {platform_dir!r});"
+        "from app.api.compliance import generate_aibom;"
+        "print(json.dumps(generate_aibom('acme', None, None), sort_keys=True))"
+    )
+
+    documents = []
+    for seed in ("0", "1", "12345"):
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            text=True,
+            env={**os.environ, "PYTHONHASHSEED": seed, "NORINTH_PLATFORM_DB": str(fresh_db)},
+        )
+        assert result.returncode == 0, result.stderr
+        documents.append(json.loads(result.stdout))
+
+    assert documents[0] == documents[1] == documents[2]
+    publishers = {
+        component["name"]: component["publisher"]
+        for component in documents[0]["components"]
+        if component["type"] == "machine-learning-model"
+    }
+    assert publishers == {"gpt-4o": "openai", "claude-haiku-4-5": "anthropic"}

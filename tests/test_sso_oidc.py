@@ -358,3 +358,85 @@ def test_sso_config_requires_org_admin(super_admin_client, idp):
         "/api/org/sso", json={"issuer": ISSUER, "client_id": CLIENT_ID, "client_secret": "x"}
     )
     assert resp.status_code == 403
+
+
+# --- endpoint scheme validation ---------------------------------------------------
+#
+# discovery endpoints were taken from the document verbatim. the token exchange
+# posts the client secret and the pkce verifier to token_endpoint, so a hostile
+# or tampered discovery response naming an http endpoint puts both on the wire in
+# cleartext. net_guard permits http (webhook receivers legitimately use it), so
+# the scheme has to be pinned in the sso layer itself.
+
+
+@pytest.mark.parametrize("endpoint", ["authorization_endpoint", "token_endpoint", "jwks_uri"])
+def test_discovery_refuses_a_plaintext_endpoint(idp, endpoint):
+    import app.services.sso as sso_service
+
+    document = idp.discovery()
+    document[endpoint] = document[endpoint].replace("https://", "http://")
+    idp.discovery = lambda: document
+
+    with pytest.raises(sso_service.SsoError) as error:
+        sso_service.discover(ISSUER)
+    assert endpoint in str(error.value)
+    assert "https" in str(error.value)
+
+
+def test_discovery_refuses_an_issuer_that_does_not_match_the_configured_one(idp):
+    """openid discovery requires the document's issuer to match the one it was fetched for
+
+    the returned issuer is what id_token validation is later measured against, so
+    letting the document name it lets a tampered response choose its own bar
+    """
+    import app.services.sso as sso_service
+
+    document = idp.discovery()
+    document["issuer"] = "https://evil.example"
+    idp.discovery = lambda: document
+
+    with pytest.raises(sso_service.SsoError, match="issuer"):
+        sso_service.discover(ISSUER)
+
+
+def test_a_stored_plaintext_token_endpoint_is_refused_before_the_secret_is_sent(super_admin_client, idp):
+    """rows written before this check, or edited straight in the database, fail closed too"""
+    import app.services.sso as sso_service
+    from app.storage.sso import upsert_sso_configuration
+
+    org = _org_admin(super_admin_client)
+    _configure(org)
+    upsert_sso_configuration(
+        tenant_id="acme",
+        issuer=ISSUER,
+        client_id=CLIENT_ID,
+        client_secret="s3cret",
+        authorization_endpoint=f"{ISSUER}/authorize",
+        token_endpoint=ISSUER.replace("https://", "http://") + "/token",
+        jwks_uri=f"{ISSUER}/jwks",
+        default_role="governance_viewer",
+        allowed_email_domain=None,
+        created_by=None,
+    )
+
+    state = _start_and_capture(org, idp)
+    with pytest.raises(sso_service.SsoError, match="token_endpoint"):
+        sso_service.complete_login("good-code", state, "https://norinth.test/api/auth/sso/callback")
+    assert idp.token_requests == [], "the client secret must not be sent to a cleartext endpoint"
+
+
+def test_state_cookie_is_secure_behind_a_tls_terminating_proxy(super_admin_client, idp, monkeypatch):
+    """the login state cookie uses the same proxy-aware signal as the session cookie
+
+    behind a proxy that terminates tls, request.url.scheme is http, so deciding
+    Secure from it alone left the sso state cookie unmarked on a connection that
+    was in fact https
+    """
+    monkeypatch.setenv("NORINTH_TRUST_PROXY", "1")
+    org = _org_admin(super_admin_client)
+    _configure(org)
+
+    start = org.get("/api/auth/sso/acme/start", follow_redirects=False,
+                    headers={"x-forwarded-proto": "https"})
+    assert start.status_code == 302
+    assert "secure" in start.headers["set-cookie"].lower()

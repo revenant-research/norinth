@@ -45,7 +45,8 @@ services:
       start_period: 20s
 
   postgres:
-    image: postgres:16
+    # pinned by digest; a tag can be repointed under a running fleet
+    image: postgres:16@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94
     container_name: norinth-postgres
     environment:
       POSTGRES_USER: norinth

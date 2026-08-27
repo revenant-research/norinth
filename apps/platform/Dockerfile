@@ -2,10 +2,11 @@
 
 # ---- Stage 1: build the dashboard bundle from source -------------------------
 # The compiled bundle is a build artifact (not committed), so it is built from
-# source in the image and reviewers never have to trust a minified blob. (The
-# base images below are pinned by tag, not digest, so the build is repeatable
-# from source but not bit-for-bit reproducible.)
-FROM node:26-alpine AS frontend
+# source in the image and reviewers never have to trust a minified blob. Base
+# images are pinned by digest as well as tag: a tag is mutable, so tag-only pins
+# mean the image audited is not necessarily the image shipped. The tag is kept
+# alongside for readability. Refresh both together when bumping a base image.
+FROM node:26-alpine@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019 AS frontend
 WORKDIR /src/frontend
 COPY apps/platform/frontend/package.json apps/platform/frontend/package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -14,7 +15,7 @@ COPY apps/platform/frontend/ ./
 RUN npm run build
 
 # ---- Stage 2: runtime ----------------------------------------------------------
-FROM python:3.14-slim
+FROM python:3.14-slim@sha256:cae66f2ef0ec51a9891263eeee7f987dacf0a9879e8aa9353d5606e0530619a5
 
 # Non-root runtime user
 RUN groupadd --system norinth && useradd --system --gid norinth --home /app norinth
@@ -26,9 +27,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app \
     NORINTH_PLATFORM_DB=/app/data/norinth.sqlite3
 
-# Install dependencies (path is relative to the build context = repo root)
-COPY apps/platform/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install dependencies (path is relative to the build context = repo root).
+# The lock file pins every transitive dependency to an exact version and hash, so
+# the image contents follow from the repo rather than from whatever the index
+# served that day. --require-hashes makes a tampered or substituted artifact a
+# build failure instead of a silent swap. Regenerate with `make lock`.
+COPY apps/platform/requirements.lock.txt .
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock.txt
 
 # Application code, then the freshly built dashboard bundle on top
 COPY apps/platform/app /app/app

@@ -27,6 +27,8 @@ JWKS, SAML) and Google Fonts for the dashboard's typeface.
 |---|---|---|---|
 | Telemetry metadata: model, provider, latency, token counts, status, tool names, guardrail decisions, eval results, agent steps | SDK / OTel | Low. Operational. | `sdk_events`, derived entity tables |
 | Prompt / completion **text** | SDK | **High** (may contain PHI/PII) | **Not sent by default.** The SDK sends a keyed HMAC fingerprint (`privacy.py`); raw text only if `NORINTH_CAPTURE_CONTENT=1` is set on the application side. |
+| Application **`metadata`** | SDK | **High** (arbitrary caller data; may contain PHI/PII) | **Not sent by default.** Only the governance labels in `privacy.METADATA_SAFE_KEYS` pass through (redacted, capped at 256 chars); every other key is reduced to a type+hash summary unless `NORINTH_CAPTURE_CONTENT=1` or the key is named in `NORINTH_METADATA_ALLOWLIST`. |
+| Incident **description** | SDK | **High** (human narrative; may contain PHI/PII) | **Not sent by default.** Hashed unless `NORINTH_CAPTURE_CONTENT=1` or `NORINTH_CAPTURE_INCIDENT_DETAILS=1`. The incident `title` is captured by design (redacted, capped at 200 chars) because it labels the incident in every list and alert. |
 | Exception messages | SDK | Medium (often contain PII) | Hashed + length by default (`summarize_error`). |
 | Governance records: systems, owners, findings, decisions with rationale, exceptions, incidents | People via the dashboard | Medium (business-confidential) | PostgreSQL |
 | Identity: users, emails, password hashes (salted PBKDF2-HMAC via `services/auth.py`), role assignments | Admins / SCIM / SSO | Medium | PostgreSQL |

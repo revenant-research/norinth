@@ -1,11 +1,15 @@
-.PHONY: help install dev-install lint fmt type test test-cov build-frontend run docker-build docker-up clean
+.PHONY: help install dev-install lint fmt type test test-cov build-frontend run docker-build docker-up clean lock
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
-install: ## Install runtime dependencies
-	pip install -r apps/platform/requirements.txt
+install: ## Install runtime dependencies (exact pinned versions)
+	pip install --require-hashes -r apps/platform/requirements.lock.txt
 	pip install -e packages/python-sdk
+
+lock: ## Regenerate the dependency lock from requirements.txt (needs pip-tools, python 3.14 to match the image)
+	pip-compile --generate-hashes --no-strip-extras \
+		--output-file=apps/platform/requirements.lock.txt apps/platform/requirements.txt
 
 dev-install: ## Install dev + runtime dependencies and pre-commit hooks
 	pip install -r requirements-dev.txt
