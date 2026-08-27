@@ -269,8 +269,18 @@ Run the same checks CI does with `make lint` and `make test`.
 ## A note on privacy
 
 The SDK is observe-only by default: it records structured metadata and hashes of
-inputs and outputs, not the raw text, and it never blocks your application. If
-you deliberately turn on content capture (`NORINTH_CAPTURE_CONTENT=true`), the
+inputs and outputs, not the raw text, and it never blocks your application. The
+content boundary covers the `metadata` your application passes as well as prompts
+and completions — with capture off, only a fixed set of governance labels
+(`application_name`, `workflow_name`, `use_case`, `model_purpose`, `user_id`,
+`conversation_id`, `tenant_id`) reaches the platform in the clear, and any other
+key is hashed. Incident descriptions are hashed on the same terms.
+
+If you deliberately turn on content capture (`NORINTH_CAPTURE_CONTENT=true`), the
 SDK still redacts common secrets and identifiers before anything leaves your
-process, and the platform can encrypt raw event bodies at rest. Because you run
-the whole system, your telemetry never leaves your network.
+process. On the platform, raw event bodies are encrypted at rest whenever a
+secret key is configured. Because you run the whole system, your telemetry never
+leaves your network.
+
+See [`packages/python-sdk/README.md`](packages/python-sdk/README.md) for exactly
+what crosses the boundary, and how to widen or narrow it.

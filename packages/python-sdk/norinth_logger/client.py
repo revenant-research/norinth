@@ -7,13 +7,30 @@ from typing import Any
 
 from .config import NorinthConfig
 from .context import TraceContext, get_context, reset_context, set_context
-from .privacy import infer_governance_context, summarize_call, summarize_error, summarize_value
+from .privacy import (
+    infer_governance_context,
+    redact_text,
+    sanitize_metadata,
+    summarize_call,
+    summarize_error,
+    summarize_value,
+)
 from .schemas import NorinthEvent, new_id
 from .transport import EventTransport
+
+# an incident title is a label, not a narrative; cap it so a pasted record
+# body cannot ride into the incident list under the title field
+_MAX_TITLE_LEN = 200
 
 
 class NorinthClient:
     def __init__(self, config: NorinthConfig) -> None:
+        if config.durable and not config.spool_dir:
+            raise ValueError(
+                "durable delivery requires spool_dir: without a disk spool the transport "
+                "drops events when the queue fills or delivery keeps failing, and the loss "
+                "is only visible in the SDK's own counters"
+            )
         self.config = config
         self.transport = EventTransport(config)
         self.emit_sdk_health("initialized")
@@ -44,6 +61,25 @@ class NorinthClient:
         for key, value in defaults.items():
             metadata.setdefault(key, value)
         event.attributes["metadata"] = metadata
+
+    def _metadata(self, *sources: dict[str, Any] | None) -> dict[str, Any]:
+        """merge context and caller metadata into a governance-safe mapping
+
+        app metadata is arbitrary caller data, so it goes through the same
+        content boundary as prompts and responses: with capture_content off,
+        governance labels pass through redacted and anything else is hashed.
+        see privacy.sanitize_metadata
+        """
+        merged: dict[str, Any] = {}
+        for source in sources:
+            if source:
+                merged.update(source)
+        return sanitize_metadata(
+            merged,
+            self.config.capture_content,
+            self.config.signing_secret,
+            self.config.metadata_allowlist,
+        )
 
     def emit_sdk_health(self, state: str) -> None:
         stats = self.transport.stats
@@ -121,7 +157,7 @@ class NorinthClient:
                                 attributes={
                                     "function": f"{inner.__module__}.{inner.__name__}",
                                     "call": summarize_call(args, kwargs, self.config.capture_content, self.config.signing_secret),
-                                    "metadata": context.metadata,
+                                    "metadata": self._metadata(context.metadata),
                                     "error": error_summary,
                                 },
                             ),
@@ -171,7 +207,7 @@ class NorinthClient:
                     "prompt": summarize_value(prompt, self.config.capture_content, self.config.signing_secret),
                     "response": summarize_value(response, self.config.capture_content, self.config.signing_secret),
                     "usage": usage or {},
-                    "metadata": {**context.metadata, **(metadata or {})},
+                    "metadata": self._metadata(context.metadata, metadata),
                     "error": error,
                 },
             ),
@@ -207,7 +243,7 @@ class NorinthClient:
                     "query": summarize_value(query, self.config.capture_content, self.config.signing_secret),
                     "documents": summarize_value(documents, self.config.capture_content, self.config.signing_secret),
                     "document_count": len(documents),
-                    "metadata": {**context.metadata, **(metadata or {})},
+                    "metadata": self._metadata(context.metadata, metadata),
                     "error": error,
                 },
             )
@@ -242,7 +278,7 @@ class NorinthClient:
                     "tool_name": tool_name,
                     "arguments": summarize_value(arguments, self.config.capture_content, self.config.signing_secret),
                     "result": summarize_value(result, self.config.capture_content, self.config.signing_secret),
-                    "metadata": {**context.metadata, **(metadata or {})},
+                    "metadata": self._metadata(context.metadata, metadata),
                     "error": error,
                 },
             )
@@ -276,7 +312,7 @@ class NorinthClient:
                     "decision": decision,
                     "score": score,
                     "matched_rules": matched_rules or [],
-                    "metadata": {**context.metadata, **(metadata or {})},
+                    "metadata": self._metadata(context.metadata, metadata),
                 },
             )
         )
@@ -298,7 +334,7 @@ class NorinthClient:
             "score": score,
             "threshold": threshold,
             "passed": passed,
-            "metadata": {**context.metadata, **(metadata or {})},
+            "metadata": self._metadata(context.metadata, metadata),
         }
         # the release gate only counts an eval as evidence if it names the build
         # it ran against (artifact_ref preferred, prompt_version fallback), and the
@@ -353,7 +389,7 @@ class NorinthClient:
                     "steps": steps,
                     "step_count": len(steps),
                     "outcome": outcome,
-                    "metadata": {**context.metadata, **(metadata or {})},
+                    "metadata": self._metadata(context.metadata, metadata),
                 },
             )
         )
@@ -373,12 +409,11 @@ class NorinthClient:
         metadata: dict[str, Any] | None = None,
     ) -> None:
         context = get_context() or TraceContext(trace_id=new_id("trc"), span_id=new_id("spn"))
-        event_metadata = {
-            **context.metadata,
-            **(metadata or {}),
-            "application_name": application_name,
-            "workflow_name": workflow_name,
-        }
+        event_metadata = self._metadata(
+            context.metadata,
+            metadata,
+            {"application_name": application_name, "workflow_name": workflow_name},
+        )
         self.record(
             NorinthEvent(
                 type="prompt.event",
@@ -420,12 +455,11 @@ class NorinthClient:
         metadata: dict[str, Any] | None = None,
     ) -> None:
         context = get_context() or TraceContext(trace_id=new_id("trc"), span_id=new_id("spn"))
-        event_metadata = {
-            **context.metadata,
-            **(metadata or {}),
-            "application_name": application_name,
-            "workflow_name": workflow_name,
-        }
+        event_metadata = self._metadata(
+            context.metadata,
+            metadata,
+            {"application_name": application_name, "workflow_name": workflow_name},
+        )
         self.record(
             NorinthEvent(
                 type="deployment.event",
@@ -469,12 +503,11 @@ class NorinthClient:
         metadata: dict[str, Any] | None = None,
     ) -> None:
         context = get_context() or TraceContext(trace_id=new_id("trc"), span_id=new_id("spn"))
-        event_metadata = {
-            **context.metadata,
-            **(metadata or {}),
-            "application_name": application_name,
-            "workflow_name": workflow_name,
-        }
+        event_metadata = self._metadata(
+            context.metadata,
+            metadata,
+            {"application_name": application_name, "workflow_name": workflow_name},
+        )
         self.record(
             NorinthEvent(
                 type="incident.event",
@@ -489,15 +522,25 @@ class NorinthClient:
                 status="error" if status in {"open", "investigating"} else "success",
                 attributes={
                     "incident_id": incident_id,
-                    "title": title,
+                    # the title is the incident's label in every list and alert, so it
+                    # stays readable rather than becoming a digest. it is an operator-
+                    # authored short label, not narrative: redacted and length-capped,
+                    # and documented as a field that must not carry phi
+                    "title": redact_text(str(title))[:_MAX_TITLE_LEN],
                     "severity": severity,
                     "incident_status": status,
                     # an incident description is written by a person for the governance
-                    # record, not model input or output. hashing it leaves the reviewer
-                    # and the auditor holding a digest instead of an account of what
-                    # happened, so it is always captured; redaction still masks
-                    # anything secret-shaped that was pasted in
-                    "description": summarize_value(description, True, self.config.signing_secret),
+                    # record, but it is still free text that can carry phi, so it obeys
+                    # the content boundary like anything else. an org that wants the
+                    # narrative in the record opts in with capture_incident_details,
+                    # and redaction masks secret-shaped text either way. with capture
+                    # off the reviewer gets a digest and reads the narrative in the
+                    # incident system of record instead
+                    "description": summarize_value(
+                        description,
+                        self.config.capture_content or self.config.capture_incident_details,
+                        self.config.signing_secret,
+                    ),
                     "detected_by": detected_by,
                     "impacted_trace_id": impacted_trace_id,
                     "provider": provider,

@@ -160,3 +160,52 @@ def infer_governance_context(args: tuple[Any, ...], kwargs: dict[str, Any]) -> d
                     context[_APP_TENANT_OUTPUT_KEY] = label
                     break
     return context
+
+
+# metadata is app-supplied and can hold anything the caller passes in, so with
+# content capture off it is treated as content rather than trusted. the keys the
+# platform reads for inventory and control matching pass through (redacted and
+# length-capped); every other key is reduced to a type+hash summary so the shape
+# stays visible for debugging while the value never leaves the process. apps that
+# need an extra label in the clear add it via config.metadata_allowlist
+METADATA_SAFE_KEYS = frozenset(
+    {
+        *GOVERNANCE_CONTEXT_FIELDS,
+        "workflow_name",
+        "conversation_id",
+        _APP_TENANT_OUTPUT_KEY,
+        # explicitly passed tenant_id is the platform routing key the ingestion
+        # endpoint checks the batch against, so it has to survive verbatim. this
+        # is the caller declaring one, not the inference path above, which still
+        # refuses to guess it from app objects
+        "tenant_id",
+    }
+)
+
+
+def sanitize_metadata(
+    metadata: dict[str, Any] | None,
+    capture_content: bool,
+    hash_key: str | None = None,
+    allowlist: frozenset[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """governance-safe view of app metadata; see METADATA_SAFE_KEYS"""
+    if not metadata:
+        return {}
+    if capture_content:
+        # content capture is an explicit opt-in; redact and pass through
+        content = _capture_content(metadata)
+        return content if isinstance(content, dict) else {}
+
+    safe_keys = METADATA_SAFE_KEYS if allowlist is None else METADATA_SAFE_KEYS | frozenset(allowlist)
+    sanitized: dict[str, Any] = {}
+    for key, value in metadata.items():
+        name = str(key)
+        if name in safe_keys:
+            label = _scalar_label(value)
+            if label is not None:
+                sanitized[name] = redact_text(label)
+                continue
+            # an allowlisted key holding a structure is not a label; summarize it
+        sanitized[name] = summarize_value(value, False, hash_key)
+    return sanitized

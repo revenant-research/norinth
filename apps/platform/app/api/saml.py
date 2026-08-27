@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 from pydantic import BaseModel, Field
 
-from app.api.auth import _set_session_cookie
+from app.api.auth import _cookie_secure, _set_session_cookie
 from app.dependencies import ActorContext, current_actor
 from app.services.auth import create_session
 from app.services.authorization import PERM_USER_MANAGE, AuthorizationError, require_permission
@@ -123,7 +123,10 @@ def saml_start(tenant_id: str, request: Request):
         max_age=600,
         httponly=True,
         samesite="none",
-        secure=request.url.scheme == "https",
+        # same proxy-aware signal as the session cookie; behind a tls-terminating
+        # proxy request.url.scheme is http, which would drop Secure on a login
+        # cookie that is travelling over https
+        secure=_cookie_secure(request),
         path="/api/auth/saml",
     )
     return redirect

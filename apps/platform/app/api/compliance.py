@@ -128,7 +128,6 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
 
     systems = {}
     providers_in_use = set()
-    models_in_use = set()
 
     for event in model_calls:
         attrs = event.get("attributes", {})
@@ -140,7 +139,6 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
         model = attrs.get("model", "unknown")
 
         providers_in_use.add(provider)
-        models_in_use.add(model)
 
         sys_key = f"{app_name}:{workflow}"
         if sys_key not in systems:
@@ -156,7 +154,10 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
                 "agents": set()
             }
         
-        systems[sys_key]["models"].add(model)
+        # store the pair the event actually carried; attributing a model to an
+        # arbitrary member of a per-system provider set makes the vendor column
+        # depend on set iteration order, which changes with the hash seed
+        systems[sys_key]["models"].add((provider, model))
         systems[sys_key]["providers"].add(provider)
 
     for event in retrievals:
@@ -212,9 +213,8 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
         })
 
     seen_models: set[str] = set()
-    for data in systems.values():
-        for model in data["models"]:
-            provider = next(iter(data["providers"]), "unknown")
+    for _, data in sorted(systems.items()):
+        for provider, model in sorted(data["models"]):
             ref = _model_ref(provider, model)
             if ref in seen_models:
                 continue
@@ -246,7 +246,7 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
             "description": data["purpose"] or data["use_case"] or "AI system observed in runtime telemetry",
             "properties": properties,
         })
-        depends_on = sorted({_model_ref(next(iter(data["providers"]), "unknown"), m) for m in data["models"]})
+        depends_on = sorted({_model_ref(provider, model) for provider, model in data["models"]})
         depends_on += sorted(_provider_ref(p) for p in data["providers"])
         dependencies.append({"ref": f"system:{sys_key}", "dependsOn": depends_on})
 

@@ -133,11 +133,37 @@ themselves; the platform strips it and sets it only after verification.
   fails, your code keeps running. Transient failures are retried with backoff;
   set `NORINTH_SPOOL_DIR` to persist un-delivered batches to disk and redeliver
   them on recovery instead of dropping evidence.
+
+  Be clear-eyed about the default: async delivery with a bounded in-memory queue
+  (`max_queue_size`, default 1000) *will* drop events if the queue fills or
+  delivery keeps failing and no spool is configured. That trade is right for
+  observability in a request path and wrong when the events are your compliance
+  record. If you are relying on this telemetry as evidence, set
+  `NORINTH_DURABLE=true` alongside `NORINTH_SPOOL_DIR`: the client then refuses
+  to start without a spool, so the deployment fails at boot rather than at audit.
+  Drop counts are reported on the `sdk.health` event.
 - **Content capture is opt-in.** Set `NORINTH_CAPTURE_CONTENT=true` only in a
   controlled environment where raw prompt/response capture is intended. Even
   then, only JSON-native content is captured (never a repr of a client or config
   object), and emails, national ID numbers, card numbers and API-key-shaped
   tokens are masked before the content leaves the process.
+- **`metadata=` is inside the content boundary.** Whatever your application
+  passes as `metadata` is caller data, so with capture off it is treated like a
+  prompt: the governance labels the platform actually reads pass through
+  (redacted and length-capped), and every other key is reduced to a
+  `{type, hash, size}` summary. The key itself is kept, so you can still see
+  what was sent without the value leaving your process. Add extra keys you want
+  in the clear with `NORINTH_METADATA_ALLOWLIST=region,tier`.
+
+  The labels that pass through by default: `application_name`, `workflow_name`,
+  `use_case`, `model_purpose`, `user_id`, `conversation_id`, `subject_tenant`
+  and `tenant_id`. Treat those as fields that reach the platform in the clear,
+  and do not put identifiers about a *subject* (a patient, a claimant) in them.
+- **Incident narrative is opt-in too.** `incident(description=...)` is free text
+  written by a person, so it obeys the same boundary and is hashed unless you set
+  `NORINTH_CAPTURE_INCIDENT_DETAILS=true`. The incident `title` is always kept
+  readable, because it labels the incident everywhere it appears — it is
+  redacted and capped at 200 characters, and must not carry PHI.
 - **Optional payload signing.** Set a signing secret to attach an
   `X-Norinth-Signature` (HMAC-SHA256) header so a receiver can verify the
   payload was not tampered with in transit.

@@ -13,8 +13,11 @@ for security reports.
 - **Platform** (`apps/platform/`) — the server. Highest priority.
 - **SDK** (`packages/python-sdk/`) — the open telemetry client. The SDK is
   observe-only and fail-open by default; report any path that can (a) block or
-  crash host application code, or (b) transmit raw prompt/response content when
-  `NORINTH_CAPTURE_CONTENT` is not enabled.
+  crash host application code, or (b) transmit any caller-supplied content —
+  prompts, completions, `metadata` values, incident narrative — when
+  `NORINTH_CAPTURE_CONTENT` is not enabled. The documented exceptions that are
+  captured by design are the governance labels listed in the SDK README and the
+  incident `title`.
 
 ## Security model
 

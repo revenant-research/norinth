@@ -10,15 +10,26 @@ from app.services import secrets as secret_store
 from . import db
 
 # the raw event body can carry prompt/response content (phi with content capture
-# on). with NORINTH_ENCRYPT_RAW_EVENTS=1 the raw_event column is encrypted at
-# rest while the extracted governance columns stay queryable in plaintext. reads
-# decrypt transparently and legacy plaintext rows pass through, so the flag can
-# be turned on without a migration
+# on), so the raw_event column is encrypted at rest whenever a secret key is
+# configured, while the extracted governance columns stay queryable in plaintext.
+# reads decrypt transparently and legacy plaintext rows pass through, so this
+# needs no migration in either direction
 _RAW_EVENT_AAD = "sdk_event"
 
 
 def _encrypt_raw_events() -> bool:
-    return os.getenv("NORINTH_ENCRYPT_RAW_EVENTS", "0").lower() in {"1", "true", "yes"}
+    """whether to encrypt raw event bodies at rest
+
+    defaults to on wherever a secret key is configured, so a real install protects
+    captured content without having to find a flag first. keyless dev installs
+    keep storing plaintext (secret_store.encrypt fails closed without a key), and
+    NORINTH_ENCRYPT_RAW_EVENTS=0 is an explicit opt-out for an operator who has a
+    key but wants the column queryable
+    """
+    setting = os.getenv("NORINTH_ENCRYPT_RAW_EVENTS")
+    if setting is not None and setting.strip() != "":
+        return setting.strip().lower() in {"1", "true", "yes"}
+    return secret_store.encryption_enabled()
 
 
 def serialize_raw_event(event: dict[str, Any]) -> str:

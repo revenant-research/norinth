@@ -110,8 +110,17 @@ Offboarding an organization entirely is a separate, irreversible operation
 SDK-side variables (in your applications): `NORINTH_API_KEY`, `NORINTH_ENDPOINT`,
 `NORINTH_PROJECT`, `NORINTH_ENVIRONMENT`, `NORINTH_SERVICE`,
 `NORINTH_APPLICATION_NAME`, `NORINTH_USE_CASE`, `NORINTH_MODE`,
-`NORINTH_CAPTURE_CONTENT` (off by default; prompts and completions are hashed).
+`NORINTH_CAPTURE_CONTENT` (off by default; prompts, completions and `metadata`
+values are hashed), `NORINTH_METADATA_ALLOWLIST` (extra metadata keys to keep in
+the clear), `NORINTH_CAPTURE_INCIDENT_DETAILS` (off by default; incident
+descriptions are hashed), `NORINTH_SPOOL_DIR` and `NORINTH_DURABLE` (refuse to
+start without a spool, for deployments treating telemetry as evidence).
 See `packages/python-sdk/README.md`.
+
+Raw event bodies are encrypted at rest whenever `NORINTH_SECRET_KEY` /
+`NORINTH_SECRET_KEYS` is configured. Set `NORINTH_ENCRYPT_RAW_EVENTS=0` to opt
+out deliberately (for example to keep the column queryable); a keyless install
+stores plaintext because encryption fails closed without a key.
 
 ## 4. Connecting your identity provider
 

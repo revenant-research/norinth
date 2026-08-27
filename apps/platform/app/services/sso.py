@@ -51,6 +51,36 @@ def http_post_form(url: str, data: dict[str, str], timeout: float = 10.0) -> dic
 # --- discovery -------------------------------------------------------------------
 
 
+def _require_https_endpoint(url: Any, label: str) -> str:
+    """an endpoint we send the client secret, pkce verifier or a token to must be https
+
+    the discovery document is attacker-controllable in the threat model this
+    guards -- a hostile or compromised idp, or a tampered response -- and an http
+    endpoint there would put the client secret and code verifier on the wire in
+    cleartext. net_guard allows http (webhook receivers legitimately use it), so
+    the scheme has to be pinned here
+    """
+    if not isinstance(url, str) or not url.strip():
+        raise SsoError(f"{label} is missing")
+    parsed = parse.urlsplit(url.strip())
+    if parsed.scheme.lower() != "https":
+        raise SsoError(f"{label} must use https, got {parsed.scheme or 'no scheme'!r}")
+    if not parsed.hostname:
+        raise SsoError(f"{label} must include a hostname")
+    if parsed.username or parsed.password:
+        raise SsoError(f"{label} must not include credentials")
+    return url.strip()
+
+
+def _validated_endpoint(config: dict[str, Any], key: str) -> str:
+    """recheck a stored endpoint at use
+
+    configuration-time validation only covers rows written after it shipped; a row
+    written before, or edited straight in the database, still has to fail closed
+    """
+    return _require_https_endpoint(config.get(key), key)
+
+
 def _normalize_issuer(issuer: str) -> str:
     parsed = parse.urlsplit(issuer.strip())
     if parsed.scheme.lower() != "https":
@@ -74,14 +104,20 @@ def discover(issuer: str) -> dict[str, str]:
     url = normalized_issuer + "/.well-known/openid-configuration"
     doc = http_get_json(url)
     try:
-        return {
-            "issuer": doc.get("issuer", normalized_issuer),
-            "authorization_endpoint": doc["authorization_endpoint"],
-            "token_endpoint": doc["token_endpoint"],
-            "jwks_uri": doc["jwks_uri"],
+        endpoints = {
+            "issuer": doc["issuer"],
+            "authorization_endpoint": _require_https_endpoint(doc["authorization_endpoint"], "authorization_endpoint"),
+            "token_endpoint": _require_https_endpoint(doc["token_endpoint"], "token_endpoint"),
+            "jwks_uri": _require_https_endpoint(doc["jwks_uri"], "jwks_uri"),
         }
     except KeyError as error:
         raise SsoError(f"OpenID configuration is missing {error}") from error
+    # openid discovery requires the document's issuer to match the one it was
+    # fetched for. without this a tampered document names its own issuer, and
+    # that is the value id_token validation is later measured against
+    if _normalize_issuer(str(endpoints["issuer"])) != normalized_issuer:
+        raise SsoError("OpenID configuration issuer does not match the configured issuer")
+    return endpoints
 
 
 # --- login ------------------------------------------------------------------------
@@ -110,11 +146,12 @@ def start_login(tenant_id: str, redirect_uri: str) -> tuple[str, str]:
         "code_challenge": _pkce_challenge(state["code_verifier"]),
         "code_challenge_method": "S256",
     }
-    return f"{config['authorization_endpoint']}?{parse.urlencode(params)}", state["state"]
+    authorization_endpoint = _validated_endpoint(config, "authorization_endpoint")
+    return f"{authorization_endpoint}?{parse.urlencode(params)}", state["state"]
 
 
 def _verify_id_token(id_token: str, config: dict[str, Any], nonce: str) -> dict[str, Any]:
-    jwks = http_get_json(config["jwks_uri"])
+    jwks = http_get_json(_validated_endpoint(config, "jwks_uri"))
     try:
         header = jwt.get_unverified_header(id_token)
     except jwt.PyJWTError as error:
@@ -153,7 +190,7 @@ def complete_login(code: str, state: str, redirect_uri: str) -> dict[str, Any]:
         raise SsoError("SSO is not configured for this organization")
 
     tokens = http_post_form(
-        config["token_endpoint"],
+        _validated_endpoint(config, "token_endpoint"),
         {
             "grant_type": "authorization_code",
             "code": code,
