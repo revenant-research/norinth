@@ -167,7 +167,7 @@ def test_phi_in_metadata_never_reaches_storage(super_admin_client, fresh_db):
     because "not in the event body" is not the same claim as "not in storage"
     """
     from app.main import app
-    from app.storage.db import connect
+    from app.storage.db import connect, is_postgres
     from fastapi.testclient import TestClient
 
     from tests.helpers import login_and_activate
@@ -196,15 +196,28 @@ def test_phi_in_metadata_never_reaches_storage(super_admin_client, fresh_db):
                         application_name="Claims Copilot", workflow_name="triage",
                         description=f"{PHI['patient_name']} ({PHI['mrn']}) got the wrong dose")
 
+    # the suite runs against sqlite by default and postgres in CI; the scan has to
+    # hold on both, so the table list comes from whichever catalog is in play
+    list_tables = (
+        "SELECT table_name AS name FROM information_schema.tables "
+        "WHERE table_schema = 'public' AND table_type = 'BASE TABLE'"
+        if is_postgres()
+        else "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+    )
+
+    def _values(row) -> tuple:
+        # postgres rows are dict-shaped, sqlite3.Row is tuple-shaped; iterating a
+        # dict row yields column names, which would scan the schema and find nothing
+        return tuple(row.values()) if hasattr(row, "values") else tuple(row)
+
     with connect() as connection:
-        tables = [row[0] for row in connection.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-        ).fetchall()]
+        tables = [row["name"] for row in connection.execute(list_tables).fetchall()]
         assert tables, "no tables to scan"
         haystack = []
         for table in tables:
-            for row in connection.execute(f"SELECT * FROM {table}").fetchall():  # noqa: S608 - table names from sqlite_master
-                haystack.append(" ".join(str(value) for value in tuple(row)))
+            # identifiers come from the database's own catalog, not from input
+            for row in connection.execute(f'SELECT * FROM "{table}"').fetchall():  # noqa: S608
+                haystack.append(" ".join(str(value) for value in _values(row)))
     stored = "\n".join(haystack)
 
     for label, value in PHI.items():
