@@ -21,11 +21,30 @@ for security reports.
 
 ## Security model
 
-Norinth is multi-tenant and permission-based: every record is bound to its
-tenant, administration roles are mutually exclusive from decision roles, and
-governance decisions enforce maker-checker. The audit trail is hash-chained and
-HMAC-keyed. See [`docs/threat-model.md`](./docs/threat-model.md) for the data
-flow, adversaries, controls, and residual risk.
+Norinth is multi-tenant and permission-based: governance records, users, role
+assignments, ingestion keys and identity configuration are all bound to a
+tenant, and cross-tenant reads and writes are refused at the API. Administration
+roles are mutually exclusive from decision roles, and governance decisions
+enforce maker-checker. The audit trail is hash-chained and HMAC-keyed.
+
+Three things "multi-tenant" should **not** be read to imply here:
+
+- **Isolation is logical, not physical.** Every tenant shares one database, one
+  secret keyring and one audit HMAC keyring. Separation is enforced in
+  application code and covered by tests — not by separate schemas, separate
+  databases or per-tenant keys. An operator who needs cryptographic or physical
+  separation runs one install per tenant.
+- **Role definitions are platform-wide.** *Who* holds a role is per tenant
+  (`role_assignments`); *what* a role may do (`role_permissions`) is global by
+  design. A tenant administrator cannot redefine a role's permissions. A
+  subsidiary that needs different rules runs its own install.
+- **The audit chain is global.** Rows from all tenants interleave in a single
+  hash chain, so one tenant's segment cannot be verified or exported
+  standalone without the neighbouring rows' hashes. (Tenant purge deliberately
+  leaves `audit_logs` intact so the chain stays verifiable.)
+
+See [`docs/threat-model.md`](./docs/threat-model.md) for the data flow,
+adversaries, controls, and residual risk.
 
 ## Defaults you must change before any non-local deployment
 
