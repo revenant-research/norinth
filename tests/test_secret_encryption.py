@@ -35,17 +35,17 @@ def test_wrong_key_fails_closed(monkeypatch):
     from app.services.secrets import SecretKeyMissing, decrypt, encrypt
 
     monkeypatch.setenv("NORINTH_SECRET_KEY", _key())
-    stored = encrypt("s3cret")
+    stored = encrypt("s3cret", associated_data="ring-test")
     monkeypatch.setenv("NORINTH_SECRET_KEY", _key())  # rotate to an unrelated key
     with pytest.raises(SecretKeyMissing):
-        decrypt(stored)
+        decrypt(stored, associated_data="ring-test")
 
 
 def test_legacy_plaintext_passes_through(monkeypatch):
     monkeypatch.setenv("NORINTH_SECRET_KEY", _key())
     from app.services.secrets import decrypt
 
-    assert decrypt("plain-old-value") == "plain-old-value"
+    assert decrypt("plain-old-value", associated_data="legacy-row") == "plain-old-value"
 
 
 def test_rotation_keeps_old_values_readable_and_writes_under_the_new_key(monkeypatch):
@@ -108,13 +108,13 @@ def test_missing_key_id_in_ring_fails_closed(monkeypatch):
     monkeypatch.setenv("NORINTH_SECRET_PRIMARY", "2026a")
     from app.services.secrets import SecretKeyMissing, decrypt, encrypt
 
-    stored = encrypt("s3cret")
+    stored = encrypt("s3cret", associated_data="ring-test")
     assert stored.startswith("enc:v2:2026a:")
     # drop 2026a, configure only a different key
     monkeypatch.setenv("NORINTH_SECRET_KEYS", json.dumps({"2027a": _key()}))
     monkeypatch.setenv("NORINTH_SECRET_PRIMARY", "2027a")
     with pytest.raises(SecretKeyMissing):
-        decrypt(stored)
+        decrypt(stored, associated_data="ring-test")
 
 
 def test_multi_key_ring_requires_a_named_primary(monkeypatch):
@@ -126,7 +126,7 @@ def test_multi_key_ring_requires_a_named_primary(monkeypatch):
     from app.services.secrets import SecretKeyMissing, encrypt
 
     with pytest.raises(SecretKeyMissing):
-        encrypt("s3cret")
+        encrypt("s3cret", associated_data="ring-test")
 
 
 def test_invalid_key_is_rejected(monkeypatch):
