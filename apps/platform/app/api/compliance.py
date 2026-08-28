@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 
 from app.dependencies import ActorContext, current_actor, now, scoped_dependency
 from app.schemas.events import ScopeFilter
-from app.storage.audit import list_audit_logs, record_audit, verify_audit_chain
+from app.storage.audit import count_audit_logs, list_audit_logs, record_audit, verify_audit_chain
 from app.storage.raw_events import list_events
 
 # ai-bom pages through all telemetry up to a ceiling; discloses truncation instead of dropping
@@ -113,7 +113,13 @@ def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilte
         ),
         "audit_trail": {
             "recent_entries": list_audit_logs(tenant_id=scope.tenant_id, limit=500),
-            "integrity": verify_audit_chain(),
+            "tenant_entries": count_audit_logs(tenant_id=scope.tenant_id),
+            # the chain is verified globally (a per-tenant view cannot prove
+            # nothing was removed), but the platform-wide row count is another
+            # tenant's activity level and stays out of a per-tenant packet
+            "integrity": {
+                "ok": verify_audit_chain().get("ok"),
+            },
         },
     }
 
