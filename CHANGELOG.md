@@ -8,6 +8,11 @@ Semantic Versioning.
 
 ### Added
 
+- **Organizations can require MFA.** A per-organization security policy walls
+  unenrolled local-password accounts into the enrollment flow (their password
+  login keeps working, so flipping the flag can never strand an organization);
+  SSO/SCIM accounts are exempt, and the administrator turning it on must be
+  enrolled first. (#118)
 - **TOTP multi-factor authentication** for every local-password account, the
   platform administrator included (RFC 6238, no new dependency). The password
   step on an enrolled account issues a short-lived challenge instead of a
@@ -104,6 +109,11 @@ Semantic Versioning.
   to start without `NORINTH_SPOOL_DIR`, failing at boot rather than at audit.
 
 ### Changed
+
+- Release prep for v0.3.0: the SDK's PyPI page links point at the real
+  repository (they targeted a nonexistent one), versions bumped, and
+  CONTRIBUTING documents the tag steps and the one-time PyPI
+  trusted-publisher setup. (#117)
 
 - **Base images are digest-pinned and Python dependencies are locked.** The image
   now installs `apps/platform/requirements.lock.txt` with `--require-hashes`
