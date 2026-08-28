@@ -75,7 +75,7 @@ def test_encrypt_fails_closed_without_a_key(monkeypatch):
     monkeypatch.delenv("NORINTH_SECRET_KEY", raising=False)
     monkeypatch.delenv("NORINTH_ALLOW_PLAINTEXT_SECRETS", raising=False)
     with pytest.raises(SecretKeyMissing):
-        encrypt("a-secret")
+        encrypt("a-secret", associated_data="aad-test")
 
 
 def test_encrypt_allows_plaintext_only_with_explicit_optin(monkeypatch):
@@ -83,7 +83,7 @@ def test_encrypt_allows_plaintext_only_with_explicit_optin(monkeypatch):
 
     monkeypatch.delenv("NORINTH_SECRET_KEY", raising=False)
     monkeypatch.setenv("NORINTH_ALLOW_PLAINTEXT_SECRETS", "1")
-    assert encrypt("a-secret") == "a-secret"
+    assert encrypt("a-secret", associated_data="aad-test") == "a-secret"
 
 
 def test_password_floor_is_consistent_across_set_paths(super_admin_client):
