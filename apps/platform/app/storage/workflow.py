@@ -669,8 +669,8 @@ def count_super_admins() -> int:
 def insert_session(token: str, user_ref: str, expires_at: str) -> None:
     with connect() as connection:
         connection.execute(
-            "INSERT INTO sessions (token, user_ref, created_at, expires_at) VALUES (?, ?, datetime('now'), ?)",
-            (token, user_ref, expires_at),
+            "INSERT INTO sessions (token, user_ref, created_at, expires_at, last_seen_at) VALUES (?, ?, datetime('now'), ?, ?)",
+            (token, user_ref, expires_at, datetime.now(UTC).isoformat()),
         )
 
 
@@ -681,6 +681,12 @@ def load_session(token: str) -> dict[str, Any] | None:
             (token, datetime.now(UTC).isoformat()),
         ).fetchone()
     return None if row is None else dict(row)
+
+
+def touch_session(token: str, seen_at: str) -> None:
+    """record session activity for the idle timeout"""
+    with connect() as connection:
+        connection.execute("UPDATE sessions SET last_seen_at = ? WHERE token = ?", (seen_at, token))
 
 
 def delete_session(token: str) -> None:
@@ -817,12 +823,25 @@ def assign_owner(owner_assignment_id: str, owner_ref: str, actor_ref: str) -> di
 
 
 def record_decision(target_type: str, target_id: str, decision: str, rationale: str, actor_ref: str) -> dict[str, Any]:
+    """append a governance decision; the record is immutable once written
+
+    the id is derived from the decision's content, so a resubmission of the
+    identical decision returns the original row — including its original
+    created_at, which is evidence of WHEN the call was made and must not move.
+    a decision is a record, not a lever: replaying one does not re-apply
+    status; changing course takes a new decision (new content, new row)
+    """
     target = load_decision_target(target_type, target_id)
     decision_id = entity_id("governance-decision", target_type, target_id, decision, rationale, actor_ref)
     with connect() as connection:
+        existing = connection.execute(
+            "SELECT * FROM governance_decisions WHERE decision_id = ?", (decision_id,)
+        ).fetchone()
+        if existing is not None:
+            return dict(existing)
         connection.execute(
             """
-            INSERT OR REPLACE INTO governance_decisions (
+            INSERT OR IGNORE INTO governance_decisions (
                 decision_id, tenant_id, project, environment, application_name, target_type,
                 target_id, decision, rationale, actor_ref, created_at
             )
@@ -910,9 +929,18 @@ def create_exception(
     target = load_decision_target(target_type, target_id)
     exception_id = entity_id("governance-exception", target_type, target_id, reason, expires_at)
     with connect() as connection:
+        # replaying an identical exception must not resurrect it: the REPLACE
+        # form reset a lapsed exception to 'active' and rewrote created_at,
+        # falsifying when the waiver was granted. the original row stands;
+        # re-waiving after a lapse takes a new expiry, which is a new record
+        existing = connection.execute(
+            "SELECT * FROM governance_exceptions WHERE exception_id = ?", (exception_id,)
+        ).fetchone()
+        if existing is not None:
+            return dict(existing)
         connection.execute(
             """
-            INSERT OR REPLACE INTO governance_exceptions (
+            INSERT OR IGNORE INTO governance_exceptions (
                 exception_id, tenant_id, project, environment, application_name, target_type,
                 target_id, reason, compensating_control, expires_at, status, actor_ref, created_at, updated_at
             )

@@ -70,12 +70,15 @@ def is_locked(subject: str) -> bool:
     return bool(locked_until and locked_until > _now())
 
 
-def register_failure(subject: str) -> None:
+def register_failure(subject: str) -> bool:
     """record one failed attempt, atomic so concurrent failures aren't lost
 
     the increment is a single upsert; a separate guarded update first resets an
     expired, unlocked window. both compare iso timestamps, which sort
     lexicographically since every value is utc in the same format
+
+    returns True when THIS failure crossed the lockout threshold, so the
+    caller can record the lockout as a security event exactly once
     """
     threshold, window_minutes, lockout_minutes = _policy(subject)
     now = _now()
@@ -112,6 +115,14 @@ def register_failure(subject: str) -> None:
             """,
             (subject, now_iso, now_iso, threshold, locked_iso),
         )
+        # same connection, so this read sees the row this call just wrote.
+        # exactly-at-threshold identifies the crossing attempt: failures are
+        # only registered while unlocked, so the count passes through the
+        # threshold once per lockout
+        row = connection.execute(
+            "SELECT failed_count, locked_until FROM login_throttle WHERE subject = ?", (subject,)
+        ).fetchone()
+    return bool(row and row["locked_until"] and int(row["failed_count"]) == threshold)
 
 
 def clear_attempts(subject: str) -> None:

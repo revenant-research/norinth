@@ -365,8 +365,8 @@ function ChangePasswordScreen({ user, onChanged }: { user: User; onChanged: (use
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (newPassword.length < 8) {
-      setError("New password must be at least 8 characters.");
+    if (newPassword.length < 12) {
+      setError("New password must be at least 12 characters.");
       return;
     }
     setBusy(true);

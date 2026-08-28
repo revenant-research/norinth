@@ -370,6 +370,16 @@ def _0019_mfa(connection) -> None:
         )
         """
     )
+def _0018_session_last_seen(connection) -> None:
+    """activity timestamp on sessions for the idle timeout
+
+    an absolute ttl alone leaves a session usable for hours on an abandoned
+    workstation. rows from before this migration have no activity signal, so
+    they stay NULL and the resolver falls back to created_at — a legacy idle
+    session ages out instead of being grandfathered in
+    """
+    if not _has_column(connection, "sessions", "last_seen_at"):
+        connection.execute("ALTER TABLE sessions ADD COLUMN last_seen_at TEXT")
 
 
 MIGRATIONS: list[Migration] = [
@@ -391,6 +401,7 @@ MIGRATIONS: list[Migration] = [
     Migration(16, "server-stamped ingest time on raw events", _0016_event_ingested_at),
     Migration(17, "audit-chain hmac key id for rotation", _0017_audit_hmac_key_id),
     Migration(19, "totp multi-factor authentication", _0019_mfa),
+    Migration(18, "session activity timestamp for idle timeout", _0018_session_last_seen),
 ]
 
 

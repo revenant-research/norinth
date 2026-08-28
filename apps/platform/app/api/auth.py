@@ -130,8 +130,30 @@ def login(payload: LoginRequest, request: Request, response: Response) -> dict[s
         )
     user = get_user_by_email(payload.email)
     if user is None or user.get("status") != "active" or not verify_password(payload.password, user.get("password_hash")):
-        register_failure(account)
-        register_failure(source)
+        newly_locked = [
+            subject
+            for subject, locked in ((account, register_failure(account)), (source, register_failure(source)))
+            if locked
+        ]
+        # failed authentication is a security event, not just a throttle input:
+        # detecting stuffing or a targeted attack needs the failures on the
+        # permanent record, and the compensating notification for an operator
+        # reset assumes the org can see who tried to get in
+        attempted = payload.email.strip().lower()
+        known_tenant = user.get("tenant_id") if user else None
+        record_audit(
+            actor_ref=attempted,
+            action="auth.login_failed",
+            tenant_id=known_tenant,
+            detail={"source_ip": client_ip(request), "account_exists": user is not None},
+        )
+        if newly_locked:
+            record_audit(
+                actor_ref=attempted,
+                action="auth.lockout",
+                tenant_id=known_tenant,
+                detail={"subjects": newly_locked, "source_ip": client_ip(request)},
+            )
         raise HTTPException(status_code=401, detail="Invalid email or password")
     clear_attempts(account)
     # rehash if kdf params are outdated, now that we have the verified plaintext.

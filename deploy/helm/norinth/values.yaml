@@ -31,6 +31,7 @@ config:
   cookieSecure: "1"
   trustProxy: "1"               # ingress sets X-Forwarded-For
   sessionTtlHours: "12"
+  sessionIdleMinutes: "30"      # end sessions after this much inactivity; "0" disables
   extraEnv: []                  # - {name: NORINTH_LOGIN_IP_THRESHOLD, value: "100"}
   # Email for invites and notifications. Put the password in secrets.existingSecret
   # under NORINTH_SMTP_PASSWORD or pass it via extraEnv from your own Secret
