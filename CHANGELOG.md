@@ -108,6 +108,18 @@ Semantic Versioning.
   configured. A deployment treating telemetry as evidence can set this to refuse
   to start without `NORINTH_SPOOL_DIR`, failing at boot rather than at audit.
 
+### Added (operations)
+
+- **Metrics and structured logs.** `GET /metrics` serves Prometheus
+  text-format series (request rates and latency by route template, events
+  accepted per tenant, audit-append duration, notification-outbox depth),
+  authenticated by `NORINTH_METRICS_TOKEN` or a platform-administrator
+  session — never anonymous, because labels carry tenant ids.
+  `NORINTH_LOG_JSON=1` emits one JSON object per log line with request ids
+  (accepted on `X-Request-ID`, returned on every response), and every
+  audit-chain append also streams to the `norinth.audit` logger so a SIEM
+  sees security events without polling the database. (#120)
+
 ### Changed
 
 - **Ingest cost no longer grows with stored history.** Accepting a batch
