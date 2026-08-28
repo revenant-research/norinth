@@ -196,9 +196,37 @@ export async function fetchMe(): Promise<User> {
   return data.user;
 }
 
-export async function login(email: string, password: string): Promise<User> {
-  const data = await postJson<{ user: User }>("/api/auth/login", { email, password });
+// an mfa-enrolled account gets a short-lived challenge instead of a session;
+// the code step redeems it
+export type LoginResult = { user: User; mfa_required?: undefined } | { mfa_required: true; challenge: string };
+
+export async function login(email: string, password: string): Promise<LoginResult> {
+  return await postJson<LoginResult>("/api/auth/login", { email, password });
+}
+
+export async function mfaVerify(challenge: string, code: string, useRecovery: boolean): Promise<User> {
+  const payload = useRecovery ? { challenge, recovery_code: code } : { challenge, code };
+  const data = await postJson<{ user: User }>("/api/auth/mfa/verify", payload);
   return data.user;
+}
+
+export type MfaStatus = { enabled: boolean; enabled_at: string | null; recovery_codes_remaining: number };
+
+export async function mfaStatus(): Promise<MfaStatus> {
+  return await getJson<MfaStatus>("/api/auth/mfa");
+}
+
+export async function mfaSetup(): Promise<{ secret: string; otpauth_uri: string }> {
+  return await postJson<{ secret: string; otpauth_uri: string }>("/api/auth/mfa/setup", {});
+}
+
+export async function mfaEnable(code: string): Promise<{ recovery_codes: string[] }> {
+  return await postJson<{ recovery_codes: string[] }>("/api/auth/mfa/enable", { code });
+}
+
+export async function mfaDisable(password: string, code: string, useRecovery: boolean): Promise<void> {
+  const payload = useRecovery ? { password, recovery_code: code } : { password, code };
+  await postJson("/api/auth/mfa/disable", payload);
 }
 
 export async function logout(): Promise<void> {

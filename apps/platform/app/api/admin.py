@@ -24,6 +24,7 @@ from app.services.notifications import emit as notify
 from app.services.notifications import public_base_url, smtp_configured
 from app.storage.audit import count_audit_logs, list_audit_logs, record_audit, verify_audit_chain
 from app.storage.entities import tenant_application_stats
+from app.storage.mfa import clear_mfa
 from app.storage.migrations import schema_status
 from app.storage.notifications import INVITE_TTL_DAYS, create_invite
 from app.storage.organizations import (
@@ -61,7 +62,9 @@ router = APIRouter()
 
 
 def _scrub(user: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in user.items() if key != "password_hash"}
+    # mfa_enabled_at stays: an admin may see WHO is enrolled, never the secret
+    hidden = {"password_hash", "mfa_secret", "mfa_pending_secret", "mfa_last_counter"}
+    return {key: value for key, value in user.items() if key not in hidden}
 
 
 def _temp_password() -> str:
@@ -608,6 +611,38 @@ def reset_org_user_password(user_ref: str, actor: ActorContext = Depends(current
         target_id=user_ref,
     )
     return {"user_ref": user_ref, "temporary_password": temp_password}
+
+
+@router.post("/api/org/users/{user_ref}/mfa/reset")
+def reset_org_user_mfa(user_ref: str, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
+    """clear a locked-out user's second factor so they can re-enroll
+
+    org plane only, deliberately: the platform operator has no MFA reset —
+    otherwise an operator password reset plus an operator MFA reset would add
+    up to silent account takeover, which the second factor exists to prevent
+    """
+    tenant_id = _require_tenant(actor)
+    try:
+        require_permission(actor, PERM_USER_MANAGE, {"tenant_id": tenant_id})
+    except AuthorizationError as error:
+        _raise_forbidden(error)
+    if user_ref == actor.user_ref:
+        raise HTTPException(status_code=400, detail="Use the MFA disable flow for your own account")
+    target = load_platform_user(user_ref)
+    if target is None or target.get("tenant_id") != tenant_id:
+        raise HTTPException(status_code=404, detail="User not found in this organization")
+    clear_mfa(user_ref)
+    # a cleared second factor is a weaker account until re-enrollment; drop
+    # live sessions so whoever holds one has to come back through login
+    end_all_sessions(user_ref)
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="user.mfa_reset",
+        tenant_id=tenant_id,
+        target_type="user",
+        target_id=user_ref,
+    )
+    return {"user_ref": user_ref, "mfa_enabled": False}
 
 
 @router.get("/api/org/overview")

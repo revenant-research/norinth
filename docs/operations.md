@@ -242,6 +242,12 @@ Releases follow semantic versioning; the changelog lists breaking changes.
 - PostgreSQL on a private network with its own credentials; encrypted at rest.
 - Restrict `/`, `/api`, `/scim` to your network; expose `/v1/*` only where applications live.
 - Connect SSO and SCIM so joiner/leaver control is automatic; keep local passwords for break-glass only.
+- Every local-password account — the platform administrator included — can enroll TOTP MFA
+  under **Security** in the header (any authenticator app; no external service). Once enrolled,
+  a password alone (including one reset by an operator) cannot open the account. Users get ten
+  single-use recovery codes at enrollment; an organization administrator can reset a locked-out
+  member's MFA, the platform operator cannot. Keep at least two organization administrators so
+  an MFA reset is always available in-tenant.
 - Register an attestation key so release gates require CI-signed evaluation evidence.
 - Schedule `scripts/backup.sh`; test `restore.sh` once.
 - Verify the audit chain periodically: `GET /api/admin/audit-logs/verify`.
