@@ -122,6 +122,14 @@ Semantic Versioning.
 
 ### Changed
 
+- **PostgreSQL connections are pooled and multi-worker is supported.**
+  Storage calls reuse pooled connections (~30% off per-batch ingest cost;
+  `NORINTH_PG_POOL_SIZE`), `NORINTH_WEB_CONCURRENCY` sets uvicorn workers
+  (PostgreSQL required above 1), and `scripts/loadtest.py` lets any
+  deployment measure itself — indicative laptop numbers are documented
+  (~200 accepted events/s sustained with encryption at rest on). The
+  harness also caught and fixed an unbounded evidence set on derived risks
+  that made every matching event rewrite an ever-growing row. (#121)
 - **Ingest cost no longer grows with stored history.** Accepting a batch
   recomputed derived state by reading (and with encryption on, decrypting)
   each touched application's entire event history, twice. The request path
