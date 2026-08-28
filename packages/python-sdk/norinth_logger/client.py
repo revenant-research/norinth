@@ -81,7 +81,7 @@ class NorinthClient:
         return sanitize_metadata(
             merged,
             self.config.capture_content,
-            self.config.signing_secret,
+            self.config.fingerprint_key,
             self.config.metadata_allowlist,
         )
 
@@ -140,7 +140,7 @@ class NorinthClient:
                     return inner(*args, **kwargs)
                 except Exception as exc:
                     status = "error"
-                    error_summary = summarize_error(exc, self.config.capture_content, self.config.signing_secret)
+                    error_summary = summarize_error(exc, self.config.capture_content, self.config.fingerprint_key)
                     raise
                 finally:
                     duration_ms = (perf_counter() - started) * 1000
@@ -160,7 +160,7 @@ class NorinthClient:
                                 duration_ms=duration_ms,
                                 attributes={
                                     "function": f"{inner.__module__}.{inner.__name__}",
-                                    "call": summarize_call(args, kwargs, self.config.capture_content, self.config.signing_secret),
+                                    "call": summarize_call(args, kwargs, self.config.capture_content, self.config.fingerprint_key),
                                     "metadata": self._metadata(context.metadata),
                                     "error": error_summary,
                                 },
@@ -208,11 +208,11 @@ class NorinthClient:
                     "provider": provider,
                     "model": model,
                     "operation": operation,
-                    "prompt": summarize_value(prompt, self.config.capture_content, self.config.signing_secret),
-                    "response": summarize_value(response, self.config.capture_content, self.config.signing_secret),
-                    "usage": sanitize_usage(usage, self.config.capture_content, self.config.signing_secret),
+                    "prompt": summarize_value(prompt, self.config.capture_content, self.config.fingerprint_key),
+                    "response": summarize_value(response, self.config.capture_content, self.config.fingerprint_key),
+                    "usage": sanitize_usage(usage, self.config.capture_content, self.config.fingerprint_key),
                     "metadata": self._metadata(context.metadata, metadata),
-                    "error": sanitize_error_payload(error, self.config.capture_content, self.config.signing_secret),
+                    "error": sanitize_error_payload(error, self.config.capture_content, self.config.fingerprint_key),
                 },
             ),
         )
@@ -244,11 +244,11 @@ class NorinthClient:
                 duration_ms=duration_ms,
                 attributes={
                     "retriever": retriever,
-                    "query": summarize_value(query, self.config.capture_content, self.config.signing_secret),
-                    "documents": summarize_value(documents, self.config.capture_content, self.config.signing_secret),
+                    "query": summarize_value(query, self.config.capture_content, self.config.fingerprint_key),
+                    "documents": summarize_value(documents, self.config.capture_content, self.config.fingerprint_key),
                     "document_count": len(documents),
                     "metadata": self._metadata(context.metadata, metadata),
-                    "error": sanitize_error_payload(error, self.config.capture_content, self.config.signing_secret),
+                    "error": sanitize_error_payload(error, self.config.capture_content, self.config.fingerprint_key),
                 },
             )
         )
@@ -280,10 +280,10 @@ class NorinthClient:
                 duration_ms=duration_ms,
                 attributes={
                     "tool_name": tool_name,
-                    "arguments": summarize_value(arguments, self.config.capture_content, self.config.signing_secret),
-                    "result": summarize_value(result, self.config.capture_content, self.config.signing_secret),
+                    "arguments": summarize_value(arguments, self.config.capture_content, self.config.fingerprint_key),
+                    "result": summarize_value(result, self.config.capture_content, self.config.fingerprint_key),
                     "metadata": self._metadata(context.metadata, metadata),
-                    "error": sanitize_error_payload(error, self.config.capture_content, self.config.signing_secret),
+                    "error": sanitize_error_payload(error, self.config.capture_content, self.config.fingerprint_key),
                 },
             )
         )
@@ -318,7 +318,7 @@ class NorinthClient:
                     # rule ids are labels; a guardrail library that surfaces the
                     # matched excerpt would otherwise carry content out verbatim
                     "matched_rules": sanitize_rule_labels(
-                        matched_rules, self.config.capture_content, self.config.signing_secret
+                        matched_rules, self.config.capture_content, self.config.fingerprint_key
                     ),
                     "metadata": self._metadata(context.metadata, metadata),
                 },
@@ -396,7 +396,7 @@ class NorinthClient:
                     "agent_name": agent_name,
                     # a step's tool/name labels feed the registry; its inputs,
                     # outputs and observations are content like any prompt
-                    "steps": sanitize_steps(steps, self.config.capture_content, self.config.signing_secret),
+                    "steps": sanitize_steps(steps, self.config.capture_content, self.config.fingerprint_key),
                     "step_count": len(steps),
                     "outcome": outcome,
                     "metadata": self._metadata(context.metadata, metadata),
@@ -442,8 +442,8 @@ class NorinthClient:
                     "artifact_ref": artifact_ref,
                     "prompt_status": status,
                     "owner_ref": owner_ref,
-                    "template": summarize_value(template, self.config.capture_content, self.config.signing_secret),
-                    "change_notes": summarize_value(change_notes, self.config.capture_content, self.config.signing_secret),
+                    "template": summarize_value(template, self.config.capture_content, self.config.fingerprint_key),
+                    "change_notes": summarize_value(change_notes, self.config.capture_content, self.config.fingerprint_key),
                     "metadata": event_metadata,
                 },
             )
@@ -549,7 +549,7 @@ class NorinthClient:
                     "description": summarize_value(
                         description,
                         self.config.capture_content or self.config.capture_incident_details,
-                        self.config.signing_secret,
+                        self.config.fingerprint_key,
                     ),
                     "detected_by": detected_by,
                     "impacted_trace_id": impacted_trace_id,
