@@ -678,14 +678,18 @@ def _framework_family(ref: str) -> str:
 
 
 def build_framework_coverage(scope: ScopeFilter) -> dict[str, Any]:
-    """roll control assessments up into per-framework coverage
+    """roll control assessments and risk-rule monitoring up into coverage
 
-    denominator is every requirement the control library maps for a framework
-    (from the control definitions), not only requirements that produced an
-    assessment, else one passing control would read as 100% of its framework. a
-    requirement is satisfied when a citing control has a passing or waived
-    assessment; ``basis`` states this is coverage of mapped controls, not the
-    full regulation
+    denominator is every requirement mapped anywhere: the control library AND
+    the risk rules — the OWASP agentic top 10 lives on detection rules, not
+    controls, and building coverage from controls alone silently dropped a
+    framework the compliance page advertises. a control-mapped requirement is
+    satisfied by a passing or waived assessment; a rule-mapped requirement is
+    satisfied while its rule has no open finding citing it (monitored and
+    clean). an open finding citing a requirement is a gap regardless of what
+    an assessment says — a passing control does not outrank a live violation.
+    ``basis`` states this is coverage of mapped requirements, not the full
+    regulation
     """
     # denominator: every framework requirement the control library defines
     by_family: dict[str, dict[str, bool]] = {}
@@ -693,6 +697,13 @@ def build_framework_coverage(scope: ScopeFilter) -> dict[str, Any]:
         for ref in control.get("framework_refs", []):
             family = _framework_family(ref)
             by_family.setdefault(family, {}).setdefault(ref, False)
+
+    # ...and every requirement a detection rule maps (monitored coverage)
+    monitored_refs: set[str] = set()
+    for rule in list_configured_risk_rules(scope.tenant_id):
+        for ref in rule.get("framework_refs", []):
+            monitored_refs.add(ref)
+            by_family.setdefault(_framework_family(ref), {}).setdefault(ref, False)
 
     # numerator: requirements whose citing control has a satisfying assessment
     for assessment in list_control_assessments(**scope.model_dump()):
@@ -703,6 +714,19 @@ def build_framework_coverage(scope: ScopeFilter) -> dict[str, Any]:
             family = _framework_family(ref)
             requirements = by_family.setdefault(family, {})
             requirements[ref] = True
+
+    # a monitored requirement counts while it is clean...
+    open_refs: set[str] = set()
+    for finding in list_risk_findings(**scope.model_dump()):
+        if finding.get("status") == "open":
+            open_refs.update(finding.get("framework_refs", []))
+    for ref in monitored_refs - open_refs:
+        by_family[_framework_family(ref)][ref] = True
+    # ...and an open violation is a gap no matter who else cites the ref
+    for ref in open_refs:
+        family = _framework_family(ref)
+        if ref in by_family.get(family, {}):
+            by_family[family][ref] = False
 
     coverage: list[dict[str, Any]] = []
     for family, requirements in by_family.items():
@@ -720,7 +744,11 @@ def build_framework_coverage(scope: ScopeFilter) -> dict[str, Any]:
         )
     return {
         "framework_coverage": sorted(coverage, key=lambda item: item["framework"]),
-        "basis": "Coverage of the control requirements the Norinth control library maps for each framework, not of the full regulation.",
+        "basis": (
+            "Coverage of the requirements Norinth maps for each framework — control-library "
+            "requirements satisfied by passing/waived assessments, and detection-rule requirements "
+            "satisfied while no finding citing them is open. Not coverage of the full regulation."
+        ),
     }
 
 

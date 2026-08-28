@@ -18,6 +18,7 @@ SUPPORTED_RISK_SIGNALS = {
     "missing_eval",
     "missing_agent_run",
     "operational_errors",
+    "retired_system_telemetry",
     # agentic signals, evaluated by storage/agents.py against the registry, not
     # by the generic event evaluator
     "unregistered_agent",
@@ -141,6 +142,16 @@ DEFAULT_RISK_RULES = [
         "severity": "High",
         "framework_refs": ["NIST AI RMF MANAGE 4.1", "SOC 2 CC7.2"],
         "rationale": "Failed model or workflow events are operational reliability evidence.",
+    },
+    {
+        "rule_id": "RISK-LCY-001",
+        "name": "Telemetry observed from a retired system",
+        "signal": "retired_system_telemetry",
+        "severity": "High",
+        "framework_refs": ["NIST AI RMF GOVERN 1.7"],
+        "rationale": "A system recorded as retired is still emitting production telemetry: either the "
+        "retirement record is wrong or the system was never actually shut down. Decommissioning must be "
+        "verifiable.",
     },
 ]
 
@@ -491,6 +502,69 @@ def assess_risk_rules(connection, app_context: dict[str, Any], rules: list[dict[
                 upsert_rule_finding(connection, app_context, rule, events, reason)
         if signal == "operational_errors" and error_events:
             upsert_rule_finding(connection, app_context, rule, error_events, f"{len(error_events)} error events observed")
+        if signal == "retired_system_telemetry":
+            retired_since = _retired_since(connection, app_context)
+            if retired_since:
+                late = [event for event in events if _after(event.get("timestamp"), retired_since)]
+                if late:
+                    upsert_rule_finding(
+                        connection,
+                        app_context,
+                        rule,
+                        late,
+                        f"{len(late)} event(s) observed after the system was retired at {retired_since}",
+                    )
+
+
+def _normalize_ts(value: str | None) -> str:
+    """comparable utc timestamp text; the db writes 'YYYY-MM-DD HH:MM:SS' while
+    events carry iso-8601, and the two must sort together"""
+    if not value:
+        return ""
+    text = value.strip().replace(" ", "T")
+    for suffix in ("Z", "+00:00"):
+        text = text.removesuffix(suffix)
+    return text
+
+
+def _after(event_ts: str | None, boundary: str) -> bool:
+    return _normalize_ts(event_ts) > _normalize_ts(boundary)
+
+
+def _retired_since(connection, app_context: dict[str, Any]) -> str | None:
+    """when the application's headline lifecycle stage is retired, the time of
+    the (latest) retirement record; None otherwise
+
+    mirrors entities.STAGE_ORDER: any intake record whose stage outranks
+    retired (in review, approved, recertified, discovered) means the system is
+    not considered retired, so telemetry from it is not a violation
+    """
+    rows = connection.execute(
+        """
+        SELECT status, updated_at FROM ai_use_cases
+        WHERE application_name = :application_name
+          AND (
+            (:tenant_id IS NULL AND tenant_id IS NULL)
+            OR tenant_id = :tenant_id
+          )
+          AND project = :project AND environment = :environment
+        """,
+        {
+            "application_name": app_context.get("application_name"),
+            "tenant_id": app_context.get("tenant_id"),
+            "project": app_context.get("project"),
+            "environment": app_context.get("environment"),
+        },
+    ).fetchall()
+    if not rows:
+        return None
+    outranking = {"submitted", "approved", "recertified"}
+    if any((row["status"] or "submitted") in outranking for row in rows):
+        return None
+    retired_rows = [row for row in rows if row["status"] == "retired"]
+    if not retired_rows:
+        return None
+    return max(row["updated_at"] for row in retired_rows)
 
 
 def upsert_rule_finding(
