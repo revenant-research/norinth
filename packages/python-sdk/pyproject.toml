@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "norinth-logger"
-version = "0.2.1"
+version = "0.3.0"
 description = "Fail-open AI governance telemetry SDK"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -17,9 +17,14 @@ dependencies = []
 # Sign eval results in CI so the platform treats them as attested evidence.
 attest = ["cryptography>=42"]
 
+# these render as the sidebar links on the PyPI project page; they must point
+# at the real repository, not a placeholder org
 [project.urls]
-Documentation = "https://github.com/norinth/norinth-logger/blob/main/README.md"
-Protocol = "https://github.com/norinth/norinth-logger/blob/main/PROTOCOL.md"
+Homepage = "https://github.com/revenant-research/norinth"
+Documentation = "https://github.com/revenant-research/norinth/blob/main/packages/python-sdk/README.md"
+Protocol = "https://github.com/revenant-research/norinth/blob/main/packages/python-sdk/PROTOCOL.md"
+Changelog = "https://github.com/revenant-research/norinth/blob/main/CHANGELOG.md"
+Issues = "https://github.com/revenant-research/norinth/issues"
 
 [project.scripts]
 norinth = "norinth_logger.cli:main"
