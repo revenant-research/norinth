@@ -22,6 +22,8 @@ from __future__ import annotations
 import os
 import re
 import sqlite3
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -213,7 +215,7 @@ class PostgresConnection:
             self._raw.execute("ROLLBACK")
 
     def close(self) -> None:
-        self._raw.close()
+        _release_pg(self._raw)
 
     def __enter__(self):
         if not self._in_transaction():
@@ -227,7 +229,7 @@ class PostgresConnection:
             else:
                 self.rollback()
         finally:
-            self._raw.close()
+            _release_pg(self._raw)
         return False
 
 
@@ -292,15 +294,90 @@ def serialize_writer(connection) -> None:
         connection.execute(f"SELECT pg_advisory_xact_lock({_AUDIT_LOCK_KEY})")
 
 
+# --- postgres connection pool -----------------------------------------------------
+#
+# every storage call used to dial a fresh tcp connection and close it again —
+# per-request connection churn is the first thing a dba flags. idle raw
+# connections are kept and reused: checkout pops one (discarding any that
+# closed or aged out), release rolls back a stray transaction and returns it.
+# psycopg connections may not be used concurrently, but pool checkouts are
+# exclusive, so handing one between threads sequentially is safe. sqlite keeps
+# per-call connections (cheap to open, and sqlite3 objects are bound to their
+# creating thread). NORINTH_PG_POOL_SIZE=0 restores dial-per-call.
+
+_pg_pool: list[tuple[Any, float]] = []  # (raw connection, released-at monotonic)
+_pg_pool_lock = threading.Lock()
+
+
+def _pg_pool_size() -> int:
+    return int(os.getenv("NORINTH_PG_POOL_SIZE", "10"))
+
+
+def _pg_max_idle_seconds() -> float:
+    # discard connections idle longer than this so a server-side idle timeout
+    # (or a restarted database) doesn't hand out dead sockets
+    return float(os.getenv("NORINTH_PG_POOL_MAX_IDLE_SECONDS", "300"))
+
+
+def _checkout_pg():
+    max_idle = _pg_max_idle_seconds()
+    while True:
+        with _pg_pool_lock:
+            entry = _pg_pool.pop() if _pg_pool else None
+        if entry is None:
+            break
+        raw, released_at = entry
+        if raw.closed or (time.monotonic() - released_at) > max_idle:
+            try:
+                raw.close()
+            except Exception:
+                pass
+            continue
+        return raw
+    from psycopg.rows import dict_row
+
+    return psycopg.connect(database_url(), row_factory=dict_row, autocommit=True)
+
+
+def _release_pg(raw) -> None:
+    if raw.closed:
+        return
+    try:
+        from psycopg.pq import TransactionStatus
+
+        if raw.info.transaction_status != TransactionStatus.IDLE:
+            # a stray open transaction must never leak into the next caller
+            raw.rollback()
+    except Exception:
+        try:
+            raw.close()
+        except Exception:
+            pass
+        return
+    with _pg_pool_lock:
+        if _pg_pool_size() > 0 and len(_pg_pool) < _pg_pool_size():
+            _pg_pool.append((raw, time.monotonic()))
+            return
+    raw.close()
+
+
+def close_pg_pool() -> None:
+    """close every idle pooled connection (tests, shutdown)"""
+    with _pg_pool_lock:
+        entries, _pg_pool[:] = _pg_pool[:], []
+    for raw, _ in entries:
+        try:
+            raw.close()
+        except Exception:
+            pass
+
+
 def connect():
     """open a connection to the configured backend"""
     if is_postgres():
         if psycopg is None:  # pragma: no cover
             raise RuntimeError("NORINTH_DATABASE_URL is set to PostgreSQL but psycopg is not installed")
-        from psycopg.rows import dict_row
-
-        raw = psycopg.connect(database_url(), row_factory=dict_row, autocommit=True)
-        return PostgresConnection(raw)
+        return PostgresConnection(_checkout_pg())
 
     path = database_path()
     path.parent.mkdir(parents=True, exist_ok=True)

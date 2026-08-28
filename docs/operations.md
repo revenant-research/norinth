@@ -238,7 +238,37 @@ applied on boot and recorded in `schema_migrations`; Console → Overview shows
 the applied versions. Migrations are forward-only: take a backup first.
 Releases follow semantic versioning; the changelog lists breaking changes.
 
-## 8. Hardening checklist
+## 8. Sizing and performance
+
+Scale **replicas first, workers second**: `NORINTH_WEB_CONCURRENCY` sets
+uvicorn workers per container (default 1; the Compose file and Helm chart set
+2). More than one worker requires PostgreSQL — worker processes contend on a
+SQLite file, while the notification-outbox claims, migration coordination and
+the audit advisory lock are already multi-worker safe on PostgreSQL.
+
+PostgreSQL connections are pooled per process (`NORINTH_PG_POOL_SIZE`,
+default 10; `0` restores a connection per call). Idle pooled connections are
+discarded after `NORINTH_PG_POOL_MAX_IDLE_SECONDS` (default 300) so a
+server-side idle timeout or database restart never hands out a dead socket.
+
+Measure your own deployment with the included harness against a disposable
+tenant key:
+
+```bash
+python scripts/loadtest.py --endpoint https://norinth.internal --key nrk_... \
+    --tenant your-tenant --batches 200 --events-per-batch 25 --concurrency 8
+```
+
+Indicative numbers from a development laptop (M-series, PostgreSQL 14 on the
+same machine, encryption at rest on, 2 workers): sustained **~200 accepted
+events/second** (≈17M/day) at 25-event batches with zero errors; direct
+per-batch ingest cost ~48 ms on an empty database and ~80 ms at 3,000 stored
+events per application — the residual growth is a handful of indexed
+aggregate queries, and per-application history is bounded in practice by the
+retention window. Connection pooling alone removes ~30% of per-batch cost.
+For reference, 50,000 events/day is ~0.6 events/second sustained.
+
+## 9. Hardening checklist
 
 - `NORINTH_SUPER_ADMIN_PASSWORD` and `NORINTH_SECRET_KEY` set (never development mode).
 - TLS everywhere; `NORINTH_COOKIE_SECURE=1`; `NORINTH_TRUST_PROXY=1` only behind a header-rewriting proxy.
@@ -255,7 +285,7 @@ Releases follow semantic versioning; the changelog lists breaking changes.
 - Schedule `scripts/backup.sh`; test `restore.sh` once.
 - Verify the audit chain periodically: `GET /api/admin/audit-logs/verify`.
 
-## 9. Notifications
+## 10. Notifications
 
 Email (SMTP) and signed webhooks. Organization administrators add webhooks
 under Identity & Integrations → Notifications: JSON for SIEM/ticketing or
@@ -269,7 +299,7 @@ Events: `user.invited`, `review.assigned`, `review.overdue`,
 `review.escalated`, `gate.approved`, `gate.rejected`, `incident.opened`,
 `incident.closed`.
 
-## 10. Observability
+## 11. Observability
 
 `/health` for liveness. Application logs go to stdout (uvicorn). The platform
 itself emits no telemetry to anyone.
