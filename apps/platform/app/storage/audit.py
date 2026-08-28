@@ -11,12 +11,18 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import os
+import time
 from typing import Any
+
+from app.services.observability import histogram_observe
 
 from . import db
 from .entities import encode_json
 from .raw_events import connect
+
+_audit_stream = logging.getLogger("norinth.audit")
 
 # chain anchor for the first entry
 GENESIS_HASH = "0" * 64
@@ -168,6 +174,7 @@ def record_audit(
     concurrent writes can't fork the chain; append-only, no update path
     """
     detail_json = encode_json(detail) if detail is not None else None
+    write_started = time.perf_counter()
     connection = connect()
     connection.isolation_level = None  # manage the transaction explicitly
     try:
@@ -195,6 +202,24 @@ def record_audit(
         connection.execute("COMMIT")
     finally:
         connection.close()
+    # the audit record also streams to stdout: a siem should see security
+    # events (logins, lockouts, resets, exports) without polling the database.
+    # the chain in the database stays the tamper-evident record; this is a copy
+    histogram_observe(
+        "norinth_audit_write_seconds",
+        "Audit chain append duration (includes single-writer serialization)",
+        time.perf_counter() - write_started,
+    )
+    _audit_stream.info(
+        action,
+        extra={
+            "actor_ref": actor_ref,
+            "tenant_id": tenant_id,
+            "action": action,
+            "target_type": target_type,
+            "target_id": target_id,
+        },
+    )
 
 
 def verify_audit_chain(*, tenant_id: str | None = None) -> dict[str, Any]:

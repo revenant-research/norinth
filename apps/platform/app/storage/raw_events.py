@@ -167,6 +167,16 @@ def insert_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if key in inserted_keys and key not in seen:
             seen.add(key)
             inserted.append(event)
+    if inserted:
+        from app.services.observability import counter_inc
+
+        by_tenant: dict[str, int] = {}
+        for event in inserted:
+            metadata = _as_object((event.get("attributes") or {}).get("metadata"))
+            by_tenant[metadata.get("tenant_id") or "unknown"] = by_tenant.get(metadata.get("tenant_id") or "unknown", 0) + 1
+        for tenant, count in by_tenant.items():
+            counter_inc("norinth_ingest_events_total", "Events accepted, by tenant", {"tenant": tenant}, count)
+            counter_inc("norinth_ingest_batches_total", "Batches that inserted events, by tenant", {"tenant": tenant})
     return inserted
 
 
