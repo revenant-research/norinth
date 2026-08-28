@@ -128,13 +128,13 @@ def health():
 
 @router.get("/api/scopes")
 def scopes(actor: ActorContext = Depends(current_actor)):
-    # super admin works on orgs, not tenant scopes
-    if actor.is_super_admin:
+    # super admin works on orgs, not tenant scopes; a user with no org has no
+    # scopes. neither may see another tenant's project/environment names
+    if actor.is_super_admin or not actor.tenant_id:
         return {"tenants": [], "projects": [], "environments": []}
-    available = list_scopes()
-    # tenant actors only see their own org
+    available = list_scopes(actor.tenant_id)
     return {
-        "tenants": [actor.tenant_id] if actor.tenant_id else [],
+        "tenants": [actor.tenant_id],
         "projects": available["projects"],
         "environments": available["environments"],
     }
