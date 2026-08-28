@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 
 from app.api.pagination import PageParams, paginate
 from app.dependencies import ActorContext, current_actor, now, scoped_dependency
@@ -124,6 +124,24 @@ def enforce_segregation_of_duties(actor: ActorContext, target_type: str, target:
 def health():
     # liveness probe, no db count (would table-scan and leak totals)
     return {"ok": True, "time": now()}
+
+
+@router.get("/health/ready")
+def health_ready(response: Response):
+    """readiness probe: the process is only ready if its database answers
+
+    liveness deliberately skips the db (a db outage should not make the
+    orchestrator kill and churn pods), but readiness must include it — a pod
+    that cannot reach its database serves nothing but errors, and reporting
+    Ready kept it in the load balancer. SELECT 1: no table scan, no totals
+    """
+    try:
+        with connect() as connection:
+            connection.execute("SELECT 1").fetchone()
+    except Exception:
+        response.status_code = 503
+        return {"ok": False, "database": "unreachable", "time": now()}
+    return {"ok": True, "database": "ok", "time": now()}
 
 
 @router.get("/api/scopes")
