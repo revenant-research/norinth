@@ -63,6 +63,26 @@ def load_organization(tenant_id: str) -> dict[str, Any] | None:
     return None if row is None else dict(row)
 
 
+def organization_requires_mfa(tenant_id: str | None) -> bool:
+    """org security policy: local-password members must hold a second factor"""
+    if not tenant_id:
+        return False
+    with connect() as connection:
+        row = connection.execute(
+            "SELECT require_mfa FROM organizations WHERE tenant_id = ?", (tenant_id,)
+        ).fetchone()
+    return bool(row and row["require_mfa"])
+
+
+def set_organization_require_mfa(tenant_id: str, require: bool) -> dict[str, Any] | None:
+    with connect() as connection:
+        connection.execute(
+            "UPDATE organizations SET require_mfa = ? WHERE tenant_id = ?",
+            (1 if require else 0, tenant_id),
+        )
+    return load_organization(tenant_id)
+
+
 def organization_is_active(tenant_id: str | None) -> bool:
     """false when the organization is missing (purged) or suspended"""
     if not tenant_id:

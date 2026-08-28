@@ -372,6 +372,19 @@ def _0019_mfa(connection) -> None:
     )
 
 
+def _0020_org_require_mfa(connection) -> None:
+    """org security policy: require a second factor on local-password accounts
+
+    off by default so an upgrade never locks an organization's members out of
+    anything; when an org admin turns it on, unenrolled members keep their
+    password login but can reach only the enrollment endpoints until a second
+    factor is active. sso/scim accounts (no local password) are exempt — their
+    factor lives at the idp
+    """
+    if not _has_column(connection, "organizations", "require_mfa"):
+        connection.execute("ALTER TABLE organizations ADD COLUMN require_mfa INTEGER NOT NULL DEFAULT 0")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
@@ -391,6 +404,7 @@ MIGRATIONS: list[Migration] = [
     Migration(16, "server-stamped ingest time on raw events", _0016_event_ingested_at),
     Migration(17, "audit-chain hmac key id for rotation", _0017_audit_hmac_key_id),
     Migration(19, "totp multi-factor authentication", _0019_mfa),
+    Migration(20, "per-organization mfa requirement", _0020_org_require_mfa),
 ]
 
 

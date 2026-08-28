@@ -15,6 +15,8 @@ import {
   loadGraphNeighborhood,
   login,
   logout,
+  mfaEnable,
+  mfaSetup,
   mfaVerify,
   postJson,
 } from "./api";
@@ -152,6 +154,7 @@ export function App() {
     }
     if (!user) return <PublicEntry onAuthenticated={setUser} />;
     if (user.must_change_password) return <ChangePasswordScreen user={user} onChanged={setUser} />;
+    if (user.mfa_enrollment_required) return <EnrollMfaScreen user={user} onEnrolled={setUser} />;
     if (user.is_super_admin) return <PlatformConsole user={user} onSignOut={() => setUser(null)} />;
     return <Workspace user={user} onSignOut={() => setUser(null)} />;
   }
@@ -398,6 +401,78 @@ function ChangePasswordScreen({ user, onChanged }: { user: User; onChanged: (use
         </label>
         {error ? <div className="auth-error" role="alert">{error}</div> : null}
         <button type="submit" disabled={busy}>{busy ? "Saving" : "Update password"}</button>
+      </form>
+    </div>
+  );
+}
+
+function EnrollMfaScreen({ user, onEnrolled }: { user: User; onEnrolled: (user: User) => void }) {
+  const [pending, setPending] = useState<{ secret: string; otpauth_uri: string } | null>(null);
+  const [code, setCode] = useState("");
+  const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function run(action: () => Promise<void>) {
+    setBusy(true);
+    setError("");
+    try {
+      await action();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Action failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (recoveryCodes) {
+    return (
+      <div className="auth-screen">
+        <div className="auth-card">
+          <div className="brand">Norinth</div>
+          <h1>Save your recovery codes</h1>
+          <p>Each works once, and they are shown only this once. They are the only way back into this account if the authenticator is lost.</p>
+          <pre className="mfa-recovery-codes">{recoveryCodes.join("\n")}</pre>
+          <button onClick={() => onEnrolled({ ...user, mfa_enrollment_required: false })}>I saved them — open the workspace</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="auth-screen">
+      <form
+        className="auth-card"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void run(async () => {
+            const result = await mfaEnable(code);
+            setRecoveryCodes(result.recovery_codes);
+          });
+        }}
+      >
+        <div className="brand">Norinth</div>
+        <h1>Set up two-factor authentication</h1>
+        <p>Your organization requires a second factor on every account. Add the secret to an authenticator app, then confirm with a code.</p>
+        {!pending ? (
+          <button type="button" disabled={busy} onClick={() => run(async () => setPending(await mfaSetup()))}>
+            Begin enrollment
+          </button>
+        ) : (
+          <>
+            <p>Secret: <code>{pending.secret}</code></p>
+            <p className="mfa-uri"><code>{pending.otpauth_uri}</code></p>
+            <label>
+              Code from the app
+              <input value={code} inputMode="numeric" autoComplete="one-time-code" autoFocus onChange={(event) => setCode(event.target.value)} required />
+            </label>
+            <button type="submit" disabled={busy || code.length < 6}>Turn on MFA</button>
+          </>
+        )}
+        {error ? <div className="auth-error" role="alert">{error}</div> : null}
+        <button type="button" className="link-button" onClick={async () => { await logout().catch(() => undefined); window.location.reload(); }}>
+          Sign out
+        </button>
       </form>
     </div>
   );
