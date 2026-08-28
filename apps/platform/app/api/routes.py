@@ -157,8 +157,29 @@ def _event_page(scope: ScopeFilter, page: PageParams, key: str, event_type: str 
 
 
 @router.get("/api/events")
-def events(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return _event_page(scope, page, "events")
+def events(
+    actor: ActorContext = Depends(current_actor),
+    scope: ScopeFilter = Depends(scoped_dependency),
+    page: PageParams = Depends(),
+):
+    result = _event_page(scope, page, "events")
+    # the events view returns record-level raw bodies (including captured
+    # content where an org opted in), so reading it is an access event:
+    # "who viewed this record" must have an answer. aggregate dashboards
+    # derived from the same data stay unaudited by design
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="access.events",
+        tenant_id=scope.tenant_id,
+        detail={
+            "project": scope.project,
+            "environment": scope.environment,
+            "offset": page.offset,
+            "limit": page.limit,
+            "returned": len(result["events"]),
+        },
+    )
+    return result
 
 
 @router.get("/api/systems")
