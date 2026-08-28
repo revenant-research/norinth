@@ -47,6 +47,11 @@ def _reinitialize_database() -> None:
 def _reset_postgres_schema() -> None:
     import psycopg
 
+    # pooled idle connections belong to the schema being dropped; start each
+    # test from a cold pool so no cached state crosses the reset
+    from app.storage.db import close_pg_pool
+
+    close_pg_pool()
     with psycopg.connect(POSTGRES_TEST_URL, autocommit=True) as connection:
         connection.execute("DROP SCHEMA public CASCADE")
         connection.execute("CREATE SCHEMA public")

@@ -526,6 +526,10 @@ def upsert_eval_risk(connection, event: dict[str, Any], attrs: dict[str, Any], m
         )
 
 
+# evidence trace lists are bounded samples (the #119 rule); see upsert_risk
+_RISK_EVIDENCE_CAP = 200
+
+
 def upsert_risk(
     connection,
     event: dict[str, Any],
@@ -539,7 +543,24 @@ def upsert_risk(
     application_name = metadata.get("application_name") or "unknown"
     key = entity_id("risk", metadata.get("tenant_id"), event["project"], event["environment"], application_name, risk, source)
     row = fetch_one(connection, "governance_risks", key)
-    trace_ids = set(decode_json(row["evidence_trace_ids"], []) if row else [])
+    existing_ids = decode_json(row["evidence_trace_ids"], []) if row else []
+    if len(existing_ids) >= _RISK_EVIDENCE_CAP:
+        # evidence is a bounded sample that lets a reviewer pull traces, not a
+        # replica of history: the unbounded set added one entry per event
+        # forever, so every matching event re-read and rewrote an ever-growing
+        # json array — ingest cost grew with history and the row without limit.
+        # once the sample is full, a new event bumps recency and current state
+        # (identical fields to the upsert below) without touching the array
+        connection.execute(
+            """
+            UPDATE governance_risks
+            SET severity = ?, evidence = ?, status = 'open', last_seen = ?
+            WHERE entity_id = ?
+            """,
+            (severity, evidence, event["timestamp"], key),
+        )
+        return
+    trace_ids = set(existing_ids)
     trace_ids.add(event["trace_id"])
     connection.execute(
         """

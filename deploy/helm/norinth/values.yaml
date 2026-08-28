@@ -31,6 +31,7 @@ config:
   cookieSecure: "1"
   trustProxy: "1"               # ingress sets X-Forwarded-For
   sessionTtlHours: "12"
+  webConcurrency: "2"           # uvicorn workers per pod; scale replicas first, workers second
   extraEnv: []                  # - {name: NORINTH_LOGIN_IP_THRESHOLD, value: "100"}
   # Email for invites and notifications. Put the password in secrets.existingSecret
   # under NORINTH_SMTP_PASSWORD or pass it via extraEnv from your own Secret
