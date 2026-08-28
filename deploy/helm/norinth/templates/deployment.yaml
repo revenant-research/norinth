@@ -50,6 +50,8 @@ spec:
               value: {{ .Values.config.trustProxy | quote }}
             - name: NORINTH_SESSION_TTL_HOURS
               value: {{ .Values.config.sessionTtlHours | quote }}
+            - name: NORINTH_SESSION_IDLE_MINUTES
+              value: {{ .Values.config.sessionIdleMinutes | quote }}
             {{- if .Values.config.smtp.host }}
             - name: NORINTH_SMTP_HOST
               value: {{ .Values.config.smtp.host | quote }}

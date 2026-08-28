@@ -669,8 +669,8 @@ def count_super_admins() -> int:
 def insert_session(token: str, user_ref: str, expires_at: str) -> None:
     with connect() as connection:
         connection.execute(
-            "INSERT INTO sessions (token, user_ref, created_at, expires_at) VALUES (?, ?, datetime('now'), ?)",
-            (token, user_ref, expires_at),
+            "INSERT INTO sessions (token, user_ref, created_at, expires_at, last_seen_at) VALUES (?, ?, datetime('now'), ?, ?)",
+            (token, user_ref, expires_at, datetime.now(UTC).isoformat()),
         )
 
 
@@ -681,6 +681,12 @@ def load_session(token: str) -> dict[str, Any] | None:
             (token, datetime.now(UTC).isoformat()),
         ).fetchone()
     return None if row is None else dict(row)
+
+
+def touch_session(token: str, seen_at: str) -> None:
+    """record session activity for the idle timeout"""
+    with connect() as connection:
+        connection.execute("UPDATE sessions SET last_seen_at = ? WHERE token = ?", (seen_at, token))
 
 
 def delete_session(token: str) -> None:
