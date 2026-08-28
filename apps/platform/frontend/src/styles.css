@@ -1074,6 +1074,17 @@ button.danger {
   font-size: 11px;
 }
 
+.policy-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 550;
+}
+.policy-toggle input[type="checkbox"] {
+  width: auto;
+}
+
 /* actionable governance flags (org overview -> people & access) */
 .flag-action {
   margin-top: 10px;

@@ -527,6 +527,43 @@ export function OrgOverview() {
 
 // --- team (org admin) --------------------------------------------------------
 
+function SecurityPolicySection() {
+  const policy = useResource(() => getJson<{ require_mfa: boolean }>("/api/org/security-policy"));
+
+  async function toggle(next: boolean) {
+    try {
+      await postJson("/api/org/security-policy", { require_mfa: next });
+      toast.success(
+        next
+          ? "Multi-factor authentication is now required. Unenrolled members are routed to enrollment at their next request."
+          : "The multi-factor requirement is off.",
+      );
+      policy.reload();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : "Could not update the security policy.");
+    }
+  }
+
+  return (
+    <Section
+      title="Security policy"
+      description="Require a second factor on every local-password account. SSO-provisioned accounts are exempt — their factor lives at your identity provider. You must be enrolled yourself before turning this on."
+    >
+      <label className="policy-toggle">
+        <input
+          type="checkbox"
+          checked={Boolean(policy.value?.require_mfa)}
+          disabled={!policy.value}
+          onChange={(event) => void toggle(event.target.checked)}
+        />
+        Require multi-factor authentication for this organization
+      </label>
+      <Feedback message={policy.error} />
+    </Section>
+  );
+}
+
+
 export function TeamConsole() {
   const users = useResource(() => getJson<{ users: Array<Record<string, any>> }>("/api/org/users"));
   const roles = useResource(() =>
@@ -688,6 +725,7 @@ export function TeamConsole() {
         </Section>
         </div>
       </div>
+      <SecurityPolicySection />
       <Section title="Users" description="Members of your organization. Deactivate an account to block sign in, or issue a one-time password the user must change.">
         <RecordList empty="No users yet. Add your team with the Create a user form above, then assign each person a governance role.">
           {userRows.map((user) => (
