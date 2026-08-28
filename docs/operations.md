@@ -77,7 +77,8 @@ secret manager; the installer writes them to `.env` for Compose.
 | `NORINTH_PUBLIC_BASE_URL` | with SSO | request host | Public URL used to build OIDC redirect URIs and SAML SP metadata/ACS URLs. |
 | `NORINTH_COOKIE_SECURE` | behind TLS | auto | `1` marks the session cookie Secure. Defaults on when not in development mode. |
 | `NORINTH_TRUST_PROXY` | behind a proxy | `0` | `1` reads the client IP from `X-Forwarded-For` for login throttling. Only set when your ingress overwrites that header. |
-| `NORINTH_SESSION_TTL_HOURS` | no | `12` | Session lifetime. |
+| `NORINTH_SESSION_TTL_HOURS` | no | `12` | Absolute session lifetime. |
+| `NORINTH_SESSION_IDLE_MINUTES` | no | `30` | Idle timeout: a session with no request for this long is ended, regardless of remaining absolute lifetime. `0` disables. |
 | `NORINTH_SIGNING_SECRET` | no | — | Optional shared HMAC secret; when set, `/v1/events/batch` additionally requires `X-Norinth-Signature`. Per-tenant ingestion keys are the primary control. |
 | `NORINTH_LOGIN_LOCKOUT_THRESHOLD` / `_WINDOW_MINUTES` / `_MINUTES` | no | `5` / `15` / `15` | Per-account failed-login throttling. |
 | `NORINTH_LOGIN_IP_THRESHOLD` / `_WINDOW_MINUTES` / `_LOCKOUT_MINUTES` | no | `50` / `15` / `15` | Per-source-IP throttling (higher: shared NATs). |

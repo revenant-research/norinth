@@ -209,15 +209,23 @@ def count_events() -> int:
     return int(row["count"])
 
 
-def list_scopes() -> dict[str, list[str]]:
+def list_scopes(tenant_id: str) -> dict[str, list[str]]:
+    """distinct projects/environments visible to one tenant
+
+    tenant_id is required: project and environment names are tenant data (a
+    codename like a confidential product line), so there is no unscoped listing
+    """
     with connect() as connection:
-        tenants = connection.execute(
-            "SELECT DISTINCT tenant_id FROM sdk_events WHERE tenant_id IS NOT NULL ORDER BY tenant_id"
+        projects = connection.execute(
+            "SELECT DISTINCT project FROM sdk_events WHERE tenant_id = :tenant_id ORDER BY project",
+            {"tenant_id": tenant_id},
         ).fetchall()
-        projects = connection.execute("SELECT DISTINCT project FROM sdk_events ORDER BY project").fetchall()
-        environments = connection.execute("SELECT DISTINCT environment FROM sdk_events ORDER BY environment").fetchall()
+        environments = connection.execute(
+            "SELECT DISTINCT environment FROM sdk_events WHERE tenant_id = :tenant_id ORDER BY environment",
+            {"tenant_id": tenant_id},
+        ).fetchall()
     return {
-        "tenants": [row["tenant_id"] for row in tenants],
+        "tenants": [tenant_id],
         "projects": [row["project"] for row in projects],
         "environments": [row["environment"] for row in environments],
     }

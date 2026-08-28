@@ -271,6 +271,14 @@ class RetentionPurgeRequest(BaseModel):
 def tenant_data_preview(tenant_id: str, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     """preview a tenant's data footprint before erasure"""
     _guard_super_admin(actor)
+    # an operator looking at a tenant's footprint is visible to that tenant
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="access.tenant_data_preview",
+        tenant_id=tenant_id,
+        target_type="organization",
+        target_id=tenant_id,
+    )
     return tenant_data_summary(tenant_id)
 
 
@@ -469,6 +477,16 @@ def audit_logs(
     # super admins see all tenants; everyone else pinned to own org
     effective_tenant = tenant_id if actor.is_super_admin else _require_tenant(actor)
     filters = {"tenant_id": effective_tenant, "actor_ref": actor_ref, "action": action}
+    # reading the audit trail is itself an access event. recorded only on the
+    # first page: one row per view session, and paging deeper must not insert
+    # rows that shift the very pages being read out from under the reader
+    if page.offset == 0:
+        record_audit(
+            actor_ref=actor.user_ref,
+            action="access.audit_logs",
+            tenant_id=effective_tenant,
+            detail={"actor_ref": actor_ref, "action": action},
+        )
     entries = list_audit_logs(**filters, limit=page.limit, offset=page.offset)
     total = count_audit_logs(**filters)
     return {

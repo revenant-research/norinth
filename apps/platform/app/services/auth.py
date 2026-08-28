@@ -12,6 +12,7 @@ from app.storage.workflow import (
     insert_session,
     load_session,
     purge_expired_sessions,
+    touch_session,
 )
 
 # pbkdf2-hmac-sha256 is stdlib, no external crypto dep. iteration count meets
@@ -25,6 +26,14 @@ _SALT_BYTES = 16
 _ALLOWED_ALGORITHMS = {"sha256", "sha512"}
 
 SESSION_TTL_HOURS = int(os.getenv("NORINTH_SESSION_TTL_HOURS", "12"))
+
+# idle timeout: the absolute ttl alone leaves a session usable for hours on an
+# abandoned workstation. activity extends the session; silence ends it. 0
+# disables. 30 minutes is the customary control in regulated deployments
+SESSION_IDLE_MINUTES = int(os.getenv("NORINTH_SESSION_IDLE_MINUTES", "30"))
+# activity writes are throttled so a busy dashboard doesn't update the row on
+# every request; precision loss is bounded by this interval
+_TOUCH_INTERVAL_SECONDS = 60
 
 # one password floor for every place a password is set (signup, invite, change,
 # admin-set). without a single value the change-password path allowed 8 while
@@ -94,11 +103,36 @@ def create_session(user_ref: str) -> str:
     return token
 
 
+def _parse_timestamp(value: str | None) -> datetime | None:
+    """iso timestamp -> aware utc datetime; tolerates the db's space-separated
+    naive format (created_at is written by sql datetime('now'), which is utc)"""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
 def resolve_session(token: str | None) -> str | None:
     if not token:
         return None
-    session = load_session(_hash_token(token))
-    return None if session is None else session["user_ref"]
+    token_hash = _hash_token(token)
+    session = load_session(token_hash)
+    if session is None:
+        return None
+    if SESSION_IDLE_MINUTES > 0:
+        # rows from before the last_seen_at column fall back to created_at, so
+        # a legacy idle session ages out instead of being grandfathered in
+        last_seen = _parse_timestamp(session.get("last_seen_at")) or _parse_timestamp(session.get("created_at"))
+        now = datetime.now(UTC)
+        if last_seen is None or now - last_seen > timedelta(minutes=SESSION_IDLE_MINUTES):
+            delete_session(token_hash)
+            return None
+        if (now - last_seen).total_seconds() > _TOUCH_INTERVAL_SECONDS:
+            touch_session(token_hash, now.isoformat())
+    return session["user_ref"]
 
 
 def end_session(token: str | None) -> None:

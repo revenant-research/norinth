@@ -40,7 +40,16 @@ router = APIRouter()
 
 
 @router.get("/api/compliance/aibom")
-def aibom(scope: ScopeFilter = Depends(scoped_dependency)) -> dict[str, Any]:
+def aibom(actor: ActorContext = Depends(current_actor), scope: ScopeFilter = Depends(scoped_dependency)) -> dict[str, Any]:
+    # an export is evidence leaving the system; audited like the audit packet
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="compliance.aibom",
+        tenant_id=scope.tenant_id,
+        target_type="aibom",
+        target_id=scope.tenant_id or "platform",
+        detail={"project": scope.project, "environment": scope.environment},
+    )
     return generate_aibom(tenant_id=scope.tenant_id, project=scope.project, environment=scope.environment)
 
 
