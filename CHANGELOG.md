@@ -6,7 +6,62 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **TOTP multi-factor authentication** for every local-password account, the
+  platform administrator included (RFC 6238, no new dependency). The password
+  step on an enrolled account issues a short-lived challenge instead of a
+  session; codes are single-use; secrets are encrypted at rest and recovery
+  codes are hashed, single-use, and shown exactly once. An organization
+  administrator can reset a locked-out member's MFA; the platform operator
+  deliberately cannot, so an operator password reset no longer opens an
+  enrolled account. (#113)
+- **Session idle timeout** (`NORINTH_SESSION_IDLE_MINUTES`, default 30, `0`
+  disables) alongside the absolute lifetime; idle sessions are deleted, and
+  sessions from before the upgrade age out on their creation time. (#110)
+- **Access and failure auditing**: failed logins (with source IP and tenant
+  attribution), one lockout event per lockout, reads of the record-level
+  events view, reads of the audit trail itself, AI-BOM exports, and operator
+  previews of a tenant's data footprint — visible to that tenant. (#109)
+- **`/health/ready`**: readiness now includes a database round-trip, so a pod
+  that cannot reach its database leaves the load balancer instead of serving
+  errors; `/health` stays database-free for liveness. Helm and Compose point
+  at it. (#111)
+- **Telemetry from a retired system is now a finding** (`RISK-LCY-001`), as
+  the system hub always claimed: events observed after retirement raise an
+  open finding with the late events as evidence. (#114)
+
 ### Fixed
+
+- **The SDK content boundary now covers the structured emitter channels.**
+  With capture off, `agent_run(steps=)`, `model_call(usage=)`,
+  `guardrail(matched_rules=)` and caller-supplied `error=` payloads passed
+  application data to the wire verbatim; a step's input/output is exactly
+  where an agent's observations end up. Structural labels the platform reads
+  (step tool names, token counts, identifier-shaped rule ids, error types)
+  still arrive; everything else is summarized, and mapping key names are
+  redacted everywhere. (#107)
+- **Content fingerprints are keyed on a default install.** Without
+  `NORINTH_SIGNING_SECRET` the SDK emitted bare SHA-256 digests, which are a
+  lookup table for low-entropy content such as record numbers. The key now
+  derives from the api key when no signing secret is set; digests change on
+  upgrade for previously-unkeyed installs, and rotating the api key unlinks
+  old fingerprints unless a signing secret is pinned. (#108)
+- **Scope listings are tenant-scoped.** `/api/scopes` named every tenant's
+  projects and environments to any signed-in tenant. (#106)
+- **Decisions and exceptions are append-only.** Resubmitting an identical
+  decision no longer rewrites its timestamp, and replaying an identical
+  exception no longer resurrects a lapsed waiver. (#112)
+- **Framework coverage includes detection rules.** Coverage was built only
+  from the control library, silently dropping the OWASP agentic family that
+  lives on risk rules; an open finding now marks its requirement as a gap
+  regardless of assessments. The per-tenant audit packet also reports the
+  tenant's own audit entry count instead of the platform-wide chain length.
+  (#114)
+- **An empty AAD binding on a stored secret is an error**, not a silent
+  downgrade to unauthenticated context. (#115)
+- The change-password screen enforced 8 characters client-side while the
+  platform requires 12. (#110)
 
 - **The content boundary now covers application `metadata`.** With
   `capture_content` off, the SDK hashed prompts and completions but passed
