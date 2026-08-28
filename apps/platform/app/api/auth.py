@@ -8,7 +8,7 @@ from typing import Any
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from app.dependencies import SESSION_COOKIE, ActorContext, current_actor
+from app.dependencies import SESSION_COOKIE, ActorContext, current_actor, mfa_enrollment_required
 from app.schemas.auth import ChangePasswordRequest, LoginRequest
 from app.services import secrets as secret_store
 from app.services import totp
@@ -99,6 +99,8 @@ def _actor_profile(actor: ActorContext) -> dict[str, Any]:
         "tenant_id": actor.tenant_id,
         "platform_role": actor.platform_role,
         "must_change_password": bool(user.get("must_change_password")),
+        # org policy: the frontend gates the workspace behind enrollment
+        "mfa_enrollment_required": mfa_enrollment_required(user),
         "permissions": effective_permissions(actor),
         "is_super_admin": actor.is_super_admin,
     }

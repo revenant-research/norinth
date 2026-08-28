@@ -249,6 +249,11 @@ Releases follow semantic versioning; the changelog lists breaking changes.
   single-use recovery codes at enrollment; an organization administrator can reset a locked-out
   member's MFA, the platform operator cannot. Keep at least two organization administrators so
   an MFA reset is always available in-tenant.
+- Organizations can **require** MFA (People & access → Security policy). Turning it on never
+  locks anyone out: unenrolled members keep their password login but reach only the enrollment
+  screen until a second factor is active. SSO/SCIM-provisioned accounts are exempt — their
+  factor lives at your identity provider — and the administrator flipping the switch must
+  already be enrolled themselves.
 - Register an attestation key so release gates require CI-signed evaluation evidence.
 - Schedule `scripts/backup.sh`; test `restore.sh` once.
 - Verify the audit chain periodically: `GET /api/admin/audit-logs/verify`.
