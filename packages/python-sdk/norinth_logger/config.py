@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 from dataclasses import dataclass
 from os import getenv
 from typing import Any
@@ -54,6 +56,25 @@ class NorinthConfig:
     # instead. it does not make delivery synchronous; it makes the durability
     # decision explicit and checked
     durable: bool = False
+
+    @property
+    def fingerprint_key(self) -> str:
+        """key for content fingerprints (privacy.stable_hash)
+
+        an unkeyed digest of low-entropy content (an MRN, a short prompt) is a
+        lookup table, not a privacy control — anyone can brute-force the
+        preimage. an explicit signing_secret wins so fingerprints can stay
+        stable across services and api-key rotation; otherwise the key is
+        derived from the api key, which every install already holds as a
+        secret, so a default install never emits unkeyed digests. rotating the
+        api key rotates the derived key (old and new fingerprints stop
+        linking); pin signing_secret if that continuity matters to you
+        """
+        if self.signing_secret:
+            return self.signing_secret
+        return hmac.new(
+            self.api_key.encode("utf-8"), b"norinth-fingerprint-key-v1", hashlib.sha256
+        ).hexdigest()
 
     @classmethod
     def from_env(cls, **overrides: object) -> NorinthConfig:
