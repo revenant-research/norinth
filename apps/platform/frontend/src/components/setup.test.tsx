@@ -20,7 +20,7 @@ describe("SetupWizard", () => {
       throw new Error(path);
     });
     vi.spyOn(api, "logout").mockResolvedValue();
-    vi.spyOn(api, "login").mockResolvedValue(orgAdmin as any);
+    vi.spyOn(api, "login").mockResolvedValue({ user: orgAdmin } as any);
     let eventsSeen = false;
     vi.spyOn(api, "getJson").mockImplementation(async (path: string) => {
       if (path === "/api/onboarding") return { steps: [{ id: "send_events", done: eventsSeen }] } as any;
@@ -62,7 +62,7 @@ describe("SetupWizard", () => {
 
   it("starts at sign-in when nobody is signed in and rejects a non-administrator account", async () => {
     const user = userEvent.setup();
-    vi.spyOn(api, "login").mockResolvedValue(orgAdmin as any);
+    vi.spyOn(api, "login").mockResolvedValue({ user: orgAdmin } as any);
     render(<SetupWizard initialUser={null} onFinished={vi.fn()} />);
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Sign in as the platform administrator");
     await user.type(screen.getByLabelText("Administrator email"), "dana@example.org");

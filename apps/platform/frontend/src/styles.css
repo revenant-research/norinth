@@ -1056,6 +1056,24 @@ button.danger {
   color: #fff;
 }
 
+/* account security dialog */
+.mfa-recovery-codes {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--n-radius);
+  background: var(--surface-muted, rgba(23, 23, 23, 0.04));
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 13px;
+  line-height: 1.7;
+  user-select: all;
+}
+
+.mfa-uri code {
+  word-break: break-all;
+  font-size: 11px;
+}
+
 /* actionable governance flags (org overview -> people & access) */
 .flag-action {
   margin-top: 10px;
