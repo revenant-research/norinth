@@ -29,7 +29,11 @@ def redact_text(value: str) -> str:
 
 
 def _capture_content(value: Any) -> Any:
-    """redacted json-native content, or _OMIT_CONTENT for anything else so objects aren't repr'd"""
+    """redacted json-native content, or _OMIT_CONTENT for anything else so objects aren't repr'd
+
+    keys are redacted like values: a mapping keyed by an identifier ("MRN-1: ...")
+    leaks through the key even when every value is handled
+    """
     if value is None or isinstance(value, (int, float, bool)):
         return value
     if isinstance(value, str):
@@ -37,7 +41,7 @@ def _capture_content(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_capture_content(item) for item in value]
     if isinstance(value, dict):
-        return {str(key): _capture_content(item) for key, item in value.items()}
+        return {redact_text(str(key)): _capture_content(item) for key, item in value.items()}
     return _OMIT_CONTENT
 
 GOVERNANCE_CONTEXT_FIELDS = {
@@ -183,6 +187,36 @@ METADATA_SAFE_KEYS = frozenset(
 )
 
 
+def _sanitize_mapping(
+    mapping: dict[str, Any],
+    safe_keys: frozenset[str],
+    capture_content: bool,
+    hash_key: str | None = None,
+) -> dict[str, Any]:
+    """one content boundary for every caller-supplied mapping
+
+    with capture on the mapping passes through redacted; with capture off the
+    keys named in safe_keys pass as redacted, length-capped labels and every
+    other value becomes a type+hash summary. key names are content too — they
+    are redacted and capped, so an identifier used as a key doesn't ride out
+    """
+    if capture_content:
+        # content capture is an explicit opt-in; redact and pass through
+        content = _capture_content(mapping)
+        return content if isinstance(content, dict) else {}
+    sanitized: dict[str, Any] = {}
+    for key, value in mapping.items():
+        name = redact_text(str(key))[:_MAX_CONTEXT_LEN]
+        if name in safe_keys:
+            label = _scalar_label(value)
+            if label is not None:
+                sanitized[name] = redact_text(label)
+                continue
+            # a safe key holding a structure is not a label; summarize it
+        sanitized[name] = summarize_value(value, False, hash_key)
+    return sanitized
+
+
 def sanitize_metadata(
     metadata: dict[str, Any] | None,
     capture_content: bool,
@@ -192,20 +226,115 @@ def sanitize_metadata(
     """governance-safe view of app metadata; see METADATA_SAFE_KEYS"""
     if not metadata:
         return {}
-    if capture_content:
-        # content capture is an explicit opt-in; redact and pass through
-        content = _capture_content(metadata)
-        return content if isinstance(content, dict) else {}
-
     safe_keys = METADATA_SAFE_KEYS if allowlist is None else METADATA_SAFE_KEYS | frozenset(allowlist)
-    sanitized: dict[str, Any] = {}
-    for key, value in metadata.items():
-        name = str(key)
-        if name in safe_keys:
-            label = _scalar_label(value)
-            if label is not None:
-                sanitized[name] = redact_text(label)
-                continue
-            # an allowlisted key holding a structure is not a label; summarize it
-        sanitized[name] = summarize_value(value, False, hash_key)
+    return _sanitize_mapping(metadata, safe_keys, capture_content, hash_key)
+
+
+# an agent step is caller-structured; the platform reads only its labels (the
+# tool name feeds the agent registry/posture) so those pass as labels and the
+# step's inputs/outputs/observations obey the content boundary like a prompt.
+# deliberately excludes "action": in common agent frameworks that field holds
+# the agent's own free text, not a structural label
+STEP_SAFE_KEYS = frozenset({"tool", "name", "type", "status"})
+
+# a caller-supplied error payload: the platform reads event status, never the
+# error body, so only type-shaped labels pass in the clear
+ERROR_SAFE_KEYS = frozenset({"type", "code", "category"})
+
+
+def sanitize_steps(
+    steps: list[Any] | None,
+    capture_content: bool,
+    hash_key: str | None = None,
+) -> list[Any]:
+    """agent steps obey the content boundary; see STEP_SAFE_KEYS"""
+    sanitized: list[Any] = []
+    for step in steps or []:
+        if isinstance(step, dict):
+            sanitized.append(_sanitize_mapping(step, STEP_SAFE_KEYS, capture_content, hash_key))
+        else:
+            sanitized.append(summarize_value(step, capture_content, hash_key))
     return sanitized
+
+
+# a guardrail rule id is a machine identifier (pii.ssn, mrn-pattern), not prose.
+# shape is the only trustworthy distinction: redaction patterns can't recognize
+# an arbitrary name or record number, but content is free text and identifiers
+# aren't. anything with whitespace or beyond the id charset is treated as the
+# matched content itself
+_RULE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/#@-]{0,127}$")
+
+
+def sanitize_rule_labels(
+    rules: list[Any] | None,
+    capture_content: bool,
+    hash_key: str | None = None,
+) -> list[str]:
+    """matched guardrail rules pass as rule ids; anything else obeys the boundary
+
+    with capture off only identifier-shaped entries pass in the clear — a
+    guardrail library that surfaces the matched excerpt ("matched: Jane Q...")
+    would otherwise carry content out under label treatment. with capture on
+    entries pass redacted and capped like an incident title. a structured entry
+    was never an id and becomes its digest either way
+    """
+    labels: list[str] = []
+    for rule in rules or []:
+        label = _scalar_label(rule)
+        if label is None:
+            labels.append(stable_hash(rule, hash_key))
+        elif capture_content:
+            labels.append(redact_text(label))
+        elif _RULE_ID.match(label):
+            labels.append(label)
+        else:
+            labels.append(stable_hash(label, hash_key))
+    return labels
+
+
+def sanitize_usage(
+    usage: dict[str, Any] | None,
+    capture_content: bool,
+    hash_key: str | None = None,
+    _depth: int = 0,
+) -> dict[str, Any]:
+    """usage is numeric accounting (token counts, costs)
+
+    numbers pass through under redacted, capped keys; strings and other
+    structures are summarized so the usage dict can't smuggle content past a
+    capture_content=False install. nested numeric detail (provider token
+    breakdowns) survives to a small depth
+    """
+    if not usage:
+        return {}
+    if capture_content:
+        content = _capture_content(usage)
+        return content if isinstance(content, dict) else {}
+    sanitized: dict[str, Any] = {}
+    for key, value in usage.items():
+        name = redact_text(str(key))[:_MAX_CONTEXT_LEN]
+        if value is None or isinstance(value, (bool, int, float)):
+            sanitized[name] = value
+        elif isinstance(value, dict) and _depth < 2:
+            sanitized[name] = sanitize_usage(value, False, hash_key, _depth + 1)
+        else:
+            sanitized[name] = summarize_value(value, False, hash_key)
+    return sanitized
+
+
+def sanitize_error_payload(
+    error: Any,
+    capture_content: bool,
+    hash_key: str | None = None,
+) -> Any:
+    """caller-supplied error payloads obey the content boundary
+
+    mirrors summarize_error for raised exceptions: an error message is content
+    (a failed lookup easily names the record it failed on), so it becomes a
+    digest while type-shaped labels stay readable. see ERROR_SAFE_KEYS
+    """
+    if error is None:
+        return None
+    if not isinstance(error, dict):
+        return summarize_value(error, capture_content, hash_key)
+    return _sanitize_mapping(error, ERROR_SAFE_KEYS, capture_content, hash_key)
