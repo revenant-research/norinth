@@ -10,7 +10,11 @@ from .context import TraceContext, get_context, reset_context, set_context
 from .privacy import (
     infer_governance_context,
     redact_text,
+    sanitize_error_payload,
     sanitize_metadata,
+    sanitize_rule_labels,
+    sanitize_steps,
+    sanitize_usage,
     summarize_call,
     summarize_error,
     summarize_value,
@@ -206,9 +210,9 @@ class NorinthClient:
                     "operation": operation,
                     "prompt": summarize_value(prompt, self.config.capture_content, self.config.signing_secret),
                     "response": summarize_value(response, self.config.capture_content, self.config.signing_secret),
-                    "usage": usage or {},
+                    "usage": sanitize_usage(usage, self.config.capture_content, self.config.signing_secret),
                     "metadata": self._metadata(context.metadata, metadata),
-                    "error": error,
+                    "error": sanitize_error_payload(error, self.config.capture_content, self.config.signing_secret),
                 },
             ),
         )
@@ -244,7 +248,7 @@ class NorinthClient:
                     "documents": summarize_value(documents, self.config.capture_content, self.config.signing_secret),
                     "document_count": len(documents),
                     "metadata": self._metadata(context.metadata, metadata),
-                    "error": error,
+                    "error": sanitize_error_payload(error, self.config.capture_content, self.config.signing_secret),
                 },
             )
         )
@@ -279,7 +283,7 @@ class NorinthClient:
                     "arguments": summarize_value(arguments, self.config.capture_content, self.config.signing_secret),
                     "result": summarize_value(result, self.config.capture_content, self.config.signing_secret),
                     "metadata": self._metadata(context.metadata, metadata),
-                    "error": error,
+                    "error": sanitize_error_payload(error, self.config.capture_content, self.config.signing_secret),
                 },
             )
         )
@@ -311,7 +315,11 @@ class NorinthClient:
                     "guardrail_name": guardrail_name,
                     "decision": decision,
                     "score": score,
-                    "matched_rules": matched_rules or [],
+                    # rule ids are labels; a guardrail library that surfaces the
+                    # matched excerpt would otherwise carry content out verbatim
+                    "matched_rules": sanitize_rule_labels(
+                        matched_rules, self.config.capture_content, self.config.signing_secret
+                    ),
                     "metadata": self._metadata(context.metadata, metadata),
                 },
             )
@@ -386,7 +394,9 @@ class NorinthClient:
                 duration_ms=duration_ms,
                 attributes={
                     "agent_name": agent_name,
-                    "steps": steps,
+                    # a step's tool/name labels feed the registry; its inputs,
+                    # outputs and observations are content like any prompt
+                    "steps": sanitize_steps(steps, self.config.capture_content, self.config.signing_secret),
                     "step_count": len(steps),
                     "outcome": outcome,
                     "metadata": self._metadata(context.metadata, metadata),
