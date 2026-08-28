@@ -34,11 +34,18 @@ from app.storage.errors import RecordNotFound
 from app.storage.migrations import run_migrations
 from app.storage.workflow import load_platform_user
 
-# level via NORINTH_LOG_LEVEL, default INFO
+# level via NORINTH_LOG_LEVEL, default INFO. NORINTH_LOG_JSON=1 emits one json
+# object per line (with request ids and any structured extras) for log shippers
+_LOG_JSON = os.getenv("NORINTH_LOG_JSON", "0").lower() in {"1", "true", "yes"}
 logging.basicConfig(
     level=os.getenv("NORINTH_LOG_LEVEL", "INFO").upper(),
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
+if _LOG_JSON:
+    from app.services.observability import JsonLogFormatter
+
+    for _handler in logging.getLogger().handlers:
+        _handler.setFormatter(JsonLogFormatter())
 
 STATIC_DIR = Path(__file__).resolve().parent / "dashboard" / "static"
 ASSETS_DIR = STATIC_DIR / "assets"
@@ -76,6 +83,24 @@ _validate_secret_key_at_startup()
 run_migrations()
 start_notification_worker()
 start_maintenance_worker()
+
+
+def _outbox_pending() -> float:
+    from app.storage.raw_events import connect
+
+    with connect() as connection:
+        row = connection.execute(
+            "SELECT COUNT(*) AS n FROM notification_outbox WHERE status = 'pending'"
+        ).fetchone()
+    return float(row["n"])
+
+
+# scrape-time gauge: the outbox is small by design (delivered rows age out),
+# so the count is cheap, and a growing value is the earliest sign deliveries
+# are failing
+from app.services.observability import gauge_callback  # noqa: E402
+
+gauge_callback("norinth_outbox_pending", "Notification outbox rows awaiting delivery", _outbox_pending)
 seed_super_admin()
 seed_dev_ingestion_key_if_dev()
 app.include_router(ingestion_router)
@@ -123,6 +148,86 @@ _MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 # saml acs is a cross-site form post from the idp by design; protected by the
 # assertion signature and InResponseTo binding, not by origin matching
 _CSRF_EXEMPT = {"/api/auth/saml/acs"}
+
+
+_access_logger = logging.getLogger("norinth.access")
+
+
+@app.middleware("http")
+async def request_telemetry(request: Request, call_next):
+    """request id + http metrics + (in json mode) one access-log line
+
+    the id arrives on X-Request-ID or is minted here, follows the request
+    through a contextvar so every log line carries it, and returns on the
+    response so a caller can quote it in a support ticket. the metric route
+    label is the route TEMPLATE (/api/applications/{application_id}), never
+    the raw path, so label cardinality stays bounded
+    """
+    from app.services import observability
+
+    request_id = observability.new_request_id(request.headers.get("x-request-id"))
+    token = observability.request_id_var.set(request_id)
+    timer = observability.Timer()
+    try:
+        with timer:
+            response = await call_next(request)
+    finally:
+        observability.request_id_var.reset(token)
+    route = getattr(request.scope.get("route"), "path", None)
+    if route:  # unknown paths (404 scans) share one label instead of minting new ones
+        observability.counter_inc(
+            "norinth_http_requests_total",
+            "HTTP requests by method, route template and status class",
+            {"method": request.method, "route": route, "status": f"{response.status_code // 100}xx"},
+        )
+        observability.histogram_observe(
+            "norinth_http_request_duration_seconds",
+            "HTTP request duration by route template",
+            timer.elapsed,
+            {"route": route},
+        )
+    else:
+        observability.counter_inc(
+            "norinth_http_requests_total",
+            "HTTP requests by method, route template and status class",
+            {"method": request.method, "route": "unmatched", "status": f"{response.status_code // 100}xx"},
+        )
+    response.headers["X-Request-ID"] = request_id
+    if _LOG_JSON:
+        _access_logger.info(
+            "request",
+            extra={
+                "method": request.method,
+                "path": request.url.path,
+                "status": response.status_code,
+                "duration_ms": round(timer.elapsed * 1000, 2),
+            },
+        )
+    return response
+
+
+@app.get("/metrics")
+def metrics(request: Request):
+    """prometheus scrape endpoint — operator plane, never anonymous
+
+    a bearer token (NORINTH_METRICS_TOKEN) authenticates scrapers; a platform
+    administrator session also works for a human look. metric labels include
+    tenant ids, which is exactly why this is not public
+    """
+    from fastapi.responses import PlainTextResponse
+
+    from app.services.observability import render_metrics
+
+    token = os.getenv("NORINTH_METRICS_TOKEN")
+    supplied = request.headers.get("authorization", "")
+    if token and supplied == f"Bearer {token}":
+        return PlainTextResponse(render_metrics(), media_type="text/plain; version=0.0.4")
+    user_ref = resolve_session(request.cookies.get(SESSION_COOKIE))
+    if user_ref:
+        user = load_platform_user(user_ref)
+        if user and user.get("platform_role") == "super_admin":
+            return PlainTextResponse(render_metrics(), media_type="text/plain; version=0.0.4")
+    return JSONResponse(status_code=403, content={"detail": "Metrics require NORINTH_METRICS_TOKEN or a platform administrator session"})
 
 
 @app.middleware("http")
