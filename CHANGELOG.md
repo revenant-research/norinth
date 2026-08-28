@@ -110,6 +110,15 @@ Semantic Versioning.
 
 ### Changed
 
+- **Ingest cost no longer grows with stored history.** Accepting a batch
+  recomputed derived state by reading (and with encryption on, decrypting)
+  each touched application's entire event history, twice. The request path
+  now folds the batch into fingerprints and assessments at O(batch), with
+  risk rules evaluated over indexed column aggregates; the full recompute
+  remains as the rebuild path. Also fixes a correctness bug this surfaced:
+  repeat usage of an already-known model read as a material change (payload
+  entries were built without dedup), which could block release gates on
+  routine traffic. (#119)
 - Release prep for v0.3.0: the SDK's PyPI page links point at the real
   repository (they targeted a nonexistent one), versions bumped, and
   CONTRIBUTING documents the tag steps and the one-time PyPI
