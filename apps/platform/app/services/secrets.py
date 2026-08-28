@@ -119,12 +119,24 @@ def _aesgcm_decrypt(key: bytes, nonce_b64: str, ct_b64: str, associated_data: st
     return AESGCM(key).decrypt(nonce, ciphertext, associated_data.encode("utf-8") or None).decode("utf-8")
 
 
-def encrypt(value: str, *, associated_data: str = "") -> str:
+def _require_binding(associated_data: str) -> None:
+    """aad is the context binding that stops a ciphertext being replayed onto
+    another row (a tenant's sso secret pasted into another tenant's config).
+    an empty string silently became no-AAD, which is the binding vanishing
+    exactly when a caller's tenant id happened to be blank — fail instead"""
+    if not associated_data:
+        raise ValueError(
+            "associated_data must be a non-empty context binding (e.g. the tenant id or record key)"
+        )
+
+
+def encrypt(value: str, *, associated_data: str) -> str:
     """encrypt a secret for storage under the primary key
 
     fails closed: without a configured key it raises rather than storing
     plaintext; opt into plaintext with NORINTH_ALLOW_PLAINTEXT_SECRETS=1
     """
+    _require_binding(associated_data)
     primary = primary_key_id()
     if primary is None:
         if _plaintext_allowed():
@@ -149,8 +161,9 @@ def encrypt(value: str, *, associated_data: str = "") -> str:
     )
 
 
-def decrypt(stored: str, *, associated_data: str = "") -> str:
+def decrypt(stored: str, *, associated_data: str) -> str:
     """decrypt a stored secret; legacy plaintext passes through"""
+    _require_binding(associated_data)
     if stored.startswith(_PREFIX_V2):
         ring = keyring()
         kid, _, tail = stored[len(_PREFIX_V2):].partition(":")

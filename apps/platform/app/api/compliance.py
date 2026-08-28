@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 
 from app.dependencies import ActorContext, current_actor, now, scoped_dependency
 from app.schemas.events import ScopeFilter
-from app.storage.audit import list_audit_logs, record_audit, verify_audit_chain
+from app.storage.audit import count_audit_logs, list_audit_logs, record_audit, verify_audit_chain
 from app.storage.raw_events import list_events
 
 # ai-bom pages through all telemetry up to a ceiling; discloses truncation instead of dropping
@@ -40,7 +40,16 @@ router = APIRouter()
 
 
 @router.get("/api/compliance/aibom")
-def aibom(scope: ScopeFilter = Depends(scoped_dependency)) -> dict[str, Any]:
+def aibom(actor: ActorContext = Depends(current_actor), scope: ScopeFilter = Depends(scoped_dependency)) -> dict[str, Any]:
+    # an export is evidence leaving the system; audited like the audit packet
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="compliance.aibom",
+        tenant_id=scope.tenant_id,
+        target_type="aibom",
+        target_id=scope.tenant_id or "platform",
+        detail={"project": scope.project, "environment": scope.environment},
+    )
     return generate_aibom(tenant_id=scope.tenant_id, project=scope.project, environment=scope.environment)
 
 
@@ -113,7 +122,13 @@ def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilte
         ),
         "audit_trail": {
             "recent_entries": list_audit_logs(tenant_id=scope.tenant_id, limit=500),
-            "integrity": verify_audit_chain(),
+            "tenant_entries": count_audit_logs(tenant_id=scope.tenant_id),
+            # the chain is verified globally (a per-tenant view cannot prove
+            # nothing was removed), but the platform-wide row count is another
+            # tenant's activity level and stays out of a per-tenant packet
+            "integrity": {
+                "ok": verify_audit_chain().get("ok"),
+            },
         },
     }
 

@@ -130,7 +130,9 @@ export function SetupWizard({ initialUser, onFinished }: { initialUser: User | n
                 onSubmit={(e) => {
                   e.preventDefault();
                   void run(async () => {
-                    const user = await login(email, password);
+                    const result = await login(email, password);
+                    if (result.mfa_required) throw new Error("This account has a second factor; sign in from the main sign-in page.");
+                    const user = result.user;
                     if (!user.is_super_admin) throw new Error("Sign in with the platform administrator account printed by the installer.");
                     setAdmin(user);
                     setStep(user.must_change_password ? 2 : 3);
@@ -181,8 +183,9 @@ export function SetupWizard({ initialUser, onFinished }: { initialUser: User | n
                     await postJson("/api/setup/organization", org);
                     // hand off from the platform admin to the new org admin
                     await logout();
-                    const user = await login(org.admin_email, org.admin_password);
-                    setOrgUser(user);
+                    const result = await login(org.admin_email, org.admin_password);
+                    if (result.mfa_required) throw new Error("This account has a second factor; sign in from the main sign-in page.");
+                    setOrgUser(result.user);
                     setStep(4);
                   });
                 }}

@@ -15,8 +15,10 @@ import {
   loadGraphNeighborhood,
   login,
   logout,
+  mfaVerify,
   postJson,
 } from "./api";
+import { SecurityDialog } from "./components/security";
 import { LandingPage } from "./components/landing";
 import { SetupWizard } from "./components/setup";
 import { InviteScreen } from "./components/invite";
@@ -175,6 +177,7 @@ const PLATFORM_ROUTES: RouteDef[] = [
 
 function PlatformConsole({ user, onSignOut }: { user: User; onSignOut: () => void }) {
   const [route, setRoute] = useState<string[]>(currentHash);
+  const [showSecurity, setShowSecurity] = useState(false);
 
   useEffect(() => {
     const onHashChange = () => setRoute(currentHash());
@@ -206,9 +209,11 @@ function PlatformConsole({ user, onSignOut }: { user: User; onSignOut: () => voi
               <strong>{user.display_name}</strong>
               <span>Platform super admin</span>
             </div>
+            <button className="secondary" onClick={() => setShowSecurity(true)}>Security</button>
             <button className="secondary" onClick={signOut}>Sign out</button>
           </div>
         </header>
+        {showSecurity ? <SecurityDialog onClose={() => setShowSecurity(false)} /> : null}
         <div className="page">
           {active === "overview" ? <PlatformOverview /> : null}
           {active === "organizations" ? <AdminConsole /> : null}
@@ -255,18 +260,77 @@ function LoginScreen({
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // set once the password is accepted on an mfa-enrolled account
+  const [challenge, setChallenge] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  const [useRecovery, setUseRecovery] = useState(false);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError("");
     try {
-      onAuthenticated(await login(email, password));
+      const result = await login(email, password);
+      if (result.mfa_required) {
+        setChallenge(result.challenge);
+      } else {
+        onAuthenticated(result.user);
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Sign in failed.");
     } finally {
       setBusy(false);
     }
+  }
+
+  async function submitCode(event: React.FormEvent) {
+    event.preventDefault();
+    if (!challenge) return;
+    setBusy(true);
+    setError("");
+    try {
+      onAuthenticated(await mfaVerify(challenge, code, useRecovery));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Verification failed.");
+      // an expired or burned challenge means starting over with the password
+      if (caught instanceof ApiError && caught.status === 401 && /challenge/i.test(caught.message)) {
+        setChallenge(null);
+        setCode("");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (challenge) {
+    return (
+      <div className="auth-screen">
+        <form className="auth-card" onSubmit={submitCode}>
+          <div className="brand">Norinth</div>
+          <h1>Two-factor check</h1>
+          <p>{useRecovery ? "Enter one of your saved recovery codes." : "Enter the code from your authenticator app."}</p>
+          <label>
+            {useRecovery ? "Recovery code" : "Authentication code"}
+            <input
+              value={code}
+              inputMode={useRecovery ? "text" : "numeric"}
+              autoComplete="one-time-code"
+              autoFocus
+              onChange={(event) => setCode(event.target.value)}
+              required
+            />
+          </label>
+          {error ? <div className="auth-error" role="alert">{error}</div> : null}
+          <button type="submit" disabled={busy || !code}>{busy ? "Checking" : "Verify"}</button>
+          <button type="button" className="link-button" onClick={() => setUseRecovery((value) => !value)}>
+            {useRecovery ? "Use the authenticator instead" : "Use a recovery code instead"}
+          </button>
+          <button type="button" className="link-button" onClick={() => { setChallenge(null); setCode(""); setError(""); }}>
+            Back to sign in
+          </button>
+        </form>
+      </div>
+    );
   }
 
   return (
@@ -301,8 +365,8 @@ function ChangePasswordScreen({ user, onChanged }: { user: User; onChanged: (use
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (newPassword.length < 8) {
-      setError("New password must be at least 8 characters.");
+    if (newPassword.length < 12) {
+      setError("New password must be at least 12 characters.");
       return;
     }
     setBusy(true);
@@ -341,6 +405,7 @@ function ChangePasswordScreen({ user, onChanged }: { user: User; onChanged: (use
 
 function Workspace({ user, onSignOut }: { user: User; onSignOut: () => void }) {
   const [route, setRoute] = useState<string[]>(currentHash);
+  const [showSecurity, setShowSecurity] = useState(false);
   const [data, setData] = useState<DashboardData | null>(null);
   const [message, setMessage] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
@@ -427,9 +492,11 @@ function Workspace({ user, onSignOut }: { user: User; onSignOut: () => void }) {
               <span>{roleLabel(user)} / {user.tenant_id || "No organization"}</span>
             </div>
             <button className="secondary" onClick={refresh}>Refresh</button>
+            <button className="secondary" onClick={() => setShowSecurity(true)}>Security</button>
             <button className="secondary" onClick={signOut}>Sign out</button>
           </div>
         </header>
+        {showSecurity ? <SecurityDialog onClose={() => setShowSecurity(false)} /> : null}
         <div className="page">
           {isAdminRoute(active) ? <AdminRoutes active={active} scope={scope} user={user} /> : null}
           {!isAdminRoute(active) && isLoading && !data ? <WorkspaceSkeleton /> : null}

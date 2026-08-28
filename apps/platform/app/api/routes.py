@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 
 from app.api.pagination import PageParams, paginate
 from app.dependencies import ActorContext, current_actor, now, scoped_dependency
@@ -126,15 +126,33 @@ def health():
     return {"ok": True, "time": now()}
 
 
+@router.get("/health/ready")
+def health_ready(response: Response):
+    """readiness probe: the process is only ready if its database answers
+
+    liveness deliberately skips the db (a db outage should not make the
+    orchestrator kill and churn pods), but readiness must include it — a pod
+    that cannot reach its database serves nothing but errors, and reporting
+    Ready kept it in the load balancer. SELECT 1: no table scan, no totals
+    """
+    try:
+        with connect() as connection:
+            connection.execute("SELECT 1").fetchone()
+    except Exception:
+        response.status_code = 503
+        return {"ok": False, "database": "unreachable", "time": now()}
+    return {"ok": True, "database": "ok", "time": now()}
+
+
 @router.get("/api/scopes")
 def scopes(actor: ActorContext = Depends(current_actor)):
-    # super admin works on orgs, not tenant scopes
-    if actor.is_super_admin:
+    # super admin works on orgs, not tenant scopes; a user with no org has no
+    # scopes. neither may see another tenant's project/environment names
+    if actor.is_super_admin or not actor.tenant_id:
         return {"tenants": [], "projects": [], "environments": []}
-    available = list_scopes()
-    # tenant actors only see their own org
+    available = list_scopes(actor.tenant_id)
     return {
-        "tenants": [actor.tenant_id] if actor.tenant_id else [],
+        "tenants": [actor.tenant_id],
         "projects": available["projects"],
         "environments": available["environments"],
     }
@@ -157,8 +175,29 @@ def _event_page(scope: ScopeFilter, page: PageParams, key: str, event_type: str 
 
 
 @router.get("/api/events")
-def events(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return _event_page(scope, page, "events")
+def events(
+    actor: ActorContext = Depends(current_actor),
+    scope: ScopeFilter = Depends(scoped_dependency),
+    page: PageParams = Depends(),
+):
+    result = _event_page(scope, page, "events")
+    # the events view returns record-level raw bodies (including captured
+    # content where an org opted in), so reading it is an access event:
+    # "who viewed this record" must have an answer. aggregate dashboards
+    # derived from the same data stay unaudited by design
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="access.events",
+        tenant_id=scope.tenant_id,
+        detail={
+            "project": scope.project,
+            "environment": scope.environment,
+            "offset": page.offset,
+            "limit": page.limit,
+            "returned": len(result["events"]),
+        },
+    )
+    return result
 
 
 @router.get("/api/systems")

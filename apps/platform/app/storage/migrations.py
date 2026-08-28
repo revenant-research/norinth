@@ -331,6 +331,57 @@ def _0017_audit_hmac_key_id(connection) -> None:
         connection.execute("UPDATE audit_logs SET hmac_key_id = 'legacy' WHERE row_hmac IS NOT NULL AND hmac_key_id IS NULL")
 
 
+def _0019_mfa(connection) -> None:
+    """totp multi-factor authentication
+
+    per-user secret (encrypted at rest via services/secrets), single-use
+    recovery codes (hashed), and short-lived login challenges so the password
+    step never issues a session on an mfa-enrolled account. last_counter makes
+    each totp code single-use
+    """
+    for statement in (
+        "ALTER TABLE platform_users ADD COLUMN mfa_secret TEXT",
+        "ALTER TABLE platform_users ADD COLUMN mfa_pending_secret TEXT",
+        "ALTER TABLE platform_users ADD COLUMN mfa_enabled_at TEXT",
+        "ALTER TABLE platform_users ADD COLUMN mfa_last_counter INTEGER",
+    ):
+        column = statement.split(" ADD COLUMN ")[1].split(" ")[0]
+        if not _has_column(connection, "platform_users", column):
+            connection.execute(statement)
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS mfa_recovery_codes (
+            user_ref TEXT NOT NULL,
+            code_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            used_at TEXT,
+            PRIMARY KEY (user_ref, code_hash)
+        )
+        """
+    )
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS mfa_challenges (
+            token TEXT PRIMARY KEY,
+            user_ref TEXT NOT NULL,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL
+        )
+        """
+    )
+def _0018_session_last_seen(connection) -> None:
+    """activity timestamp on sessions for the idle timeout
+
+    an absolute ttl alone leaves a session usable for hours on an abandoned
+    workstation. rows from before this migration have no activity signal, so
+    they stay NULL and the resolver falls back to created_at — a legacy idle
+    session ages out instead of being grandfathered in
+    """
+    if not _has_column(connection, "sessions", "last_seen_at"):
+        connection.execute("ALTER TABLE sessions ADD COLUMN last_seen_at TEXT")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
@@ -349,6 +400,8 @@ MIGRATIONS: list[Migration] = [
     Migration(15, "versioned audit-chain hash algorithm", _0015_audit_hash_version),
     Migration(16, "server-stamped ingest time on raw events", _0016_event_ingested_at),
     Migration(17, "audit-chain hmac key id for rotation", _0017_audit_hmac_key_id),
+    Migration(19, "totp multi-factor authentication", _0019_mfa),
+    Migration(18, "session activity timestamp for idle timeout", _0018_session_last_seen),
 ]
 
 

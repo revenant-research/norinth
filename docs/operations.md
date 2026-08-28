@@ -77,12 +77,15 @@ secret manager; the installer writes them to `.env` for Compose.
 | `NORINTH_PUBLIC_BASE_URL` | with SSO | request host | Public URL used to build OIDC redirect URIs and SAML SP metadata/ACS URLs. |
 | `NORINTH_COOKIE_SECURE` | behind TLS | auto | `1` marks the session cookie Secure. Defaults on when not in development mode. |
 | `NORINTH_TRUST_PROXY` | behind a proxy | `0` | `1` reads the client IP from `X-Forwarded-For` for login throttling. Only set when your ingress overwrites that header. |
-| `NORINTH_SESSION_TTL_HOURS` | no | `12` | Session lifetime. |
+| `NORINTH_SESSION_TTL_HOURS` | no | `12` | Absolute session lifetime. |
+| `NORINTH_SESSION_IDLE_MINUTES` | no | `30` | Idle timeout: a session with no request for this long is ended, regardless of remaining absolute lifetime. `0` disables. |
 | `NORINTH_SIGNING_SECRET` | no | — | Optional shared HMAC secret; when set, `/v1/events/batch` additionally requires `X-Norinth-Signature`. Per-tenant ingestion keys are the primary control. |
 | `NORINTH_LOGIN_LOCKOUT_THRESHOLD` / `_WINDOW_MINUTES` / `_MINUTES` | no | `5` / `15` / `15` | Per-account failed-login throttling. |
 | `NORINTH_LOGIN_IP_THRESHOLD` / `_WINDOW_MINUTES` / `_LOCKOUT_MINUTES` | no | `50` / `15` / `15` | Per-source-IP throttling (higher: shared NATs). |
 | `NORINTH_DEV_INGEST_TENANT` | no | `tenant-local` | Tenant bound to the dev `dev` key (development mode only). |
 | `NORINTH_SMTP_HOST` / `_PORT` / `_USER` / `_PASSWORD` / `_FROM` / `_STARTTLS` | for email | — / `587` / — / — / user / `1` | Outbound email for invites and notifications (review assigned/overdue/escalated, gate decisions, incidents). Without a host, emails are recorded as `skipped_no_smtp` in the delivery log and invite links are shown to the administrator instead. |
+| `NORINTH_LOG_JSON` | no | `0` | `1` emits one JSON object per log line (timestamp, level, logger, message, request id, structured fields) for log shippers. Every audit-chain append is also streamed to the `norinth.audit` logger, so a SIEM sees security events without polling the database. |
+| `NORINTH_METRICS_TOKEN` | for scraping | — | Bearer token for `GET /metrics` (Prometheus text format: request rates/latency by route, accepted events per tenant, audit-append duration, outbox depth). Without it, only a platform administrator session can read metrics — the endpoint is never anonymous, because labels include tenant ids. |
 | `NORINTH_NOTIFICATIONS_WORKER` | no | `1` | `0` disables the background delivery thread (tests). |
 | `NORINTH_MAINTENANCE_WORKER` | no | `1` | `0` disables the governance maintenance thread. It lapses expired exceptions and ages the review queue (overdue, escalated) on a timer, so those transitions do not wait for the next batch of telemetry. Leave it on unless you schedule the work yourself. |
 | `NORINTH_MAINTENANCE_INTERVAL_SECONDS` | no | `300` | Seconds between maintenance passes. On PostgreSQL a try-lock keeps concurrent replicas from running a pass at the same time. |
@@ -272,6 +275,12 @@ For reference, 50,000 events/day is ~0.6 events/second sustained.
 - PostgreSQL on a private network with its own credentials; encrypted at rest.
 - Restrict `/`, `/api`, `/scim` to your network; expose `/v1/*` only where applications live.
 - Connect SSO and SCIM so joiner/leaver control is automatic; keep local passwords for break-glass only.
+- Every local-password account — the platform administrator included — can enroll TOTP MFA
+  under **Security** in the header (any authenticator app; no external service). Once enrolled,
+  a password alone (including one reset by an operator) cannot open the account. Users get ten
+  single-use recovery codes at enrollment; an organization administrator can reset a locked-out
+  member's MFA, the platform operator cannot. Keep at least two organization administrators so
+  an MFA reset is always available in-tenant.
 - Register an attestation key so release gates require CI-signed evaluation evidence.
 - Schedule `scripts/backup.sh`; test `restore.sh` once.
 - Verify the audit chain periodically: `GET /api/admin/audit-logs/verify`.

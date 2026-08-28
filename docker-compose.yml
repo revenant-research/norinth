@@ -31,6 +31,7 @@ services:
       NORINTH_TRUST_PROXY: ${NORINTH_TRUST_PROXY:-0}
       NORINTH_SESSION_TTL_HOURS: ${NORINTH_SESSION_TTL_HOURS:-12}
       NORINTH_WEB_CONCURRENCY: ${NORINTH_WEB_CONCURRENCY:-2}
+      NORINTH_SESSION_IDLE_MINUTES: ${NORINTH_SESSION_IDLE_MINUTES:-30}
       NORINTH_SMTP_HOST: ${NORINTH_SMTP_HOST:-}
       NORINTH_SMTP_PORT: ${NORINTH_SMTP_PORT:-587}
       NORINTH_SMTP_USER: ${NORINTH_SMTP_USER:-}
@@ -39,7 +40,7 @@ services:
       NORINTH_SMTP_STARTTLS: ${NORINTH_SMTP_STARTTLS:-1}
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3).status==200 else 1)"]
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/health/ready', timeout=3).status==200 else 1)"]
       interval: 15s
       timeout: 5s
       retries: 10

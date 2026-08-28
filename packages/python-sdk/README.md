@@ -159,6 +159,15 @@ themselves; the platform strips it and sets it only after verification.
   `use_case`, `model_purpose`, `user_id`, `conversation_id`, `subject_tenant`
   and `tenant_id`. Treat those as fields that reach the platform in the clear,
   and do not put identifiers about a *subject* (a patient, a claimant) in them.
+- **The structured channels obey the boundary too.** With capture off,
+  `agent_run(steps=)` keeps only a step's structural labels (`tool`, `name`,
+  `type`, `status`) and summarizes everything else — a step's input/output is
+  exactly where an agent's observations end up, so it is treated like a prompt.
+  `model_call(usage=)` keeps numbers under their keys and summarizes any
+  string. `guardrail(matched_rules=)` keeps identifier-shaped rule ids
+  (`pii.ssn`, `mrn-pattern`) and digests anything that looks like matched
+  content. A caller-supplied `error=` dict keeps `type`/`code`/`category` and
+  digests the message, mirroring how raised exceptions are summarized.
 - **Incident narrative is opt-in too.** `incident(description=...)` is free text
   written by a person, so it obeys the same boundary and is hashed unless you set
   `NORINTH_CAPTURE_INCIDENT_DETAILS=true`. The incident `title` is always kept
