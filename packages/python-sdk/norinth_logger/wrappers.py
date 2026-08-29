@@ -106,7 +106,7 @@ class WrappedCallable:
     def _record(self, response: Any, kwargs: dict[str, Any], started: float, status: str, exc: BaseException | None) -> None:
         duration_ms = (perf_counter() - started) * 1000
         error = (
-            summarize_error(exc, self._client.config.capture_content, self._client.config.signing_secret)
+            summarize_error(exc, self._client.config.capture_content, self._client.config.fingerprint_key)
             if exc is not None
             else None
         )

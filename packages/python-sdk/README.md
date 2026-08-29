@@ -126,9 +126,13 @@ themselves; the platform strips it and sets it only after verification.
 ## Safety defaults
 
 - **Observe-only by default.** The SDK records structured metadata and hashes
-  of inputs and outputs, not raw content. The hash is SHA-256; set
-  `NORINTH_SIGNING_SECRET` to make it a keyed HMAC so short prompts and codes
-  cannot be recovered by a dictionary attack on the digest.
+  of inputs and outputs, not raw content. The fingerprint is always a keyed
+  HMAC-SHA256 — never a bare digest a dictionary attack could reverse for
+  short prompts, codes or record numbers. The key is `NORINTH_SIGNING_SECRET`
+  when set; otherwise it is derived from your api key, so a default install is
+  keyed with zero configuration. Rotating the api key rotates the derived key
+  (old and new fingerprints stop linking) — pin `NORINTH_SIGNING_SECRET` if
+  fingerprint continuity across services or key rotation matters to you.
 - **Fail-open with durability.** If the platform is unreachable or transport
   fails, your code keeps running. Transient failures are retried with backoff;
   set `NORINTH_SPOOL_DIR` to persist un-delivered batches to disk and redeliver

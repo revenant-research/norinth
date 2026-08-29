@@ -139,7 +139,7 @@ def patch_provider_method(
             return response
         except Exception as exc:
             status = "error"
-            error = summarize_error(exc, client.config.capture_content, client.config.signing_secret)
+            error = summarize_error(exc, client.config.capture_content, client.config.fingerprint_key)
             raise
         finally:
             duration_ms = (perf_counter() - started) * 1000
@@ -186,7 +186,7 @@ def patch_provider_method_async(
             return response
         except Exception as exc:
             status = "error"
-            error = summarize_error(exc, client.config.capture_content, client.config.signing_secret)
+            error = summarize_error(exc, client.config.capture_content, client.config.fingerprint_key)
             raise
         finally:
             duration_ms = (perf_counter() - started) * 1000
@@ -263,7 +263,7 @@ class NorinthFastAPIMiddleware:
             await self.app(scope, replay_receive, wrapped_send)
         except Exception as exc:
             status = "error"
-            error_summary = summarize_error(exc, self.client.config.capture_content, self.client.config.signing_secret)
+            error_summary = summarize_error(exc, self.client.config.capture_content, self.client.config.fingerprint_key)
             raise
         finally:
             duration_ms = (perf_counter() - started) * 1000
