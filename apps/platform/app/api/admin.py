@@ -31,6 +31,8 @@ from app.storage.organizations import (
     create_organization,
     list_organizations,
     load_organization,
+    organization_requires_mfa,
+    set_organization_require_mfa,
     set_organization_status,
 )
 from app.storage.raw_events import connect, count_events
@@ -629,6 +631,55 @@ def reset_org_user_password(user_ref: str, actor: ActorContext = Depends(current
         target_id=user_ref,
     )
     return {"user_ref": user_ref, "temporary_password": temp_password}
+
+
+class SecurityPolicyRequest(BaseModel):
+    require_mfa: bool
+
+
+@router.get("/api/org/security-policy")
+def get_security_policy(actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
+    tenant_id = _require_tenant(actor)
+    try:
+        require_permission(actor, PERM_USER_MANAGE, {"tenant_id": tenant_id})
+    except AuthorizationError as error:
+        _raise_forbidden(error)
+    return {"require_mfa": organization_requires_mfa(tenant_id)}
+
+
+@router.post("/api/org/security-policy")
+def set_security_policy(payload: SecurityPolicyRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
+    """org-wide mfa requirement for local-password accounts
+
+    turning it on never locks anyone out: unenrolled members keep their
+    password login and are routed to enrollment; sso/scim accounts are exempt
+    (their factor lives at the idp). the admin flipping it is subject to it too
+    """
+    tenant_id = _require_tenant(actor)
+    try:
+        require_permission(actor, PERM_USER_MANAGE, {"tenant_id": tenant_id})
+    except AuthorizationError as error:
+        _raise_forbidden(error)
+    if payload.require_mfa:
+        # the admin turning this on must already hold a second factor: without
+        # this, their next request lands behind the enrollment wall — including
+        # the request that could turn the policy back off
+        acting = load_platform_user(actor.user_ref) or {}
+        if acting.get("password_hash") and not (acting.get("mfa_enabled_at") and acting.get("mfa_secret")):
+            raise HTTPException(
+                status_code=400,
+                detail="Enroll your own second factor (Security, in the header) before requiring it for the organization",
+            )
+    set_organization_require_mfa(tenant_id, payload.require_mfa)
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="org.security_policy",
+        tenant_id=tenant_id,
+        target_type="organization",
+        target_id=tenant_id,
+        detail={"require_mfa": payload.require_mfa},
+    )
+    return {"require_mfa": payload.require_mfa}
 
 
 @router.post("/api/org/users/{user_ref}/mfa/reset")

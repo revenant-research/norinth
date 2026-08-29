@@ -3,11 +3,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from fastapi import Cookie, Depends, Header, HTTPException
+from fastapi import Cookie, Depends, Header, HTTPException, Request
 
 from app.schemas.events import ScopeFilter
 from app.services.auth import resolve_session
 from app.storage.workflow import load_platform_user
+
+# what a user who must still enroll a second factor may reach: their own
+# state, the enrollment endpoints, a password change, and the way out
+_MFA_ENROLLMENT_PREFIX = "/api/auth/mfa"
+_MFA_EXEMPT_PATHS = {"/api/auth/me", "/api/auth/logout", "/api/auth/change-password"}
 
 # defined here not in authorization.py so both the dependency layer and the
 # authorization service can reference it without a circular import
@@ -67,7 +72,27 @@ def scope_filter(tenant_id: str | None, project: str | None, environment: str | 
     return ScopeFilter(tenant_id=tenant_id, project=project, environment=environment)
 
 
-def current_actor(norinth_session: str | None = Cookie(default=None)) -> ActorContext:
+def mfa_enrollment_required(user: dict) -> bool:
+    """true when the user's org requires mfa and this account hasn't enrolled
+
+    applies only to accounts with a local password — sso/scim-provisioned
+    accounts (empty password_hash) authenticate at the idp, where their second
+    factor lives. the platform admin is tenant-less, so an org policy cannot
+    bind it. checked cheapest-first so enrolled users never cost an org lookup
+    """
+    if not user.get("password_hash"):
+        return False
+    if user.get("mfa_enabled_at") and user.get("mfa_secret"):
+        return False
+    tenant_id = user.get("tenant_id")
+    if not tenant_id:
+        return False
+    from app.storage.organizations import organization_requires_mfa
+
+    return organization_requires_mfa(tenant_id)
+
+
+def current_actor(request: Request, norinth_session: str | None = Cookie(default=None)) -> ActorContext:
     """resolve the session cookie into an ActorContext
 
     tenant membership comes from the stored user record, never a client header,
@@ -86,6 +111,16 @@ def current_actor(norinth_session: str | None = Cookie(default=None)) -> ActorCo
 
         if organization_is_suspended(tenant_id):
             raise HTTPException(status_code=403, detail="Organization is suspended")
+    # org mfa policy: password login stays possible (enrollment is self-serve,
+    # so flipping the flag can never lock an org out), but until a second
+    # factor is active the session reaches only the enrollment surface
+    if mfa_enrollment_required(user):
+        path = request.url.path
+        if path not in _MFA_EXEMPT_PATHS and not path.startswith(_MFA_ENROLLMENT_PREFIX):
+            raise HTTPException(
+                status_code=403,
+                detail="This organization requires multi-factor authentication; enroll under Security to continue",
+            )
     return ActorContext(
         user_ref=user_ref,
         tenant_id=tenant_id,

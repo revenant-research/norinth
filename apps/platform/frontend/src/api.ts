@@ -11,6 +11,9 @@ export type User = {
   tenant_id: string | null;
   platform_role: string | null;
   must_change_password: boolean;
+  // org policy: this account must enroll a second factor before the
+  // workspace opens (sso/scim accounts are exempt server-side)
+  mfa_enrollment_required?: boolean;
   permissions: string[];
   is_super_admin: boolean;
 };
