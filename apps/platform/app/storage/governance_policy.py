@@ -384,6 +384,22 @@ def dict_event(raw_event: str) -> dict[str, Any]:
         return decode_json(raw_event, {})
 
 
+# evidence lists on assessments and findings are bounded: they are samples
+# that let a reviewer pull the underlying traces, not a replica of history
+_EVIDENCE_TRACE_CAP = 200
+
+
+def _assessment_id(app_context: dict[str, Any], control: dict[str, Any]) -> str:
+    return entity_id(
+        "control-assessment",
+        app_context.get("tenant_id"),
+        app_context["project"],
+        app_context["environment"],
+        app_context["application_name"],
+        control["control_id"],
+    )
+
+
 def assess_controls(connection, app_context: dict[str, Any], controls: list[dict[str, Any]], events: list[dict[str, Any]]) -> None:
     for control in controls:
         evidence = [
@@ -392,23 +408,33 @@ def assess_controls(connection, app_context: dict[str, Any], controls: list[dict
             if event.get("type") in control["evidence_event_types"]
             and event_satisfies_required_fields(event, control["required_fields"])
         ]
-        computed_status = "passing" if evidence else "missing"
         trace_ids = sorted({event["trace_id"] for event in evidence if event.get("trace_id")})
-        assessment_id = entity_id(
-            "control-assessment",
-            app_context.get("tenant_id"),
-            app_context["project"],
-            app_context["environment"],
-            app_context["application_name"],
-            control["control_id"],
+        _write_assessment(
+            connection,
+            app_context,
+            control,
+            "passing" if evidence else "missing",
+            trace_ids,
+            len(evidence),
         )
-        # keep a human decision (e.g. "waived") across recompute; only the
-        # passing/missing statuses are recomputed, a reviewer's decision sticks
-        # until a human changes it
-        status = _preserve_decided_status(
-            connection, "control_assessments", "assessment_id", assessment_id, computed_status, {"passing", "missing"}
-        )
-        connection.execute(
+
+
+def _write_assessment(
+    connection,
+    app_context: dict[str, Any],
+    control: dict[str, Any],
+    computed_status: str,
+    trace_ids: list[str],
+    evidence_count: int,
+) -> None:
+    assessment_id = _assessment_id(app_context, control)
+    # keep a human decision (e.g. "waived") across recompute; only the
+    # passing/missing statuses are recomputed, a reviewer's decision sticks
+    # until a human changes it
+    status = _preserve_decided_status(
+        connection, "control_assessments", "assessment_id", assessment_id, computed_status, {"passing", "missing"}
+    )
+    connection.execute(
             """
             INSERT OR REPLACE INTO control_assessments (
                 assessment_id, tenant_id, project, environment, application_name, control_id, control_name,
@@ -429,8 +455,8 @@ def assess_controls(connection, app_context: dict[str, Any], controls: list[dict
                 encode_json(control["framework_refs"]),
                 encode_json(control["evidence_event_types"]),
                 encode_json(control["required_fields"]),
-                encode_json(trace_ids),
-                len(evidence),
+                encode_json(trace_ids[:_EVIDENCE_TRACE_CAP]),
+                evidence_count,
                 control["rationale"],
             ),
         )
@@ -567,6 +593,234 @@ def _retired_since(connection, app_context: dict[str, Any]) -> str | None:
     return max(row["updated_at"] for row in retired_rows)
 
 
+# --- batch fold: the ingest request path ------------------------------------------
+
+_APP_SCOPE_SQL = (
+    "project = :project AND environment = :environment "
+    "AND application_name = :application_name "
+    "AND ((:tenant_id IS NULL AND tenant_id IS NULL) OR tenant_id = :tenant_id)"
+)
+
+
+def _scope_params(app_context: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "project": app_context["project"],
+        "environment": app_context["environment"],
+        "application_name": app_context["application_name"],
+        "tenant_id": app_context.get("tenant_id"),
+    }
+
+
+def _app_event_stats(connection, app_context: dict[str, Any]) -> tuple[dict[str, int], int, list[str], list[str]]:
+    """per-app aggregates over the extracted sdk_events columns
+
+    (counts by event type, total error events, distinct providers, distinct
+    use cases) — everything the risk-rule conditions need, with no raw-event
+    reads and no decryption; the app-scope composite index serves all four
+    """
+    params = _scope_params(app_context)
+    counts: dict[str, int] = {}
+    errors_total = 0
+    for row in connection.execute(
+        f"SELECT event_type, COUNT(*) AS n, "
+        f"SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors "
+        f"FROM sdk_events WHERE {_APP_SCOPE_SQL} GROUP BY event_type",
+        params,
+    ).fetchall():
+        counts[row["event_type"]] = int(row["n"])
+        errors_total += int(row["errors"] or 0)
+    providers = [
+        row["provider"]
+        for row in connection.execute(
+            # model.call only, matching the full evaluator: a provider named on
+            # a deployment record is not observed provider *usage*
+            f"SELECT DISTINCT provider FROM sdk_events WHERE {_APP_SCOPE_SQL} "
+            f"AND event_type = 'model.call' AND provider IS NOT NULL AND provider != '' ORDER BY provider",
+            params,
+        ).fetchall()
+    ]
+    use_cases = [
+        row["use_case"]
+        for row in connection.execute(
+            f"SELECT DISTINCT use_case FROM sdk_events WHERE {_APP_SCOPE_SQL} "
+            f"AND use_case IS NOT NULL AND use_case != ''",
+            params,
+        ).fetchall()
+    ]
+    return counts, errors_total, providers, use_cases
+
+
+def _recent_trace_ids(
+    connection,
+    app_context: dict[str, Any],
+    *,
+    event_type: str | None = None,
+    errors_only: bool = False,
+    after_timestamp: str | None = None,
+) -> list[str]:
+    """newest distinct trace ids matching the filter, as bounded evidence"""
+    params = _scope_params(app_context)
+    clauses = [_APP_SCOPE_SQL]
+    if event_type:
+        clauses.append("event_type = :event_type")
+        params["event_type"] = event_type
+    if errors_only:
+        clauses.append("status = 'error'")
+    if after_timestamp is not None:
+        # timestamps are utc everywhere (sdk iso-8601, db 'YYYY-MM-DD HH:MM:SS');
+        # normalizing the separator makes them sort together lexicographically
+        clauses.append("REPLACE(timestamp, 'T', ' ') > :after_timestamp")
+        params["after_timestamp"] = after_timestamp.replace("T", " ")
+    rows = connection.execute(
+        f"SELECT trace_id FROM sdk_events WHERE {' AND '.join(clauses)} "  # noqa: S608
+        f"ORDER BY id DESC LIMIT {_EVIDENCE_TRACE_CAP * 2}",
+        params,
+    ).fetchall()
+    seen: list[str] = []
+    for row in rows:
+        if row["trace_id"] and row["trace_id"] not in seen:
+            seen.append(row["trace_id"])
+            if len(seen) >= _EVIDENCE_TRACE_CAP:
+                break
+    return seen
+
+
+def _count_after(connection, app_context: dict[str, Any], timestamp: str) -> int:
+    params = _scope_params(app_context)
+    params["after_timestamp"] = timestamp.replace("T", " ")
+    row = connection.execute(
+        f"SELECT COUNT(*) AS n FROM sdk_events WHERE {_APP_SCOPE_SQL} "
+        f"AND REPLACE(timestamp, 'T', ' ') > :after_timestamp",
+        params,
+    ).fetchone()
+    return int(row["n"])
+
+
+def _fold_controls(connection, app_context: dict[str, Any], controls: list[dict[str, Any]], batch: list[dict[str, Any]]) -> None:
+    """control evidence from the batch alone, persisted monotonically
+
+    evidence needs event attributes, which only exist in (possibly encrypted)
+    raw bodies — but the batch is already in memory in plaintext. history only
+    grows (retention deliberately keeps derived state), so: qualifying
+    evidence in the batch marks the control passing and extends its evidence;
+    a batch without evidence leaves an existing assessment exactly as the
+    full recompute would have left it; only a control never assessed before
+    is written as missing
+    """
+    for control in controls:
+        evidence = [
+            event
+            for event in batch
+            if event.get("type") in control["evidence_event_types"]
+            and event_satisfies_required_fields(event, control["required_fields"])
+        ]
+        existing = connection.execute(
+            "SELECT status, evidence_trace_ids, evidence_count FROM control_assessments WHERE assessment_id = ?",
+            (_assessment_id(app_context, control),),
+        ).fetchone()
+        if not evidence:
+            if existing is None:
+                _write_assessment(connection, app_context, control, "missing", [], 0)
+            continue
+        prior_ids = decode_json(existing["evidence_trace_ids"], []) if existing else []
+        merged = sorted(set(prior_ids) | {event["trace_id"] for event in evidence if event.get("trace_id")})
+        prior_count = int(existing["evidence_count"] or 0) if existing else 0
+        _write_assessment(connection, app_context, control, "passing", merged, prior_count + len(evidence))
+
+
+def _assess_rules_from_columns(connection, app_context: dict[str, Any], rules: list[dict[str, Any]]) -> None:
+    """risk-rule conditions from column aggregates instead of an event scan
+
+    reproduces assess_risk_rules over full history: findings are create/update
+    only (they resolve through human decisions, never automatically), and
+    every condition is expressible over the extracted columns
+    """
+    counts, errors_total, providers, use_cases = _app_event_stats(connection, app_context)
+    app_text = " ".join([app_context["application_name"], *use_cases]).lower()
+    for rule in rules:
+        signal = rule["signal"]
+        if signal == "provider_dependency" and providers:
+            write_rule_finding(
+                connection,
+                app_context,
+                rule,
+                _recent_trace_ids(connection, app_context, event_type="model.call"),
+                f"Observed providers: {', '.join(providers)}",
+            )
+        if signal == "missing_guardrail" and counts.get("model.call") and not counts.get("guardrail.decision"):
+            write_rule_finding(
+                connection,
+                app_context,
+                rule,
+                _recent_trace_ids(connection, app_context, event_type="model.call"),
+                "Model calls observed without guardrail decision evidence",
+            )
+        if signal == "missing_eval" and counts.get("model.call") and not counts.get("eval.result"):
+            write_rule_finding(
+                connection,
+                app_context,
+                rule,
+                _recent_trace_ids(connection, app_context, event_type="model.call"),
+                "Model calls observed without evaluation result evidence",
+            )
+        if signal == "missing_agent_run" and not counts.get("agent.run"):
+            has_tool_calls = bool(counts.get("tool.call"))
+            text_is_agentic = bool(_AGENTIC_TERMS.search(app_text))
+            if has_tool_calls or text_is_agentic:
+                reason = (
+                    "Tool-call telemetry observed without agent run evidence"
+                    if has_tool_calls
+                    else "Agentic term in the application name or use-case without agent run evidence"
+                )
+                write_rule_finding(
+                    connection, app_context, rule, _recent_trace_ids(connection, app_context), reason
+                )
+        if signal == "operational_errors" and errors_total:
+            write_rule_finding(
+                connection,
+                app_context,
+                rule,
+                _recent_trace_ids(connection, app_context, errors_only=True),
+                f"{errors_total} error events observed",
+            )
+        if signal == "retired_system_telemetry":
+            retired_since = _retired_since(connection, app_context)
+            if retired_since:
+                late_count = _count_after(connection, app_context, retired_since)
+                if late_count:
+                    write_rule_finding(
+                        connection,
+                        app_context,
+                        rule,
+                        _recent_trace_ids(connection, app_context, after_timestamp=retired_since),
+                        f"{late_count} event(s) observed after the system was retired at {retired_since}",
+                    )
+
+
+def fold_batch_assessments(events: list[dict[str, Any]]) -> None:
+    """assess controls and risk rules for one ingested batch
+
+    the request-path replacement for refresh_governance_assessments: costs
+    O(batch) plus a few indexed aggregates per touched application, instead of
+    reading and decrypting each application's entire event history. the full
+    refresh stays for rebuilds
+    """
+    from .lifecycle import application_is_registered, events_by_app_scope
+
+    with connect() as connection:
+        controls_by_tenant: dict[str, list[dict[str, Any]]] = {}
+        rules_by_tenant: dict[str, list[dict[str, Any]]] = {}
+        for app_context, batch in events_by_app_scope(events):
+            if not application_is_registered(connection, app_context):
+                continue
+            tid = app_context.get("tenant_id") or ""
+            if tid not in controls_by_tenant:
+                controls_by_tenant[tid] = list_control_library(connection, tid)
+                rules_by_tenant[tid] = list_risk_rules(connection, tid)
+            _fold_controls(connection, app_context, controls_by_tenant[tid], batch)
+            _assess_rules_from_columns(connection, app_context, rules_by_tenant[tid])
+
+
 def upsert_rule_finding(
     connection,
     app_context: dict[str, Any],
@@ -575,6 +829,17 @@ def upsert_rule_finding(
     evidence_summary: str,
 ) -> None:
     trace_ids = sorted({event["trace_id"] for event in evidence_events if event.get("trace_id")})
+    write_rule_finding(connection, app_context, rule, trace_ids, evidence_summary)
+
+
+def write_rule_finding(
+    connection,
+    app_context: dict[str, Any],
+    rule: dict[str, Any],
+    trace_ids: list[str],
+    evidence_summary: str,
+) -> None:
+    trace_ids = trace_ids[:_EVIDENCE_TRACE_CAP]
     finding_id = entity_id(
         "risk-finding",
         app_context.get("tenant_id"),

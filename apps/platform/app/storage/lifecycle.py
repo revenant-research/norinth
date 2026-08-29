@@ -89,14 +89,106 @@ def init_lifecycle() -> None:
 
 
 def refresh_lifecycle_state(scopes: list[dict[str, Any]] | None = None) -> None:
-    """recompute change fingerprints; scopes limits to the apps an ingest
-    touched, None does everything"""
+    """recompute change fingerprints from full history; scopes limits to the
+    apps an ingest touched, None does everything
+
+    this is the rebuild path. the ingest request path uses
+    fold_batch_fingerprints instead, which costs O(batch) — this one reads and
+    (when encryption is on) decrypts every stored event for each app
+    """
     with connect() as connection:
         applications = _applications_in_scope(connection, scopes)
         for application in applications:
             app_context = dict(application)
             events = list_application_events(connection, app_context)
             for fingerprint in build_fingerprints(app_context, events):
+                upsert_fingerprint(connection, app_context, fingerprint)
+
+
+def events_by_app_scope(events: list[dict[str, Any]]) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
+    """group a batch by the (tenant, project, environment, application) it
+    belongs to; events with no application_name carry no derived state"""
+    groups: dict[tuple, tuple[dict[str, Any], list[dict[str, Any]]]] = {}
+    for event in events:
+        metadata = as_object(as_object(event.get("attributes")).get("metadata"))
+        application_name = metadata.get("application_name")
+        if not application_name:
+            continue
+        key = (metadata.get("tenant_id"), event.get("project"), event.get("environment"), application_name)
+        if key not in groups:
+            groups[key] = (
+                {
+                    "tenant_id": key[0],
+                    "project": key[1],
+                    "environment": key[2],
+                    "application_name": application_name,
+                },
+                [],
+            )
+        groups[key][1].append(event)
+    return list(groups.values())
+
+
+def application_is_registered(connection, app_context: dict[str, Any]) -> bool:
+    """whether this scope exists in governance_applications
+
+    the full refresh paths iterate governance_applications (populated by
+    model.call telemetry), so an app known only from prompt/deployment/eval
+    metadata carries no fingerprints or assessments; the fold paths must draw
+    the same line or a metadata-only app suddenly grows blocking state
+    """
+    row = connection.execute(
+        """
+        SELECT 1 FROM governance_applications
+        WHERE project = :project AND environment = :environment
+          AND application_name = :application_name
+          AND ((:tenant_id IS NULL AND tenant_id IS NULL) OR tenant_id = :tenant_id)
+        LIMIT 1
+        """,
+        {
+            "project": app_context["project"],
+            "environment": app_context["environment"],
+            "application_name": app_context["application_name"],
+            "tenant_id": app_context.get("tenant_id"),
+        },
+    ).fetchone()
+    return row is not None
+
+
+def _merge_payload(stored: dict[str, Any], fresh: dict[str, Any]) -> dict[str, Any]:
+    """monotone union of fingerprint payloads (each key is a sorted label list)"""
+    return {
+        key: sorted(set(stored.get(key) or []) | set(fresh.get(key) or []))
+        for key in set(stored) | set(fresh)
+    }
+
+
+def fold_batch_fingerprints(events: list[dict[str, Any]]) -> None:
+    """fold one ingested batch into the stored fingerprints
+
+    the request-path replacement for refresh_lifecycle_state: fingerprint
+    payloads are monotone label sets and retention deliberately keeps derived
+    state, so union(stored payload, payload(batch)) equals what a full
+    recompute over all history would produce — at O(batch) cost, with no
+    raw-event reads and no decryption. change detection is unchanged because
+    the merged payload goes through the same upsert_fingerprint hashing; the
+    change event's evidence trace ids are the batch's (the events that caused
+    the change), where the full path attached all of history's
+    """
+    with connect() as connection:
+        for app_context, batch in events_by_app_scope(events):
+            if not application_is_registered(connection, app_context):
+                continue
+            for fingerprint in build_fingerprints(app_context, batch):
+                row = connection.execute(
+                    "SELECT fingerprint_payload, last_seen FROM lifecycle_fingerprints WHERE fingerprint_id = ?",
+                    (_fingerprint_id(app_context, fingerprint["subject_type"], fingerprint["subject_name"]),),
+                ).fetchone()
+                if row is not None:
+                    fingerprint["payload"] = _merge_payload(
+                        decode_json(row["fingerprint_payload"], {}), fingerprint["payload"]
+                    )
+                    fingerprint["observed_at"] = max(row["last_seen"] or "", fingerprint["observed_at"] or "")
                 upsert_fingerprint(connection, app_context, fingerprint)
 
 
@@ -167,17 +259,24 @@ def build_fingerprints(app_context: dict[str, Any], events: list[dict[str, Any]]
 def fingerprint_payload(events: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "agents": sorted(attribute_values(events, "agent_name")),
+        # payload entries are sets of labels; without the dedup a second call
+        # of an already-known model appended a duplicate, so ordinary repeat
+        # usage read as a material change
         "eval_thresholds": sorted(
-            f"{attrs.get('eval_name')}:{attrs.get('threshold')}"
-            for attrs in event_attributes_for_type(events, "eval.result")
-            if attrs.get("eval_name") and attrs.get("threshold") is not None
+            {
+                f"{attrs.get('eval_name')}:{attrs.get('threshold')}"
+                for attrs in event_attributes_for_type(events, "eval.result")
+                if attrs.get("eval_name") and attrs.get("threshold") is not None
+            }
         ),
         "evals": sorted(attribute_values(events, "eval_name")),
         "guardrails": sorted(attribute_values(events, "guardrail_name")),
         "models": sorted(
-            f"{attrs.get('provider')}:{attrs.get('model')}"
-            for attrs in event_attributes_for_type(events, "model.call")
-            if attrs.get("provider") and attrs.get("model")
+            {
+                f"{attrs.get('provider')}:{attrs.get('model')}"
+                for attrs in event_attributes_for_type(events, "model.call")
+                if attrs.get("provider") and attrs.get("model")
+            }
         ),
         "providers": sorted(attribute_values(events, "provider")),
         "retrievers": sorted(attribute_values(events, "retriever")),
@@ -221,17 +320,21 @@ def hash_payload(payload: dict[str, Any]) -> str:
     return sha256(encode_json(payload).encode("utf-8")).hexdigest()
 
 
-def upsert_fingerprint(connection, app_context: dict[str, Any], fingerprint: dict[str, Any]) -> None:
-    fingerprint_hash = hash_payload(fingerprint["payload"])
-    fingerprint_id = entity_id(
+def _fingerprint_id(app_context: dict[str, Any], subject_type: str, subject_name: str) -> str:
+    return entity_id(
         "lifecycle-fingerprint",
         app_context.get("tenant_id"),
         app_context["project"],
         app_context["environment"],
         app_context["application_name"],
-        fingerprint["subject_type"],
-        fingerprint["subject_name"],
+        subject_type,
+        subject_name,
     )
+
+
+def upsert_fingerprint(connection, app_context: dict[str, Any], fingerprint: dict[str, Any]) -> None:
+    fingerprint_hash = hash_payload(fingerprint["payload"])
+    fingerprint_id = _fingerprint_id(app_context, fingerprint["subject_type"], fingerprint["subject_name"])
     existing = connection.execute(
         "SELECT * FROM lifecycle_fingerprints WHERE fingerprint_id = ?",
         (fingerprint_id,),
@@ -279,10 +382,13 @@ def upsert_fingerprint(connection, app_context: dict[str, Any], fingerprint: dic
 
 
 def changed_material_fields(previous_payload: dict[str, Any], current_payload: dict[str, Any]) -> list[str]:
+    # compare as sets: the payload entries are label sets, and rows written
+    # before the dedup fix may still carry duplicate entries — a list compare
+    # would report a phantom change on the first recompute after upgrade
     return sorted(
         field
         for field in MATERIAL_FIELDS
-        if previous_payload.get(field, []) != current_payload.get(field, [])
+        if set(previous_payload.get(field) or []) != set(current_payload.get(field) or [])
     )
 
 

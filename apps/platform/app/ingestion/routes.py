@@ -17,9 +17,9 @@ from app.storage.attestation_keys import load_active_attestation_key, touch_atte
 from app.storage.audit import record_audit
 from app.storage.deployments import find_gate_for_release, process_deployment_events, refresh_deployment_gates
 from app.storage.entities import process_events
-from app.storage.governance_policy import refresh_governance_assessments
+from app.storage.governance_policy import fold_batch_assessments
 from app.storage.incidents import process_incident_events
-from app.storage.lifecycle import refresh_lifecycle_state
+from app.storage.lifecycle import fold_batch_fingerprints
 from app.storage.prompts import process_prompt_events
 from app.storage.raw_events import insert_events
 from app.storage.workflow import expire_due_exceptions, refresh_workflow_state
@@ -206,10 +206,13 @@ def _ingest(events: list[dict[str, Any]], tenant_id: str) -> dict[str, Any]:
         process_incident_events(inserted)
         # expire lapsed exceptions (reopens their findings) before recompute
         expire_due_exceptions()
-        # recompute derived state only for touched scopes
+        # fold the batch into derived state at O(batch): the full refresh_*
+        # functions re-read (and with encryption on, decrypt) each touched
+        # app's entire history, a cost that grows with every successful day.
+        # they remain the rebuild path; the request path folds
         scopes = batch_scopes(inserted)
-        refresh_lifecycle_state(scopes)
-        refresh_governance_assessments(scopes)
+        fold_batch_fingerprints(inserted)
+        fold_batch_assessments(inserted)
         refresh_agent_posture([tenant_id])
         refresh_workflow_state(scopes)
         refresh_deployment_gates(scopes)
