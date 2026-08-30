@@ -178,7 +178,7 @@ code { font-family: var(--n-font-mono); font-size: 0.9em; }
   align-items: flex-start;
   border-bottom: 1px solid var(--n-rule);
   padding: 22px var(--n-pad-x);
-  background: rgba(246, 244, 239, 0.94);
+  background: rgba(231, 225, 212, 0.94);
   backdrop-filter: blur(12px);
 }
 
@@ -251,11 +251,27 @@ code { font-family: var(--n-font-mono); font-size: 0.9em; }
 }
 
 .hero-card,
-.section,
 .lane,
 .object-heading {
   border-top: 1px solid var(--line);
   background: transparent;
+}
+
+/* a section is a real surface — a Card in the design system's own terms — so
+   the content plane reads as cards on the parchment ground rather than one
+   flat field. uses the existing tokens; no new colors */
+.section {
+  background: var(--n-paper);
+  border: 1px solid var(--n-rule);
+  border-radius: var(--n-radius-lg);
+}
+
+/* item cards nested inside a section drop to a hairline border so they read as
+   tiles within the surface, not competing heavy cards on card */
+.section .object-card,
+.section .record-card,
+.section .card {
+  border-color: var(--n-rule-dim);
 }
 
 .hero-card {
@@ -375,7 +391,7 @@ code { font-family: var(--n-font-mono); font-size: 0.9em; }
 }
 
 .section {
-  padding: 20px 0 0;
+  padding: 18px 20px;
 }
 
 .section-header {
