@@ -1,81 +1,146 @@
 # Norinth
 
-Norinth is an open-source platform for keeping track of the AI systems your
-organization runs and showing that they are under control. It reads the
-telemetry your applications already produce — model calls, tool calls,
-retrievals, guardrail checks, evaluation results — and turns that into a live
-picture of your AI: what is running, who is responsible for it, what evidence
-backs it, and what decisions have been made about it.
+**Open-source AI governance from runtime evidence.** Norinth watches the AI your
+organization actually runs — model calls, agents, tools, retrievals, guardrails,
+evaluations — and turns that telemetry into a live inventory, control evidence,
+enforceable release gates, and an audit packet you can hand to an auditor.
 
-You run Norinth on your own infrastructure. There is no hosted version and no
-paid tier, and using it does not require an account with anyone. Everything in
-this repository is licensed under [Apache-2.0](LICENSE). Norinth is a product of
+[![CI](https://github.com/revenant-research/norinth/actions/workflows/ci.yml/badge.svg)](https://github.com/revenant-research/norinth/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/revenant-research/norinth)](https://github.com/revenant-research/norinth/releases)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
+You run Norinth on your own infrastructure. There is no hosted version, no paid
+tier, and no account with anyone — everything in this repository is
+[Apache-2.0](LICENSE). Norinth is a product of
 [Revenant Research](https://www.revenantresearch.com/).
 
-If you just want to see it working, jump to
-[Try it out](#try-it-out). If you want to understand what it does first, keep
-reading.
+![The Norinth home view: what needs you, organization posture, and recent decisions](docs/images/home.png)
+
+Jump to [Try it out](#try-it-out) to have this running in about fifteen
+minutes, or take the tour first.
 
 ## The problem it solves
 
-Once an organization starts using AI in production, people begin asking
-questions about it: Which models are we running, and where? Who signed off on
-this system? What data does it touch? What happens when it gives a bad answer?
-How do we know any of this is actually being managed? Auditors, regulators, and
-internal risk teams all ask some version of these questions.
+Once an organization uses AI in production, people start asking questions about
+it: Which models are we running, and where? Who signed off on this system? What
+happens when it gives a bad answer? How do we know any of this is actually
+managed? Auditors, regulators, and internal risk teams all ask some version of
+these questions.
 
-The usual way to answer them is a questionnaire — a spreadsheet or a form that
-someone fills in by hand. That approach has two problems. It is out of date the
-moment it is saved, and it only describes the systems people remembered to write
-down. The AI a team spun up last week to triage support tickets is not on the
-list.
+The usual answer is a questionnaire — a spreadsheet someone fills in by hand.
+It is out of date the moment it is saved, and it only covers the systems people
+remembered to write down. The AI a team spun up last week to triage support
+tickets is not on the list.
 
-Norinth answers the same questions a different way. Instead of asking people to
-describe their AI, it watches the AI run and builds the answer from what it
-observes. Because the record comes from real traffic, it stays current on its
-own, and it includes the systems nobody registered.
+Norinth answers the same questions from evidence instead. It watches the AI run
+and builds the answer from what it observes — so the record stays current on
+its own, and it includes the systems nobody registered. Where a checkbox and
+the telemetry disagree, the telemetry wins: **an open finding counts as a gap
+no matter what a form says.**
 
-## What Norinth gives you
+> The screenshots below show a synthetic demo estate ("Meridian Health") seeded
+> through the public ingestion API — the same path your applications use.
 
-- **An inventory.** Every application, model, provider, workflow, and agent that
-  has actually run, discovered from telemetry. Systems that show up in the data
-  but were never formally registered are flagged, so you can see your "shadow
-  AI" instead of guessing at it.
+## The tour
 
-- **Control evidence.** Norinth maps what it observes to the requirements of the
-  frameworks teams are usually measured against — NIST AI RMF, ISO/IEC 42001,
-  the EU AI Act, SOC 2, and the OWASP Top 10 for Agentic Applications — and
-  shows how much of each is satisfied and where the gaps are. An open finding
-  counts as a gap no matter what a checkbox says. It also produces a
-  machine-readable AI bill of materials (CycloneDX) of the models and
-  components in use.
+### Every AI system that actually runs, including the ones nobody registered
 
-- **Agent governance.** Agents observed at runtime are reconciled against a
-  registry: tool allow-lists, autonomy levels, human checkpoints. An
-  unregistered agent, a tool used outside its allow-list, or an agent holding
-  untrusted input, sensitive data, and external actions at once each raise a
-  finding, mapped to the OWASP agentic risks.
+The inventory is discovered from telemetry, not collected by survey. Systems
+that appear in production traffic but were never registered are flagged as
+unregistered — your shadow AI, made visible instead of guessed at.
 
-- **Ownership and review.** You can tier each system by risk, name an
-  accountable owner, and route reviews to the right role. Decisions require
-  maker–checker separation: the person who submits a change cannot be the one
-  who approves it, and administrators cannot approve their own work.
+![The AI systems inventory, with governance stage, risk tier, and unregistered systems flagged](docs/images/inventory.png)
 
-- **Release gates.** A deployment can be blocked from shipping until it has the
-  evidence you require — a linked prompt version and a signed, passing
-  evaluation for that exact version. Your CI pipeline can check the gate before
-  it deploys.
+Each system gets a hub: its lifecycle stage, accountable owners, what is
+blocking it, and every model, workflow, risk, control, release, and incident
+linked to it in one place.
 
-- **An audit packet.** A single export containing the inventory, framework
-  coverage, every decision with its rationale, incidents, release gates, and a
-  tamper-evident (hash-chained) audit trail that an auditor can verify
-  independently.
+![One AI system's hub: stage, blockers, models, workflows, risks and controls](docs/images/system-hub.png)
 
-- **Accountable access.** Every account — the platform administrator included —
-  can enroll TOTP multi-factor authentication, and an organization can require
-  it. Failed logins, lockouts, exports, and reads of record-level data land on
-  the same hash-chained audit trail as decisions, and sessions end after
-  inactivity, not just at an absolute lifetime.
+### Agent governance, reconciled at runtime
+
+Register the agents you sanction with an accountable owner, an autonomy level,
+and a tool allow-list. Every agent observed in telemetry is reconciled against
+that registry: an unregistered agent, a tool used outside its allow-list, or an
+agent combining untrusted input, sensitive data, and external actions without a
+human checkpoint each raise a finding, mapped to the OWASP Top 10 for Agentic
+Applications.
+
+![Runtime agent posture: a registered agent with no issues, and a shadow agent raising an OWASP finding](docs/images/agents.png)
+
+### Findings people have to answer, decisions people have to own
+
+Risk findings are raised by the platform from what it observes — a missing
+guardrail, an unreviewed vendor dependency, telemetry from a system recorded as
+retired — and by people. Accepting a risk requires an owner, a compensating
+control, and an expiry; the exception lapses on schedule and the finding
+reopens. Reviews enforce maker–checker separation: the person who submits a
+change can never be the one who approves it, and administrators cannot hold
+decision roles at all.
+
+![The risk register: findings with severity, evidence, and an accepted risk with an expiring exception](docs/images/risk.png)
+
+### Release gates that block on evidence
+
+Nothing ships without a gate. A deployment reported by your pipeline gets a
+gate that stays closed until the evidence is there: no open risks, no missing
+controls, no unreviewed material changes, a linked prompt version, and passing
+evaluation evidence **bound to the exact version being released** — signed by
+your CI's registered key, so a passing eval cannot be forged by anyone who
+merely holds an ingestion key. `norinth gate check` in CI makes the gate a
+required step.
+
+![A release gate pending review, showing exactly which evidence is present and which is blocking](docs/images/release-gates.png)
+
+### Compliance you can defend, because it is computed
+
+Coverage of NIST AI RMF, ISO/IEC 42001, the EU AI Act, SOC 2, and the OWASP
+agentic top 10 is computed from control assessments and detection rules — not
+self-attested. The audit packet exports the inventory, the AI bill of materials
+(CycloneDX), every decision with its rationale, and a hash-chained audit trail
+an auditor can verify independently.
+
+![Framework coverage computed from evidence, with outstanding requirements named](docs/images/compliance.png)
+
+### The raw evidence, with a hard privacy boundary
+
+Telemetry is inspectable down to the event — and what the events contain is
+governed by the SDK's content boundary. By default prompts, completions,
+metadata values, agent step inputs and outputs, tool arguments, and error
+messages never leave your process as text: they arrive as keyed HMAC
+fingerprints (never bare digests), while the governance labels the platform
+actually reads pass through redacted and capped. Content capture is an explicit
+opt-in, and raw bodies are encrypted at rest when a key is configured.
+
+![The telemetry view: traces, model calls, guardrail decisions and eval results as reported](docs/images/telemetry.png)
+
+### An audit trail that includes the reads — and access that holds up
+
+Every decision, export, failed login, lockout, and read of record-level data
+lands on the same hash-chained audit log, verifiable end to end. Every account
+— the platform administrator included — can enroll TOTP multi-factor
+authentication, and an organization can require it; sessions end after
+inactivity, not just at an absolute lifetime.
+
+![The hash-chained audit log](docs/images/audit.png)
+
+![Account security: TOTP enrollment with single-use recovery codes](docs/images/security-mfa.png)
+
+## Where it's going: the governance policy engine
+
+Approval workflows differ by organization: a high-risk system at a health
+system needs security review, then legal sign-off, then business acceptance; a
+low-risk internal tool needs one reviewer. The next major capability makes that
+configurable **without** becoming a workflow designer: a declarative, versioned
+policy document — approval stages per risk tier, recertification cadence, gate
+requirements per environment, custom intake fields, and a vendor registry
+reconciled against observed provider usage. The policy itself becomes evidence:
+every decision records the policy version that governed it, and the meaning of
+"approved" (evidence present, maker ≠ checker, terminal, hash-chained) stays
+fixed and machine-checkable.
+
+The full design is in
+[`docs/design/governance-policy-engine.md`](docs/design/governance-policy-engine.md).
 
 ## How it works
 
@@ -84,8 +149,8 @@ There are two pieces, and they meet at one well-defined boundary.
 1. **The SDK** (or any OpenTelemetry pipeline) runs alongside your AI
    applications and reports what they do. The Python SDK, `norinth-logger`, is
    small and safe to add: it is observe-only, it never blocks or crashes your
-   application if Norinth is down, and by default it sends hashes of prompts and
-   responses rather than the text itself.
+   application if Norinth is down, and by default it sends keyed hashes of
+   prompts and responses rather than the text itself.
 
 2. **The platform** receives that telemetry, builds the inventory and the
    evidence from it, runs the review and gate workflows, and serves the
@@ -184,14 +249,10 @@ will appear even without the model call.
 ### 4. Look around
 
 Go back to the dashboard and you will see `hello-norinth` show up as a system,
-with the model call recorded under it. From here it is worth clicking through:
-
-- **Inventory** lists the systems Norinth has seen. Yours will be there,
-  discovered automatically rather than registered by hand.
-- **Compliance** shows framework coverage. It will be mostly empty on a fresh
-  install — that is the point; coverage reflects real evidence, and you have only
-  sent one call so far.
-- **Telemetry** shows the raw events, so you can confirm what arrived.
+with the model call recorded under it. From here it is worth clicking through
+**AI systems**, **Compliance** (mostly empty on a fresh install — that is the
+point; coverage reflects real evidence), and **Telemetry** to confirm what
+arrived.
 
 That is the whole loop: an application reports what it does, Norinth turns it
 into an inventory and evidence, and you govern from there. Real use is the same
@@ -277,15 +338,16 @@ Run the same checks CI does with `make lint` and `make test`.
 | `apps/platform/` | The platform: the FastAPI server, the governance engine, and the React dashboard. |
 | `packages/python-sdk/` | `norinth-logger`, the Python SDK, and the wire protocol (`PROTOCOL.md`). |
 | `deploy/helm/` | The Helm chart for Kubernetes. |
-| `scripts/` | The installer, backup and restore, and helper scripts. |
-| `docs/` | Operations and threat-model documentation. |
+| `scripts/` | The installer, backup and restore, the load-test harness, and helper scripts. |
+| `docs/` | Operations and threat-model documentation, design RFCs, and these screenshots. |
 
 ## Documentation
 
-- [`docs/operations.md`](docs/operations.md) — deploy, configure, upgrade, back up.
+- [`docs/operations.md`](docs/operations.md) — deploy, configure, upgrade, back up, size, observe.
 - [`docs/threat-model.md`](docs/threat-model.md) — data flow, trust boundaries, and controls.
+- [`docs/design/`](docs/design/) — accepted design RFCs (key rotation, the governance policy engine).
 - [`SECURITY.md`](SECURITY.md) — the security model and how to report a vulnerability.
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to build and contribute.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to build, contribute, and cut a release.
 - [`packages/python-sdk/README.md`](packages/python-sdk/README.md) — the SDK in detail.
 
 ## A note on privacy
