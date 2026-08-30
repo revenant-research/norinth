@@ -21,6 +21,7 @@ import {
   postJson,
 } from "./api";
 import { SecurityDialog } from "./components/security";
+import { DataTable, formatTimestamp } from "./components/table";
 import { LandingPage } from "./components/landing";
 import { SetupWizard } from "./components/setup";
 import { InviteScreen } from "./components/invite";
@@ -912,6 +913,28 @@ function Deployments({ data, mutate }: { data: DashboardData; mutate: (path: str
 }
 
 function Monitoring({ data }: { data: DashboardData }) {
+  const evidenceRows = [
+    ...data.guardrails.map((row) => ({
+      id: `${row.trace_id}-guardrail-${row.guardrail_name}`,
+      time: row.time || "",
+      type: "Guardrail",
+      name: row.guardrail_name,
+      result: row.decision,
+      score: typeof row.score === "number" ? row.score : null,
+      attested: null as boolean | null,
+      trace_id: row.trace_id,
+    })),
+    ...data.evals.map((row) => ({
+      id: `${row.trace_id}-eval-${row.eval_name}`,
+      time: row.time || "",
+      type: "Eval",
+      name: row.eval_name,
+      result: row.passed ? "passed" : "failed",
+      score: typeof row.score === "number" ? row.score : null,
+      attested: typeof row.attested === "boolean" ? row.attested : null,
+      trace_id: row.trace_id,
+    })),
+  ];
   return (
     <>
       <div className="metric-grid">
@@ -921,16 +944,92 @@ function Monitoring({ data }: { data: DashboardData }) {
         <MetricCard label="Guardrails" value={totalOf(data, "guardrails", data.guardrails)} />
       </div>
       <Section title="Traces" description="One row per request. Open a trace to see every model call, tool use and guardrail decision inside it.">
-        <TraceCards rows={data.traces} total={totalOf(data, "traces", data.traces)} />
+        <DataTable
+          label="traces"
+          empty="No request traces found."
+          rows={data.traces}
+          rowKey={(trace) => trace.trace_id}
+          serverTotal={totalOf(data, "traces", data.traces)}
+          initialSort={{ key: "event_count", direction: "desc" }}
+          columns={[
+            {
+              key: "trace_id",
+              label: "Trace",
+              mono: true,
+              render: (trace) => <a href={`#trace/${trace.trace_id}`}>{trace.trace_id}</a>,
+            },
+            { key: "event_count", label: "Events", align: "right" },
+            {
+              key: "status",
+              label: "Status",
+              sortValue: (trace) => trace.status || "observed",
+              render: (trace) => <Badge value={trace.status || "observed"} />,
+            },
+          ]}
+        />
       </Section>
-      <div className="two-column">
-        <Section title="Agent runs" description="Runs reported by the SDK or OpenTelemetry, with steps and tools used.">
-          <AgentCards rows={data.agents} total={totalOf(data, "agents", data.agents)} />
-        </Section>
-        <Section title="Guardrails and evals" description="Guardrail decisions and evaluation results. Evals signed by your CI key are marked attested.">
-          <GuardrailEvalCards guardrails={data.guardrails} evals={data.evals} />
-        </Section>
-      </div>
+      <Section title="Agent runs" description="Runs reported by the SDK or OpenTelemetry, with steps and tools used.">
+        <DataTable
+          label="agent runs"
+          empty="No agent run records found."
+          rows={data.agents}
+          rowKey={(run) => `${run.trace_id}-${run.agent_name}`}
+          serverTotal={totalOf(data, "agents", data.agents)}
+          initialSort={{ key: "time", direction: "desc" }}
+          columns={[
+            { key: "time", label: "Time", render: (run) => formatTimestamp(run.time) },
+            { key: "agent_name", label: "Agent" },
+            { key: "application_name", label: "Application" },
+            { key: "workflow_name", label: "Workflow" },
+            { key: "step_count", label: "Steps", align: "right" },
+            { key: "outcome", label: "Outcome" },
+            {
+              key: "trace_id",
+              label: "Trace",
+              mono: true,
+              render: (run) => <a href={`#trace/${run.trace_id}`}>{run.trace_id}</a>,
+            },
+          ]}
+        />
+      </Section>
+      <Section title="Guardrails and evals" description="Guardrail decisions and evaluation results. Evals signed by your CI key are marked attested.">
+        <DataTable
+          label="records"
+          empty="No guardrail or evaluation records found."
+          rows={evidenceRows}
+          rowKey={(row) => row.id}
+          initialSort={{ key: "time", direction: "desc" }}
+          columns={[
+            { key: "time", label: "Time", render: (row) => formatTimestamp(row.time) },
+            { key: "type", label: "Type" },
+            { key: "name", label: "Name" },
+            {
+              key: "result",
+              label: "Result",
+              render: (row) => <Badge value={row.result} />,
+            },
+            {
+              key: "score",
+              label: "Score",
+              align: "right",
+              sortValue: (row) => (row.score === null ? -1 : row.score),
+              render: (row) => (row.score === null ? "n/a" : String(row.score)),
+            },
+            {
+              key: "attested",
+              label: "Attested",
+              sortValue: (row) => (row.attested === null ? "" : String(row.attested)),
+              render: (row) => (row.attested === null ? "" : <Badge value={row.attested ? "attested" : "unattested"} />),
+            },
+            {
+              key: "trace_id",
+              label: "Trace",
+              mono: true,
+              render: (row) => <a href={`#trace/${row.trace_id}`}>{row.trace_id}</a>,
+            },
+          ]}
+        />
+      </Section>
     </>
   );
 }
