@@ -178,7 +178,7 @@ code { font-family: var(--n-font-mono); font-size: 0.9em; }
   align-items: flex-start;
   border-bottom: 1px solid var(--n-rule);
   padding: 22px var(--n-pad-x);
-  background: rgba(246, 244, 239, 0.94);
+  background: rgba(233, 230, 223, 0.94);
   backdrop-filter: blur(12px);
 }
 
@@ -251,11 +251,19 @@ code { font-family: var(--n-font-mono); font-size: 0.9em; }
 }
 
 .hero-card,
-.section,
 .lane,
 .object-heading {
   border-top: 1px solid var(--line);
   background: transparent;
+}
+
+/* sections are raised white surfaces on the ground, not transparent bands, so
+   the content plane reads as cards on a background instead of one flat field */
+.section {
+  background: var(--n-paper);
+  border: 1px solid var(--n-rule-dim);
+  border-radius: var(--n-radius-lg);
+  box-shadow: var(--n-shadow);
 }
 
 .hero-card {
@@ -329,6 +337,16 @@ code { font-family: var(--n-font-mono); font-size: 0.9em; }
   gap: 14px;
 }
 
+/* a standalone stat band is a raised surface too, so the numbers sit on a
+   card rather than floating on the ground */
+.metric-grid {
+  background: var(--n-paper);
+  border: 1px solid var(--n-rule-dim);
+  border-radius: var(--n-radius-lg);
+  box-shadow: var(--n-shadow);
+  padding: 4px 22px 20px;
+}
+
 .metric-card { margin: 0; }
 
 .metric-grid {
@@ -375,7 +393,7 @@ code { font-family: var(--n-font-mono); font-size: 0.9em; }
 }
 
 .section {
-  padding: 20px 0 0;
+  padding: 20px 22px;
 }
 
 .section-header {
@@ -417,9 +435,9 @@ code { font-family: var(--n-font-mono); font-size: 0.9em; }
 
 .object-card,
 .record-card {
-  border: 1px solid var(--n-rule);
+  border: 1px solid var(--n-rule-dim);
   border-radius: var(--n-radius);
-  background: var(--n-paper);
+  background: var(--n-surface);
 }
 
 .object-card {
@@ -432,7 +450,7 @@ code { font-family: var(--n-font-mono); font-size: 0.9em; }
 
 .object-card:hover {
   border-color: var(--line-strong);
-  background: #fdfdfc;
+  background: var(--n-surface-hover);
 }
 
 .object-title,
