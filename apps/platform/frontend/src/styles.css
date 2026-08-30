@@ -178,7 +178,7 @@ code { font-family: var(--n-font-mono); font-size: 0.9em; }
   align-items: flex-start;
   border-bottom: 1px solid var(--n-rule);
   padding: 22px var(--n-pad-x);
-  background: rgba(231, 225, 212, 0.94);
+  background: rgba(246, 244, 239, 0.94);
   backdrop-filter: blur(12px);
 }
 
@@ -989,7 +989,7 @@ code { font-family: var(--n-font-mono); font-size: 0.9em; }
 .skeleton {
   display: block;
   border-radius: 6px;
-  background: linear-gradient(90deg, var(--surface-muted) 25%, #ecebe6 37%, var(--surface-muted) 63%);
+  background: linear-gradient(90deg, var(--surface-muted) 25%, #efede7 37%, var(--surface-muted) 63%);
   background-size: 400% 100%;
   animation: skeleton-shimmer 1.4s ease infinite;
 }
@@ -1054,6 +1054,75 @@ button.danger {
   border-color: var(--danger);
   background: var(--danger);
   color: #fff;
+}
+
+/* data tables (telemetry, audit log) */
+.data-table-block { display: grid; gap: 10px; }
+.data-table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.data-table-search {
+  max-width: 320px;
+  padding: 7px 10px;
+  font-size: var(--n-text-sm);
+}
+.data-table-count { color: var(--muted); font-size: 12px; }
+.data-table-empty { margin: 4px 0; color: var(--muted); font-size: 13px; }
+.table-scroll { overflow-x: auto; border: 1px solid var(--n-rule); border-radius: var(--n-radius); background: var(--surface); }
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.data-table th {
+  border-bottom: 2px solid var(--n-ink);
+  padding: 8px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.data-table td {
+  border-bottom: 1px solid var(--n-rule-dim);
+  padding: 8px 12px;
+  vertical-align: top;
+  font-variant-numeric: tabular-nums;
+}
+.data-table tbody tr:last-child td { border-bottom: none; }
+.data-table tbody tr:hover { background: var(--n-surface-hover); }
+.data-table .align-right { text-align: right; }
+.data-table .mono { font-family: var(--n-font-mono); font-size: 12px; }
+.data-table a { text-decoration: underline; text-underline-offset: 2px; }
+.table-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.table-sort:hover { color: var(--text); }
+.sort-mark { font-size: 9px; min-width: 9px; }
+.audit-detail {
+  display: inline-block;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  font-size: 11px;
 }
 
 /* account security dialog */

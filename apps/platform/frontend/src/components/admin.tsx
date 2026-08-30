@@ -6,6 +6,7 @@ import { useResource } from "./useResource";
 import { Badge, EmptyState, MetricCard, RecordList, Section, SkeletonCards, SkeletonMetrics } from "./ui";
 import { toast } from "./toast";
 import { confirm } from "./confirm";
+import { DataTable, formatTimestamp } from "./table";
 
 const DATA_SENSITIVITY = ["public", "internal", "confidential", "restricted"];
 const AUTONOMY = ["assistive", "supervised", "autonomous"];
@@ -31,13 +32,6 @@ function consumePendingRole(): string | null {
 function Feedback({ message }: { message: string }) {
   if (!message) return null;
   return <div className="message">{message}</div>;
-}
-
-function formatTimestamp(value: unknown): string {
-  if (!value) return "no activity";
-  const parsed = new Date(String(value));
-  if (Number.isNaN(parsed.getTime())) return String(value);
-  return parsed.toLocaleString();
 }
 
 // --- intake ------------------------------------------------------------------
@@ -857,18 +851,49 @@ export function AuditLog({ superAdmin = false }: { superAdmin?: boolean }) {
           </label>
           <button type="submit">Apply filters</button>
         </form>
-        <RecordList empty="No audit entries match the current filters." pageSize={AUDIT_PAGE_SIZE} label="entries">
-          {rows.map((entry) => (
-            <article className="record-card" key={entry.id}>
-              <div className="record-main">
-                <span className="record-title">{entry.action}</span>
-                <Badge value={entry.tenant_id || "platform"} />
-              </div>
-              <p>{entry.actor_ref} / {entry.target_type || "n/a"} {entry.target_id || ""}</p>
-              <p>{formatTimestamp(entry.created_at)}</p>
-            </article>
-          ))}
-        </RecordList>
+        <DataTable
+          label="entries"
+          empty="No audit entries match the current filters."
+          rows={rows}
+          rowKey={(entry) => String(entry.id)}
+          serverTotal={total}
+          initialSort={{ key: "created_at", direction: "desc" }}
+          columns={[
+            {
+              key: "created_at",
+              label: "Time",
+              render: (entry) => formatTimestamp(entry.created_at),
+            },
+            { key: "action", label: "Action", mono: true },
+            { key: "actor_ref", label: "Actor" },
+            {
+              key: "tenant_id",
+              label: "Organization",
+              sortValue: (entry) => entry.tenant_id || "platform",
+              render: (entry) => <Badge value={entry.tenant_id || "platform"} />,
+            },
+            {
+              key: "target",
+              label: "Target",
+              sortValue: (entry) => `${entry.target_type || ""} ${entry.target_id || ""}`.trim(),
+              searchValue: (entry) => `${entry.target_type || ""} ${entry.target_id || ""}`,
+              render: (entry) =>
+                entry.target_type ? `${entry.target_type}: ${entry.target_id || ""}` : "",
+            },
+            {
+              key: "detail",
+              label: "Detail",
+              sortable: false,
+              searchValue: (entry) => (typeof entry.detail === "string" ? entry.detail : ""),
+              render: (entry) =>
+                typeof entry.detail === "string" && entry.detail !== "null" ? (
+                  <code className="audit-detail">{entry.detail}</code>
+                ) : (
+                  ""
+                ),
+            },
+          ]}
+        />
         {total > AUDIT_PAGE_SIZE ? (
           <nav className="pager" aria-label="Audit log pages">
             <button type="button" className="secondary" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - AUDIT_PAGE_SIZE))}>

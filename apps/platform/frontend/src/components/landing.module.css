@@ -13,7 +13,7 @@
   justify-content: space-between;
   gap: var(--n-space-4);
   padding: 0 var(--n-pad-x);
-  background: rgba(231, 225, 212, 0.94);
+  background: rgba(246, 244, 239, 0.94);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--n-rule);
 }
