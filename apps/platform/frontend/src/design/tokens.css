@@ -5,13 +5,13 @@
  */
 :root {
   /* ---- colour: ground & ink ------------------------------------------- */
-  --n-bg: #f6f4ef;            /* light warm-neutral page ground */
-  --n-bg-deep: #ebe7dd;       /* parchment, kept for the sidebar and wells */
-  --n-paper: #ffffff;         /* white cards and inputs, so surfaces separate */
+  --n-bg: #e7e1d4;            /* parchment page ground */
+  --n-bg-deep: #ddd5c5;       /* darker parchment (bands, wells) */
+  --n-paper: #fffcf5;         /* warm white cards and inputs */
   --n-ink: #1a1714;
   --n-ink-muted: #3f3a33;
-  --n-ink-dim: #635c51;       /* 5.9:1 on the ground, 6.6:1 on paper */
-  --n-silver: #c9c4b9;
+  --n-ink-dim: #6a6358;       /* 5.0:1 on parchment, 5.6:1 on paper */
+  --n-silver: #c4ced4;
   --n-white: #ffffff;
   --n-black: #000000;
   --n-surface: rgba(26, 23, 20, 0.04);
@@ -69,5 +69,5 @@
   --n-pad-x: clamp(1.25rem, 4vw, 3rem);
   --n-header-h: 4rem;
   --n-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
-  --n-shadow: 0 1px 2px rgba(26, 23, 20, 0.07);
+  --n-shadow: 0 1px 0 rgba(26, 23, 20, 0.06);
 }
