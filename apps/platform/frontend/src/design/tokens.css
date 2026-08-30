@@ -5,9 +5,9 @@
  */
 :root {
   /* ---- colour: ground & ink ------------------------------------------- */
-  --n-bg: #f6f4ef;            /* light warm-neutral page ground */
-  --n-bg-deep: #ebe7dd;       /* parchment, kept for the sidebar and wells */
-  --n-paper: #ffffff;         /* white cards and inputs, so surfaces separate */
+  --n-bg: #e9e6df;            /* warm light-grey ground: clearly a background, so white cards read as raised */
+  --n-bg-deep: #e2ddd2;       /* parchment, kept for the sidebar and wells */
+  --n-paper: #ffffff;         /* white cards and inputs, so surfaces separate from the ground */
   --n-ink: #1a1714;
   --n-ink-muted: #3f3a33;
   --n-ink-dim: #635c51;       /* 5.9:1 on the ground, 6.6:1 on paper */
