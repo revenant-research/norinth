@@ -6,13 +6,17 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.3.0] - 2026-08-30
+
 ### Added
 
 - **Organizations can require MFA.** A per-organization security policy walls
   unenrolled local-password accounts into the enrollment flow (their password
   login keeps working, so flipping the flag can never strand an organization);
   SSO/SCIM accounts are exempt, and the administrator turning it on must be
-  enrolled first. (#118)
+  enrolled first. (#118, restored in #123)
 - **TOTP multi-factor authentication** for every local-password account, the
   platform administrator included (RFC 6238, no new dependency). The password
   step on an enrolled account issues a short-lived challenge instead of a
@@ -51,7 +55,7 @@ Semantic Versioning.
   lookup table for low-entropy content such as record numbers. The key now
   derives from the api key when no signing secret is set; digests change on
   upgrade for previously-unkeyed installs, and rotating the api key unlinks
-  old fingerprints unless a signing secret is pinned. (#108)
+  old fingerprints unless a signing secret is pinned. (#108, restored in #122)
 - **Scope listings are tenant-scoped.** `/api/scopes` named every tenant's
   projects and environments to any signed-in tenant. (#106)
 - **Decisions and exceptions are append-only.** Resubmitting an identical
@@ -67,7 +71,6 @@ Semantic Versioning.
   downgrade to unauthenticated context. (#115)
 - The change-password screen enforced 8 characters client-side while the
   platform requires 12. (#110)
-
 - **The content boundary now covers application `metadata`.** With
   `capture_content` off, the SDK hashed prompts and completions but passed
   `metadata` through verbatim, so an application that put a patient name or an
@@ -101,15 +104,12 @@ Semantic Versioning.
   `request.url.scheme`, which is HTTP behind a TLS-terminating proxy. They now
   use the same signal as the session cookie.
 
-### Added
+### Added (operations)
 
 - **`NORINTH_DURABLE`.** Delivery defaults are tuned for observability — async,
   fail-open, bounded queue — and drop events when the queue fills with no spool
   configured. A deployment treating telemetry as evidence can set this to refuse
   to start without `NORINTH_SPOOL_DIR`, failing at boot rather than at audit.
-
-### Added (operations)
-
 - **Metrics and structured logs.** `GET /metrics` serves Prometheus
   text-format series (request rates and latency by route template, events
   accepted per tenant, audit-append duration, notification-outbox depth),
@@ -138,7 +138,7 @@ Semantic Versioning.
   remains as the rebuild path. Also fixes a correctness bug this surfaced:
   repeat usage of an already-known model read as a material change (payload
   entries were built without dedup), which could block release gates on
-  routine traffic. (#119)
+  routine traffic. (#119, restored in #124)
 - Release prep for v0.3.0: the SDK's PyPI page links point at the real
   repository (they targeted a nonexistent one), versions bumped, and
   CONTRIBUTING documents the tag steps and the one-time PyPI
