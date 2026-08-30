@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """fallback page when the dashboard bundle isn't built"""
 
 from __future__ import annotations

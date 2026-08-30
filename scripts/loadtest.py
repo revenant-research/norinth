@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """ingest load test: sustained batches against /v1/events/batch, stdlib only
 
 usage:

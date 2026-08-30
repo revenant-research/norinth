@@ -29,6 +29,8 @@ jobs:
           pip install -e packages/python-sdk
       - name: Lint (ruff)
         run: ruff check apps/platform/app packages/python-sdk/norinth_logger tests scripts
+      - name: License headers (SPDX)
+        run: python3 scripts/check_license_headers.py
       - name: Type check (mypy)
         run: mypy apps/platform/app packages/python-sdk/norinth_logger
       - name: Test (pytest)

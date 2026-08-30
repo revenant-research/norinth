@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Revenant Research
+
 import { useEffect, useRef } from "react";
 
 export type RouteItem = { id: string; label: string; description?: string; group?: string };

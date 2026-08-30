@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """versioned schema migrations
 
 * schema_migrations records every applied version with a timestamp

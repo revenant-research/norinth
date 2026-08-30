@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """append-only, tamper-evident audit log
 
 each entry carries a hash chaining it to the previous

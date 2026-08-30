@@ -26,7 +26,12 @@ make run              # run the platform on :8001
   description.
 - **Every behavior change ships with a test.** Security fixes add a regression
   test that fails on `main` and passes on the branch.
-- **CI must be green**: ruff lint, `pytest` (SQLite and PostgreSQL), and the frontend `vitest` + `tsc` build are required checks.
+- **CI must be green**: ruff lint, SPDX license headers, `pytest` (SQLite and PostgreSQL), and the frontend `vitest` + `tsc` build are required checks.
+- **Every source file carries an SPDX header.** New `.py`, `.ts`, and `.tsx`
+  files under `apps/`, `packages/`, and `scripts/` start with the Apache-2.0
+  SPDX header and the Revenant Research copyright line. This keeps ownership
+  attached to each file on redistribution (License Section 4(c)). Add missing
+  headers with `python3 scripts/check_license_headers.py --fix`.
 - Frontend components get a `*.test.tsx` beside them (`make test-frontend`).
 - Never commit the compiled dashboard (`apps/platform/app/dashboard/static/` is
   git-ignored). CI builds it from source, checks the platform serves it, and the

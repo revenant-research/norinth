@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """egress guard against server-side request forgery
 
 webhook urls and oidc endpoints are configured by org admins and then fetched by

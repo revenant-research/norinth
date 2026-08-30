@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """trusted external base url for identity flows
 
 the saml audience/recipient and the oidc redirect_uri must not come from an

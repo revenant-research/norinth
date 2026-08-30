@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """per-tenant ingestion api keys
 
 each key is bound to one tenant; the ingestion endpoint derives the tenant from

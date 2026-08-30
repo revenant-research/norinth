@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """per-tenant openid connect (sso) configuration and login-flow state
 
 stores each org's oidc provider settings and the short-lived state for in-flight

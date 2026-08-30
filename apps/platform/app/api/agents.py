@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """agent registry and agent-governance endpoints"""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """data retention and right-to-erasure
 
 purge a tenant's data on offboarding and enforce a retention window on telemetry

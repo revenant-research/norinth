@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """database backend abstraction: sqlite (default) or postgres
 
 set NORINTH_DATABASE_URL=postgresql://... to run on postgres; unset keeps

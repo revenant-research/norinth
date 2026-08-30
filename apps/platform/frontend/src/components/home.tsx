@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Revenant Research
+
 import type { DashboardData, User } from "../api";
 import { Badge, ButtonLink, Callout, Card, Eyebrow, Grid, Heading, Inline, Stack, Stat, StatGroup, Text, statusTone } from "../design";
 import { Section } from "./ui";

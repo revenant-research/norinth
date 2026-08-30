@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """server-side pagination for list endpoints"""
 
 from __future__ import annotations

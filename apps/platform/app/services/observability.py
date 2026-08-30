@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """metrics and structured logging, stdlib only
 
 a prometheus client library would be a bigger liability than the hundred

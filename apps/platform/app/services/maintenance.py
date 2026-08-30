@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """periodic governance maintenance
 
 governance state that turns on the clock rather than on an event -- an exception

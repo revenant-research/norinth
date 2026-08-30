@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Revenant Research
+
 import { ButtonLink, Code, Inline, Stack, Table, Text } from "../design";
 import { Section } from "./ui";
 

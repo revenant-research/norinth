@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """scim 2.0 user provisioning per tenant (rfc 7643/7644)"""
 
 from __future__ import annotations

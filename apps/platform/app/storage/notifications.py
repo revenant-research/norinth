@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """notification outbox, webhooks and invites
 
 no request path talks to smtp or a webhook url: events are written to

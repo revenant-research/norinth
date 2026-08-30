@@ -16,3 +16,11 @@ repos:
         args: [--maxkb=1024]
       - id: check-merge-conflict
       - id: detect-private-key
+  - repo: local
+    hooks:
+      - id: license-headers
+        name: SPDX license headers
+        entry: python3 scripts/check_license_headers.py
+        language: system
+        files: ^(apps|packages|scripts)/.*\.(py|ts|tsx)$
+        exclude: /node_modules/

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """eval-evidence attestation: canonical statement + ed25519 verification
 
 the statement format is the contract between the signer (CI via the SDK's

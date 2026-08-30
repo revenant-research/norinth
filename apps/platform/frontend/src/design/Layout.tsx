@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Revenant Research
+
 import type { CSSProperties, ElementType, HTMLAttributes, ReactNode } from "react";
 
 import styles from "./Layout.module.css";

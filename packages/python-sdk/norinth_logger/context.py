@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 from __future__ import annotations
 
 from contextvars import ContextVar, Token
