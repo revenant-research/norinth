@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Revenant Research
+
 import { Badge, Callout, Card, Chip, Eyebrow, Inline, Stack, Stat, StatGroup, Text } from "../design";
 
 type Row = Record<string, any>;

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """first-run setup wizard: create the first org and its admin"""
 
 from __future__ import annotations

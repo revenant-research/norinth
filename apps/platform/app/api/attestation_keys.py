@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """org management of eval attestation public keys"""
 
 from __future__ import annotations

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """saml 2.0 sso endpoints: metadata, start, acs, config"""
 
 from __future__ import annotations

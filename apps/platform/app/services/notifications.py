@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """notification service: compose events, resolve recipients, deliver
 
 ``emit`` is called from request handlers and storage routines with the caller's

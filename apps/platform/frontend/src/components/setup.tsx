@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Revenant Research
+
 import { useEffect, useState } from "react";
 
 import { type User, changePassword, getJson, login, logout, postJson } from "../api";

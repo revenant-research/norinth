@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """rfc 6238 time-based one-time passwords, stdlib only
 
 sha-1/6-digit/30-second is what every authenticator app provisions by

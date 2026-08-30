@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """storage for totp enrollment, recovery codes, and login challenges
 
 secrets are stored encrypted (services/secrets, AAD-bound to the user);

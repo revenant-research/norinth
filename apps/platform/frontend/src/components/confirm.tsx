@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Revenant Research
+
 import { useEffect, useRef, useState } from "react";
 
 // promise-based confirmation dialog for destructive actions. a module-level bus

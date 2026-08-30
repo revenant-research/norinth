@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """sign eval results so gates accept them as attested evidence
 
 Usage in CI, after your eval job produces a result::

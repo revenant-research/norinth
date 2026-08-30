@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Revenant Research
+
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { type PageMeta, type Scope, getJson, postJson } from "../api";

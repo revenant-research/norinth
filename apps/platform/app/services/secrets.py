@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """application-layer encryption for stored secrets, with key rotation
 
 secrets the platform must keep recoverable (a tenant's OIDC client secret, a

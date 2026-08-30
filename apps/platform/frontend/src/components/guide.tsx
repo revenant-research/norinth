@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Revenant Research
+
 import { getJson } from "../api";
 import { Badge, ButtonLink, Callout, Card, Chip, CodeBlock, Code, Heading, Inline, Stack, Text } from "../design";
 import { Section, SkeletonCards } from "./ui";

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """saml 2.0 service provider: sp-initiated web browser sso (http-redirect
 AuthnRequest, http-post Response) with jit provisioning
 

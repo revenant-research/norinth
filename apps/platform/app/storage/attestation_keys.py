@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """per-tenant evidence attestation keys
 
 an eval.result is client-authored: whoever holds an ingestion key can send

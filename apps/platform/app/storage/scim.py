@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """per-tenant scim 2.0 provisioning tokens
 
 an idp calls the scim endpoints with a bearer token to provision/deprovision

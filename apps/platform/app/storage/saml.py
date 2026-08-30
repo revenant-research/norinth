@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """per-tenant saml 2.0 configuration and in-flight request state
 
 the platform is the service provider; the idp's signing certificate is stored

@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """agent registry and runtime posture derivation
 
 registry: each agent has an owner, autonomy level, tool allow-list, and a

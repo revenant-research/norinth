@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """failed-login throttling, per account and per source ip
 
 per-account lockout alone misses two cases: deliberate targeted lockout, and

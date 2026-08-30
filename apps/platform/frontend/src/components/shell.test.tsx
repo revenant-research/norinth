@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Revenant Research
+
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 

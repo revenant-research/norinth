@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Revenant Research
+
 import { useState } from "react";
 
 import { type Scope, getJson } from "../api";

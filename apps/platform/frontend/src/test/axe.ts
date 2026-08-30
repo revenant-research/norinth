@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Revenant Research
+
 import axe, { type AxeResults } from "axe-core";
 
 // run axe-core against a rendered container under jsdom. colour-contrast needs a

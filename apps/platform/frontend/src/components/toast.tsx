@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Revenant Research
+
 import { useEffect, useState } from "react";
 
 // toast notifications. a module-level pub/sub bus lets any component raise one

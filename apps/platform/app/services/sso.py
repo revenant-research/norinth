@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 """openid connect authorization-code login with pkce and jit provisioning
 
 flow:

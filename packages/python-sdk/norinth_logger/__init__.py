@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Revenant Research
+
 from .client import NorinthClient
 from .decorators import trace
 from .runtime import (
