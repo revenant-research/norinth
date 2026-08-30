@@ -44,9 +44,17 @@ own, and it includes the systems nobody registered.
 
 - **Control evidence.** Norinth maps what it observes to the requirements of the
   frameworks teams are usually measured against — NIST AI RMF, ISO/IEC 42001,
-  the EU AI Act, and SOC 2 — and shows how much of each is satisfied and where
-  the gaps are. It also produces a machine-readable AI bill of materials
-  (CycloneDX) of the models and components in use.
+  the EU AI Act, SOC 2, and the OWASP Top 10 for Agentic Applications — and
+  shows how much of each is satisfied and where the gaps are. An open finding
+  counts as a gap no matter what a checkbox says. It also produces a
+  machine-readable AI bill of materials (CycloneDX) of the models and
+  components in use.
+
+- **Agent governance.** Agents observed at runtime are reconciled against a
+  registry: tool allow-lists, autonomy levels, human checkpoints. An
+  unregistered agent, a tool used outside its allow-list, or an agent holding
+  untrusted input, sensitive data, and external actions at once each raise a
+  finding, mapped to the OWASP agentic risks.
 
 - **Ownership and review.** You can tier each system by risk, name an
   accountable owner, and route reviews to the right role. Decisions require
@@ -62,6 +70,12 @@ own, and it includes the systems nobody registered.
   coverage, every decision with its rationale, incidents, release gates, and a
   tamper-evident (hash-chained) audit trail that an auditor can verify
   independently.
+
+- **Accountable access.** Every account — the platform administrator included —
+  can enroll TOTP multi-factor authentication, and an organization can require
+  it. Failed logins, lockouts, exports, and reads of record-level data land on
+  the same hash-chained audit trail as decisions, and sessions end after
+  inactivity, not just at an absolute lifetime.
 
 ## How it works
 
@@ -132,6 +146,10 @@ export NORINTH_ENDPOINT="http://localhost:8001"     # the address from step 1
 export NORINTH_API_KEY="nrk_...paste_your_key..."   # the ingestion key from step 2
 export OPENAI_API_KEY="sk-...your_openai_key..."
 ```
+
+(If the PyPI package is not available yet, the same wheel is attached to every
+[GitHub release](https://github.com/revenant-research/norinth/releases) —
+`pip install` the `.whl` from the latest one.)
 
 ```python
 # try_norinth.py
@@ -215,14 +233,18 @@ Norinth ships a Helm chart and signed, multi-architecture container images:
 
 ```bash
 helm install norinth oci://ghcr.io/revenant-research/charts/norinth \
-  --set postgres.url="$DATABASE_URL"
+  --set database.url="$DATABASE_URL" \
+  --set secrets.secretKey="$(openssl rand -base64 32)" \
+  --set secrets.superAdminPassword="$(openssl rand -base64 24)"
 ```
 
 [`docs/operations.md`](docs/operations.md) covers deployment, the full list of
-configuration variables, backups and restores, and upgrades. A few settings
-matter before any non-local deployment — the administrator credentials, the
-signing and encryption keys, and secure cookies — and they are listed in
-[`SECURITY.md`](SECURITY.md).
+configuration variables, backups and restores, upgrades, sizing (with a load-test
+harness and measured numbers), and observability: a Prometheus `/metrics`
+endpoint, JSON logs with request ids, and an audit stream a SIEM can consume.
+A few settings matter before any non-local deployment — the administrator
+credentials, the signing and encryption keys, and secure cookies — and they are
+listed in [`SECURITY.md`](SECURITY.md).
 
 ## Running from source
 
@@ -232,7 +254,7 @@ If you want to develop against Norinth or read the code while it runs:
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 pip install -e packages/python-sdk
-make build-frontend                       # builds the dashboard (needs Node 20)
+make build-frontend                       # builds the dashboard (needs Node 22+)
 export NORINTH_PLATFORM_DB=apps/platform/data/norinth.sqlite3
 uvicorn app.main:app --app-dir apps/platform --reload --port 8001
 ```
@@ -268,13 +290,19 @@ Run the same checks CI does with `make lint` and `make test`.
 
 ## A note on privacy
 
-The SDK is observe-only by default: it records structured metadata and hashes of
-inputs and outputs, not the raw text, and it never blocks your application. The
-content boundary covers the `metadata` your application passes as well as prompts
-and completions — with capture off, only a fixed set of governance labels
-(`application_name`, `workflow_name`, `use_case`, `model_purpose`, `user_id`,
-`conversation_id`, `tenant_id`) reaches the platform in the clear, and any other
-key is hashed. Incident descriptions are hashed on the same terms.
+The SDK is observe-only by default: it records structured metadata and keyed
+hashes of inputs and outputs, not the raw text, and it never blocks your
+application. Fingerprints are always an HMAC — never a bare digest that a
+dictionary attack could reverse for short prompts or record numbers — keyed by
+your signing secret, or derived from your api key when none is set. The content
+boundary covers everything your application passes, not just prompts and
+completions: `metadata`, agent steps, tool arguments and results, usage
+payloads, matched guardrail rules, and error messages all obey it. With capture
+off, only a fixed set of governance labels (`application_name`,
+`workflow_name`, `use_case`, `model_purpose`, `user_id`, `conversation_id`,
+`tenant_id`, and structural labels like a step's tool name) reaches the
+platform in the clear, and everything else is hashed. Incident descriptions are
+hashed on the same terms.
 
 If you deliberately turn on content capture (`NORINTH_CAPTURE_CONTENT=true`), the
 SDK still redacts common secrets and identifiers before anything leaves your
