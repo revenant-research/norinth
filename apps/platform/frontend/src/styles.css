@@ -178,7 +178,7 @@ code { font-family: var(--n-font-mono); font-size: 0.9em; }
   align-items: flex-start;
   border-bottom: 1px solid var(--n-rule);
   padding: 22px var(--n-pad-x);
-  background: rgba(246, 244, 239, 0.94);
+  background: rgba(231, 225, 212, 0.94);
   backdrop-filter: blur(12px);
 }
 
@@ -989,7 +989,7 @@ code { font-family: var(--n-font-mono); font-size: 0.9em; }
 .skeleton {
   display: block;
   border-radius: 6px;
-  background: linear-gradient(90deg, var(--surface-muted) 25%, #efede7 37%, var(--surface-muted) 63%);
+  background: linear-gradient(90deg, var(--surface-muted) 25%, #ecebe6 37%, var(--surface-muted) 63%);
   background-size: 400% 100%;
   animation: skeleton-shimmer 1.4s ease infinite;
 }
