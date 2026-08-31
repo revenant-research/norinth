@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from typing import Any
 
 from app.schemas.events import Event, ScopeFilter
@@ -27,10 +26,13 @@ from app.storage.incidents import list_incidents
 from app.storage.lifecycle import list_change_events, list_review_tasks
 from app.storage.prompts import list_prompt_templates, list_prompt_versions
 from app.storage.raw_events import (
+    aggregate_systems,
+    aggregate_trace_summaries,
     aggregate_traces,
     count_distinct,
     count_error_events,
     count_events_by_type,
+    distinct_trace_ids,
     list_events,
 )
 from app.storage.workflow import (
@@ -46,12 +48,29 @@ from app.storage.workflow import (
 # page size when a builder aggregates over every matching event, and the ceiling
 # on that scan
 _SCAN_PAGE = 5000
+# how many rows an event panel on a detail page shows
+_PANEL_LIMIT = 200
+_RECENT_EVENTS = 50
 MAX_QUERY_LIMIT = 500_000
 
 
-def scoped_events(scope: ScopeFilter, *, event_type: str | None = None, limit: int = MAX_QUERY_LIMIT) -> list[Event]:
+def scoped_events(
+    scope: ScopeFilter,
+    *,
+    event_type: str | None = None,
+    application_name: str | None = None,
+    workflow_name: str | None = None,
+    trace_id: str | None = None,
+    limit: int = MAX_QUERY_LIMIT,
+) -> list[Event]:
     """all matching events up to limit, paged; use the sql count/aggregate
-    helpers for pure counts, this is for builders that parse event attributes"""
+    helpers for pure counts, this is for builders that parse event attributes
+
+    narrow with application_name, workflow_name or trace_id wherever the caller
+    wants a subset: filtering here rather than in the caller keeps the cost
+    proportional to the rows returned instead of to every event in scope, and
+    keeps the result clear of the limit below
+    """
     events: list[Event] = []
     offset = 0
     while offset < limit:
@@ -60,6 +79,9 @@ def scoped_events(scope: ScopeFilter, *, event_type: str | None = None, limit: i
             project=scope.project,
             environment=scope.environment,
             event_type=event_type,
+            application_name=application_name,
+            workflow_name=workflow_name,
+            trace_id=trace_id,
             limit=min(_SCAN_PAGE, limit - offset),
             offset=offset,
         )
@@ -87,25 +109,7 @@ def token_count(usage: dict[str, Any], field: str) -> int:
 
 
 def build_systems(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
-    by_system: dict[str, dict[str, Any]] = {}
-    for event in scoped_events(scope):
-        system = event.system or event.service
-        record = by_system.setdefault(
-            system,
-            {"system": system, "service": event.service, "environment": event.environment, "events": 0, "models": set(), "vendors": set()},
-        )
-        record["events"] += 1
-        if event.type == "model.call":
-            attrs = event_attributes(event)
-            record["models"].add(attrs.get("model", "unknown"))
-            record["vendors"].add(attrs.get("provider", "unknown"))
-
-    return {
-        "systems": [
-            {**record, "models": sorted(record["models"]), "vendors": sorted(record["vendors"])}
-            for record in by_system.values()
-        ]
-    }
+    return {"systems": aggregate_systems(**scope.model_dump())}
 
 
 def build_applications(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
@@ -120,7 +124,7 @@ def build_models(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
     return {"models": list_models(**scope.model_dump())}
 
 
-def build_retrievals(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
+def build_retrievals(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
     return {
         "retrievals": [
             {
@@ -133,12 +137,12 @@ def build_retrievals(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
                 "status": event["status"],
                 "duration_ms": event["duration_ms"],
             }
-            for event in list_observed_events("retrieval.call", **scope.model_dump())
+            for event in list_observed_events("retrieval.call", **scope.model_dump(), limit=limit, offset=offset)
         ]
     }
 
 
-def build_tools(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
+def build_tools(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
     return {
         "tools": [
             {
@@ -150,12 +154,12 @@ def build_tools(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
                 "status": event["status"],
                 "duration_ms": event["duration_ms"],
             }
-            for event in list_observed_events("tool.call", **scope.model_dump())
+            for event in list_observed_events("tool.call", **scope.model_dump(), limit=limit, offset=offset)
         ]
     }
 
 
-def build_guardrails(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
+def build_guardrails(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
     return {
         "guardrails": [
             {
@@ -169,12 +173,12 @@ def build_guardrails(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
                 "application_name": event.get("application_name") or "unknown",
                 "status": event["status"],
             }
-            for event in list_observed_events("guardrail.decision", **scope.model_dump())
+            for event in list_observed_events("guardrail.decision", **scope.model_dump(), limit=limit, offset=offset)
         ]
     }
 
 
-def build_evals(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
+def build_evals(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
     return {
         "evals": [
             {
@@ -190,12 +194,12 @@ def build_evals(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
                 "application_name": event.get("application_name") or "unknown",
                 "status": event["status"],
             }
-            for event in list_observed_events("eval.result", **scope.model_dump())
+            for event in list_observed_events("eval.result", **scope.model_dump(), limit=limit, offset=offset)
         ]
     }
 
 
-def build_agents(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
+def build_agents(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
     return {
         "agents": [
             {
@@ -209,7 +213,7 @@ def build_agents(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
                 "status": event["status"],
                 "duration_ms": event["duration_ms"],
             }
-            for event in list_observed_events("agent.run", **scope.model_dump())
+            for event in list_observed_events("agent.run", **scope.model_dump(), limit=limit, offset=offset)
         ]
     }
 
@@ -306,6 +310,20 @@ def build_resource_graph_neighborhood(scope: ScopeFilter, node_id: str) -> dict[
     }
 
 
+def recent_events(
+    scope: ScopeFilter, *, application_name: str | None = None, workflow_name: str | None = None
+) -> list[dict[str, Any]]:
+    """the newest events for a detail panel, in chronological order"""
+    return list_events(
+        tenant_id=scope.tenant_id,
+        project=scope.project,
+        environment=scope.environment,
+        application_name=application_name,
+        workflow_name=workflow_name,
+        limit=_RECENT_EVENTS,
+    )
+
+
 def build_application_detail(scope: ScopeFilter, application_id: str) -> dict[str, Any] | None:
     scope_kwargs = scope.model_dump()
     applications = list_applications(**scope_kwargs)
@@ -314,8 +332,9 @@ def build_application_detail(scope: ScopeFilter, application_id: str) -> dict[st
         return None
 
     application_name = application["application_name"]
-    related_events = events_for_application(scope, application_name)
-    trace_ids = sorted({event.trace_id for event in related_events})
+    # each of the three event panels below is bounded, so each is its own narrow
+    # query rather than one pass over the application's whole history
+    narrowed = {**scope_kwargs, "application_name": application_name}
     return {
         "application": application,
         "workflows": [
@@ -394,9 +413,9 @@ def build_application_detail(scope: ScopeFilter, application_id: str) -> dict[st
             for exception in list_exceptions(**scope_kwargs)
             if exception.get("application_name") == application_name
         ],
-        "traces": build_trace_summaries(related_events),
-        "recent_events": [event.model_dump() for event in related_events[-50:]],
-        "trace_ids": trace_ids,
+        "traces": aggregate_trace_summaries(**narrowed),
+        "recent_events": recent_events(scope, application_name=application_name),
+        "trace_ids": distinct_trace_ids(**narrowed),
     }
 
 
@@ -408,7 +427,7 @@ def build_workflow_detail(scope: ScopeFilter, workflow_id: str) -> dict[str, Any
         return None
 
     workflow_name = workflow["workflow_name"]
-    related_events = events_for_workflow(scope, workflow_name)
+    narrowed = {**scope_kwargs, "workflow_name": workflow_name}
     return {
         "workflow": workflow,
         "applications": [
@@ -416,7 +435,10 @@ def build_workflow_detail(scope: ScopeFilter, workflow_id: str) -> dict[str, Any
             for application in list_applications(**scope_kwargs)
             if application["application_name"] in workflow.get("applications", [])
         ],
-        "model_calls": [event.model_dump() for event in related_events if event.type == "model.call"],
+        "model_calls": [
+            event.model_dump()
+            for event in scoped_events(scope, event_type="model.call", workflow_name=workflow_name, limit=_PANEL_LIMIT)
+        ],
         "agents": filter_by_workflow(build_agents(scope)["agents"], workflow_name),
         "retrievals": filter_by_workflow(build_retrievals(scope)["retrievals"], workflow_name),
         "tools": filter_by_workflow(build_tools(scope)["tools"], workflow_name),
@@ -430,8 +452,8 @@ def build_workflow_detail(scope: ScopeFilter, workflow_id: str) -> dict[str, Any
         "prompt_versions": filter_by_workflow(list_prompt_versions(**scope_kwargs), workflow_name),
         "incidents": filter_by_workflow(list_incidents(**scope_kwargs), workflow_name),
         "review_tasks": filter_by_workflow(list_review_tasks(**scope_kwargs), workflow_name),
-        "traces": build_trace_summaries(related_events),
-        "recent_events": [event.model_dump() for event in related_events[-50:]],
+        "traces": aggregate_trace_summaries(**narrowed),
+        "recent_events": recent_events(scope, workflow_name=workflow_name),
     }
 
 
@@ -535,7 +557,7 @@ def build_incident_detail(scope: ScopeFilter, incident_id: str) -> dict[str, Any
 
 
 def build_trace_detail(scope: ScopeFilter, trace_id: str) -> dict[str, Any] | None:
-    events = [event for event in scoped_events(scope) if event.trace_id == trace_id]
+    events = scoped_events(scope, trace_id=trace_id)
     if not events:
         return None
     return {
@@ -563,36 +585,8 @@ def build_trace_detail(scope: ScopeFilter, trace_id: str) -> dict[str, Any] | No
     }
 
 
-def events_for_application(scope: ScopeFilter, application_name: str) -> list[Event]:
-    return [
-        event
-        for event in scoped_events(scope)
-        if event_metadata(event).get("application_name") == application_name
-    ]
-
-
-def events_for_workflow(scope: ScopeFilter, workflow_name: str) -> list[Event]:
-    return [
-        event
-        for event in scoped_events(scope)
-        if event_metadata(event).get("workflow_name") == workflow_name or event.name == workflow_name
-    ]
-
-
 def filter_by_workflow(rows: list[dict[str, Any]], workflow_name: str) -> list[dict[str, Any]]:
     return [row for row in rows if row.get("workflow_name") == workflow_name]
-
-
-def build_trace_summaries(events: list[Event]) -> list[dict[str, Any]]:
-    trace_counts = Counter(event.trace_id for event in events)
-    return [
-        {
-            "trace_id": trace_id,
-            "event_count": count,
-            "status": "error" if any(event.status == "error" and event.trace_id == trace_id for event in events) else "success",
-        }
-        for trace_id, count in trace_counts.most_common(50)
-    ]
 
 
 def find_record(rows: list[dict[str, Any]], key: str, value: Any) -> dict[str, Any] | None:
@@ -601,8 +595,8 @@ def find_record(rows: list[dict[str, Any]], key: str, value: Any) -> dict[str, A
     return next((row for row in rows if row.get(key) == value), None)
 
 
-def build_risk_register(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
-    return {"risks": list_risk_findings(**scope.model_dump())}
+def build_risk_register(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
+    return {"risks": list_risk_findings(**scope.model_dump(), limit=limit, offset=offset)}
 
 
 def build_control_catalog(tenant_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
@@ -637,8 +631,8 @@ def build_deployment_versions(scope: ScopeFilter) -> dict[str, list[dict[str, An
     return {"deployment_versions": list_deployment_versions(**scope.model_dump())}
 
 
-def build_deployment_gates(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
-    return {"deployment_gates": list_deployment_gates(**scope.model_dump())}
+def build_deployment_gates(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
+    return {"deployment_gates": list_deployment_gates(**scope.model_dump(), limit=limit, offset=offset)}
 
 
 def build_prompt_templates(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
@@ -649,12 +643,12 @@ def build_prompt_versions(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]
     return {"prompt_versions": list_prompt_versions(**scope.model_dump())}
 
 
-def build_incidents(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
-    return {"incidents": list_incidents(**scope.model_dump())}
+def build_incidents(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
+    return {"incidents": list_incidents(**scope.model_dump(), limit=limit, offset=offset)}
 
 
-def build_control_evidence(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
-    return {"controls": list_control_assessments(**scope.model_dump())}
+def build_control_evidence(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
+    return {"controls": list_control_assessments(**scope.model_dump(), limit=limit, offset=offset)}
 
 
 # framework_ref prefix -> display family. a control assessment cites specific
@@ -755,24 +749,24 @@ def build_framework_coverage(scope: ScopeFilter) -> dict[str, Any]:
     }
 
 
-def build_change_events(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
-    return {"changes": list_change_events(**scope.model_dump())}
+def build_change_events(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
+    return {"changes": list_change_events(**scope.model_dump(), limit=limit, offset=offset)}
 
 
-def build_review_tasks(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
-    return {"review_tasks": list_review_tasks(**scope.model_dump())}
+def build_review_tasks(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
+    return {"review_tasks": list_review_tasks(**scope.model_dump(), limit=limit, offset=offset)}
 
 
-def build_owner_assignments(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
-    return {"owners": list_owner_assignments(**scope.model_dump())}
+def build_owner_assignments(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
+    return {"owners": list_owner_assignments(**scope.model_dump(), limit=limit, offset=offset)}
 
 
-def build_decisions(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
-    return {"decisions": list_decisions(**scope.model_dump())}
+def build_decisions(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
+    return {"decisions": list_decisions(**scope.model_dump(), limit=limit, offset=offset)}
 
 
-def build_exceptions(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
-    return {"exceptions": list_exceptions(**scope.model_dump())}
+def build_exceptions(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
+    return {"exceptions": list_exceptions(**scope.model_dump(), limit=limit, offset=offset)}
 
 
 def build_traces_page(scope: ScopeFilter, *, limit: int, offset: int) -> dict[str, Any]:

@@ -8,6 +8,7 @@ from typing import Any
 
 from .entities import as_object, decode_json, encode_json, entity_id
 from .raw_events import connect, deserialize_raw_event
+from .scoping import count_scoped_rows, scoped_rows
 
 MATERIAL_FIELDS = {
     "agents",
@@ -492,16 +493,23 @@ def upsert_review_task(
     )
 
 
-def list_change_events(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
-    with connect() as connection:
-        rows = scoped_query(
-            connection,
-            "change_events",
-            tenant_id=tenant_id,
-            project=project,
-            environment=environment,
-            order_by="detected_at",
-        )
+def list_change_events(
+    *,
+    tenant_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    rows = scoped_rows(
+        "change_events",
+        tenant_id=tenant_id,
+        project=project,
+        environment=environment,
+        order_by="detected_at",
+        limit=limit,
+        offset=offset,
+    )
     return [
         {
             **row,
@@ -514,38 +522,34 @@ def list_change_events(*, tenant_id: str | None = None, project: str | None = No
     ]
 
 
-def list_review_tasks(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
-    with connect() as connection:
-        return scoped_query(
-            connection,
+def list_review_tasks(
+    *,
+    tenant_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    return scoped_rows(
             "review_tasks",
             tenant_id=tenant_id,
             project=project,
             environment=environment,
             order_by="updated_at",
+            limit=limit,
+            offset=offset,
         )
 
 
-def scoped_query(
-    connection,
-    table: str,
-    *,
-    tenant_id: str | None,
-    project: str | None,
-    environment: str | None,
-    order_by: str,
-) -> list[dict[str, Any]]:
-    clauses: list[str] = []
-    params: dict[str, Any] = {}
-    if tenant_id:
-        clauses.append("tenant_id = :tenant_id")
-        params["tenant_id"] = tenant_id
-    if project:
-        clauses.append("project = :project")
-        params["project"] = project
-    if environment:
-        clauses.append("environment = :environment")
-        params["environment"] = environment
-    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    rows = connection.execute(f"SELECT * FROM {table} {where} ORDER BY {order_by} DESC", params).fetchall()
-    return [dict(row) for row in rows]
+
+
+def count_change_events(
+    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
+) -> int:
+    return count_scoped_rows("change_events", tenant_id=tenant_id, project=project, environment=environment)
+
+
+def count_review_tasks(
+    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
+) -> int:
+    return count_scoped_rows("review_tasks", tenant_id=tenant_id, project=project, environment=environment)

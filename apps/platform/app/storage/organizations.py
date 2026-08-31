@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .errors import DomainError
 from .raw_events import connect
 
 
@@ -31,7 +32,7 @@ def create_organization(tenant_id: str, name: str, created_by: str) -> dict[str,
             "SELECT 1 FROM organizations WHERE tenant_id = ?", (tenant_id,)
         ).fetchone()
         if existing is not None:
-            raise ValueError(f"organization '{tenant_id}' already exists")
+            raise DomainError(f"organization '{tenant_id}' already exists")
         connection.execute(
             """
             INSERT INTO organizations (tenant_id, name, status, created_by, created_at, updated_at)
@@ -46,7 +47,7 @@ def set_organization_status(tenant_id: str, status: str) -> dict[str, Any]:
     with connect() as connection:
         row = connection.execute("SELECT 1 FROM organizations WHERE tenant_id = ?", (tenant_id,)).fetchone()
         if row is None:
-            raise ValueError("organization not found")
+            raise DomainError("organization not found")
         connection.execute(
             "UPDATE organizations SET status = ?, updated_at = datetime('now') WHERE tenant_id = ?",
             (status, tenant_id),
