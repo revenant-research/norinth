@@ -11,6 +11,7 @@ from .attestation_keys import tenant_requires_attestation
 from .entities import as_object, entity_id
 from .errors import DomainError, RecordNotFound
 from .raw_events import connect
+from .scoping import count_scoped_rows, scoped_rows
 
 
 def init_deployments() -> None:
@@ -483,22 +484,6 @@ def load_deployment_gate(gate_id: str) -> dict[str, Any]:
     return dict(row)
 
 
-def scoped_rows(table: str, *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None, order_by: str = "updated_at") -> list[dict[str, Any]]:
-    clauses: list[str] = []
-    params: dict[str, Any] = {}
-    if tenant_id:
-        clauses.append("tenant_id = :tenant_id")
-        params["tenant_id"] = tenant_id
-    if project:
-        clauses.append("project = :project")
-        params["project"] = project
-    if environment:
-        clauses.append("environment = :environment")
-        params["environment"] = environment
-    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    with connect() as connection:
-        rows = connection.execute(f"SELECT * FROM {table} {where} ORDER BY {order_by} DESC", params).fetchall()
-    return [dict(row) for row in rows]
 
 
 def list_deployments(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
@@ -509,10 +494,18 @@ def list_deployment_versions(*, tenant_id: str | None = None, project: str | Non
     return scoped_rows("deployment_versions", tenant_id=tenant_id, project=project, environment=environment, order_by="observed_at")
 
 
-def list_deployment_gates(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
+def list_deployment_gates(
+    *,
+    tenant_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
     # enrich each gate with the version and artifact it gates, so callers can
     # see which build a decision applies to
-    clauses, params = ["1=1"], {}
+    clauses: list[str] = ["1=1"]
+    params: dict[str, Any] = {}
     if tenant_id:
         clauses.append("g.tenant_id = :tenant_id")
         params["tenant_id"] = tenant_id
@@ -522,6 +515,10 @@ def list_deployment_gates(*, tenant_id: str | None = None, project: str | None =
     if environment:
         clauses.append("g.environment = :environment")
         params["environment"] = environment
+    window = ""
+    if limit is not None:
+        window = " LIMIT :limit OFFSET :offset"
+        params.update({"limit": limit, "offset": offset})
     with connect() as connection:
         rows = connection.execute(
             f"""
@@ -529,7 +526,7 @@ def list_deployment_gates(*, tenant_id: str | None = None, project: str | None =
             FROM deployment_approval_gates g
             LEFT JOIN deployment_versions v ON v.version_id = g.version_id
             WHERE {' AND '.join(clauses)}
-            ORDER BY g.updated_at DESC
+            ORDER BY g.updated_at DESC{window}
             """,
             params,
         ).fetchall()
@@ -553,3 +550,9 @@ def find_gate_for_release(tenant_id: str, deployment_id: str, version: str) -> d
             (deployment_id, version, tenant_id),
         ).fetchone()
     return None if row is None else dict(row)
+
+
+def count_deployment_gates(
+    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
+) -> int:
+    return count_scoped_rows("deployment_approval_gates", tenant_id=tenant_id, project=project, environment=environment)
