@@ -445,6 +445,24 @@ def _0021_governance_policy_engine(connection) -> None:
                 rule["rationale"],
             ),
         )
+def _0021_detail_view_indexes(connection) -> None:
+    """indexes for the detail views now that they filter in sql
+
+    application and trace lookups already had one; workflow did not, and the
+    system rollup groups on COALESCE(system, service)
+    """
+    # tenant first, then the narrowing column. the existing app index leads with
+    # project and environment, which a tenant-only scope leaves unconstrained, so
+    # the planner could not use it and fell back to a scan
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sdk_events_tenant_application "
+        "ON sdk_events(tenant_id, application_name)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sdk_events_tenant_workflow "
+        "ON sdk_events(tenant_id, workflow_name)"
+    )
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_sdk_events_name ON sdk_events(name)")
 
 
 MIGRATIONS: list[Migration] = [
@@ -469,6 +487,7 @@ MIGRATIONS: list[Migration] = [
     Migration(19, "totp multi-factor authentication", _0019_mfa),
     Migration(20, "per-organization mfa requirement", _0020_org_require_mfa),
     Migration(21, "governance policy engine (policies, approval stages, vendor registry)", _0021_governance_policy_engine),
+    Migration(21, "workflow and system indexes for the detail views", _0021_detail_view_indexes),
 ]
 
 

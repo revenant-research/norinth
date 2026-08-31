@@ -8,6 +8,7 @@ from hashlib import sha256
 from typing import Any
 
 from .raw_events import as_int, connect
+from .scoping import count_scoped_rows, scoped_rows
 
 
 def as_object(value: Any) -> dict[str, Any]:
@@ -697,22 +698,6 @@ def merge_sets(row, values: dict[str, Any]) -> dict[str, list[str]]:
     return merged
 
 
-def scoped_rows(table: str, *, tenant_id: str | None, project: str | None, environment: str | None, order_by: str = "last_seen") -> list[dict[str, Any]]:
-    clauses: list[str] = []
-    params: dict[str, Any] = {}
-    if tenant_id:
-        clauses.append("tenant_id = :tenant_id")
-        params["tenant_id"] = tenant_id
-    if project:
-        clauses.append("project = :project")
-        params["project"] = project
-    if environment:
-        clauses.append("environment = :environment")
-        params["environment"] = environment
-    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    with connect() as connection:
-        rows = connection.execute(f"SELECT * FROM {table} {where} ORDER BY {order_by} DESC", params).fetchall()
-    return [dict(row) for row in rows]
 
 
 STAGE_ORDER = ["retired", "rejected", "approved", "recertified", "in_review", "discovered"]
@@ -758,7 +743,7 @@ def list_applications(*, tenant_id: str | None = None, project: str | None = Non
             "risk_tier": lifecycle.get(row["application_name"], {}).get("risk_tier"),
             "intake_ids": lifecycle.get(row["application_name"], {}).get("intake_ids", []),
         }
-        for row in scoped_rows("governance_applications", tenant_id=tenant_id, project=project, environment=environment)
+        for row in scoped_rows("governance_applications", tenant_id=tenant_id, project=project, environment=environment, order_by="last_seen")
     ]
 
 
@@ -770,7 +755,7 @@ def list_workflows(*, tenant_id: str | None = None, project: str | None = None, 
             "providers": decode_json(row["providers"], []),
             "models": decode_json(row["models"], []),
         }
-        for row in scoped_rows("governance_workflows", tenant_id=tenant_id, project=project, environment=environment)
+        for row in scoped_rows("governance_workflows", tenant_id=tenant_id, project=project, environment=environment, order_by="last_seen")
     ]
 
 
@@ -781,7 +766,7 @@ def list_models(*, tenant_id: str | None = None, project: str | None = None, env
             "operations": decode_json(row["operations"], []),
             "applications": decode_json(row["applications"], []),
         }
-        for row in scoped_rows("governance_models", tenant_id=tenant_id, project=project, environment=environment)
+        for row in scoped_rows("governance_models", tenant_id=tenant_id, project=project, environment=environment, order_by="last_seen")
     ]
 
 
@@ -792,28 +777,47 @@ def list_providers(*, tenant_id: str | None = None, project: str | None = None, 
             "models": decode_json(row["models"], []),
             "applications": decode_json(row["applications"], []),
         }
-        for row in scoped_rows("governance_providers", tenant_id=tenant_id, project=project, environment=environment)
+        for row in scoped_rows("governance_providers", tenant_id=tenant_id, project=project, environment=environment, order_by="last_seen")
     ]
 
 
-def list_observed_events(entity_type: str, *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
-    rows = scoped_rows("governance_observed_events", tenant_id=tenant_id, project=project, environment=environment, order_by="observed_at")
-    return [
-        {**row, "attributes": decode_json(row["attributes"], {})}
-        for row in rows
-        if row["entity_type"] == entity_type
-    ]
+def list_observed_events(
+    entity_type: str,
+    *,
+    tenant_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    """observed events of one type
+
+    entity_type used to be filtered after fetching every observed event in
+    scope, so a page of tool calls read every retrieval and eval as well
+    """
+    rows = scoped_rows(
+        "governance_observed_events",
+        tenant_id=tenant_id,
+        project=project,
+        environment=environment,
+        order_by="observed_at",
+        limit=limit,
+        offset=offset,
+        extra_clause="entity_type = :entity_type",
+        extra_params={"entity_type": entity_type},
+    )
+    return [{**row, "attributes": decode_json(row["attributes"], {})} for row in rows]
 
 
 def list_risks(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
     return [
         {**row, "evidence_trace_ids": decode_json(row["evidence_trace_ids"], [])}
-        for row in scoped_rows("governance_risks", tenant_id=tenant_id, project=project, environment=environment)
+        for row in scoped_rows("governance_risks", tenant_id=tenant_id, project=project, environment=environment, order_by="last_seen")
     ]
 
 
 def list_controls(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
-    return scoped_rows("governance_controls", tenant_id=tenant_id, project=project, environment=environment)
+    return scoped_rows("governance_controls", tenant_id=tenant_id, project=project, environment=environment, order_by="last_seen")
 
 
 def tenant_application_stats() -> dict[str, dict[str, Any]]:
@@ -829,3 +833,20 @@ def tenant_application_stats() -> dict[str, dict[str, Any]]:
             """
         ).fetchall()
     return {row["tenant_id"]: {"app_count": int(row["app_count"]), "last_activity": row["last_activity"]} for row in rows}
+
+
+def count_observed_events(
+    entity_type: str,
+    *,
+    tenant_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+) -> int:
+    return count_scoped_rows(
+        "governance_observed_events",
+        tenant_id=tenant_id,
+        project=project,
+        environment=environment,
+        extra_clause="entity_type = :entity_type",
+        extra_params={"entity_type": entity_type},
+    )

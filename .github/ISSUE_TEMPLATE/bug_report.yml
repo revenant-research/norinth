@@ -1,0 +1,69 @@
+name: Bug report
+description: Something does not work the way the documentation says it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report security vulnerabilities here. Use the private advisory
+        form linked in SECURITY.md.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Platform (apps/platform)
+        - Python SDK (packages/python-sdk)
+        - Helm chart (deploy/helm)
+        - Installer or backup scripts (scripts/)
+        - Documentation
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The image tag, chart version, or SDK version you are running.
+      placeholder: "0.1.0, or ghcr.io/revenant-research/norinth:edge"
+    validations:
+      required: true
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: How you are running it
+      options:
+        - Docker Compose (scripts/install.sh)
+        - Kubernetes (Helm chart)
+        - From source
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: database
+    attributes:
+      label: Database
+      placeholder: "PostgreSQL 16, or SQLite"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant log output. Remove secrets, tokens, and any customer data.
+      render: shell

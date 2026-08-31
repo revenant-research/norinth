@@ -9,6 +9,7 @@ from typing import Any
 from .entities import as_object, entity_id
 from .errors import RecordNotFound
 from .raw_events import connect
+from .scoping import count_scoped_rows
 
 
 def init_incidents() -> None:
@@ -238,7 +239,14 @@ def readable_description(record: dict[str, Any]) -> dict[str, Any]:
     return record
 
 
-def list_incidents(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
+def list_incidents(
+    *,
+    tenant_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
     clauses: list[str] = []
     params: dict[str, Any] = {}
     if tenant_id:
@@ -251,6 +259,10 @@ def list_incidents(*, tenant_id: str | None = None, project: str | None = None, 
         clauses.append("environment = :environment")
         params["environment"] = environment
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    window = ""
+    if limit is not None:
+        window = " LIMIT :limit OFFSET :offset"
+        params.update({"limit": limit, "offset": offset})
     with connect() as connection:
         rows = connection.execute(
             f"""
@@ -274,7 +286,7 @@ def list_incidents(*, tenant_id: str | None = None, project: str | None = None, 
                 ) AS owner_status
             FROM governance_incidents
             {where}
-            ORDER BY last_seen DESC
+            ORDER BY last_seen DESC{window}
             """,
             params,
         ).fetchall()
@@ -283,3 +295,9 @@ def list_incidents(*, tenant_id: str | None = None, project: str | None = None, 
 
 def row_to_dict(row) -> dict[str, Any] | None:
     return None if row is None else readable_description(dict(row))
+
+
+def count_incidents(
+    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
+) -> int:
+    return count_scoped_rows("governance_incidents", tenant_id=tenant_id, project=project, environment=environment)

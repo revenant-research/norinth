@@ -1,0 +1,28 @@
+name: Feature request
+description: Propose a capability Norinth does not have yet.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What are you trying to do that Norinth does not let you do today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you want it to do
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Which control or obligation this serves
+      description: >
+        If this is about governance coverage, name the framework and control, or
+        the auditor question it answers. Skip if it does not apply.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you are doing instead today

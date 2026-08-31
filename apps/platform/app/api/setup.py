@@ -15,6 +15,7 @@ from app.dependencies import ActorContext, current_actor
 from app.services.auth import hash_password
 from app.services.authorization import ORG_ADMIN, AuthorizationError, require_super_admin
 from app.storage.audit import record_audit
+from app.storage.errors import DomainError
 from app.storage.organizations import create_organization, list_organizations
 from app.storage.workflow import create_platform_user, get_user_by_email, load_platform_user, upsert_role_assignment
 
@@ -64,7 +65,7 @@ def setup_organization(payload: SetupOrganizationRequest, actor: ActorContext = 
     tenant_id = slugify(payload.tenant_id or payload.name)
     try:
         organization = create_organization(tenant_id, payload.name.strip(), actor.user_ref)
-    except ValueError as error:
+    except DomainError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     create_platform_user(
         user_ref=email,
