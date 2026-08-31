@@ -89,7 +89,10 @@ ensure_docker() {
   if [ -f /etc/os-release ] && grep -qiE 'ubuntu|debian' /etc/os-release; then
     say "Docker is not installed."
     if [ "$ASSUME_YES" = 1 ] || { [ -t 0 ] && read -r -p "  Install Docker Engine with Docker's official script? [y/N] " a && [ "${a:-n}" = y ]; }; then
-      curl -fsSL https://get.docker.com | sh
+      # Pinned commit of https://github.com/docker/docker-install, the source of
+      # get.docker.com, so this always runs a script that was reviewed rather
+      # than whatever the domain serves today. Bump the hash to update.
+      curl -fsSL https://raw.githubusercontent.com/docker/docker-install/42dcae692436f34526524ed46d3b32885c9355f5/install.sh | sh
       detect_compose || die "Docker installation failed."
       return
     fi

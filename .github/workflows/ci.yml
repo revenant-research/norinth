@@ -22,11 +22,10 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install dependencies
+      - name: Install dependencies (hash-pinned)
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
-          pip install -e packages/python-sdk
+          pip install --require-hashes -r requirements-dev.lock.txt
+          pip install --no-deps -e packages/python-sdk
       - name: Lint (ruff)
         run: ruff check apps/platform/app packages/python-sdk/norinth_logger tests scripts
       - name: License headers (SPDX)
@@ -59,11 +58,10 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install dependencies
+      - name: Install dependencies (hash-pinned)
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
-          pip install -e packages/python-sdk
+          pip install --require-hashes -r requirements-dev.lock.txt
+          pip install --no-deps -e packages/python-sdk
       - name: Test against PostgreSQL
         env:
           NORINTH_TEST_DATABASE_URL: postgresql://norinth:norinth@127.0.0.1:5432/norinth_test
@@ -106,10 +104,8 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install platform dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
+      - name: Install platform dependencies (hash-pinned)
+        run: pip install --require-hashes -r requirements-dev.lock.txt
       - name: Without a bundle the root route is an explicit 503, never a stale UI
         run: pytest tests/test_dashboard_bundle.py -q -k "not_built"
       - name: Download dashboard bundle
@@ -144,6 +140,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+          cache: pip
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
       - name: Build image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
@@ -162,7 +162,7 @@ jobs:
           # produce findings for packages that are never deployed
           docker run --rm --entrypoint python norinth-platform:ci -m pip freeze > shipped-requirements.txt
           echo "shipped packages:"; wc -l < shipped-requirements.txt
-          python -m pip install --upgrade pip pip-audit
+          pip install --require-hashes -r requirements-ci-tools.lock.txt
           pip-audit -r shipped-requirements.txt
       - name: Lint installer scripts (shellcheck)
         run: shellcheck scripts/install.sh scripts/backup.sh scripts/restore.sh

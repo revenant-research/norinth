@@ -1,4 +1,4 @@
-.PHONY: help install dev-install lint fmt type test test-cov build-frontend run docker-build docker-up clean lock
+.PHONY: help install dev-install lint fmt type test test-cov build-frontend run docker-build docker-up clean lock lock-ci
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -10,6 +10,12 @@ install: ## Install runtime dependencies (exact pinned versions)
 lock: ## Regenerate the dependency lock from requirements.txt (needs pip-tools, python 3.14 to match the image)
 	pip-compile --generate-hashes --no-strip-extras \
 		--output-file=apps/platform/requirements.lock.txt apps/platform/requirements.txt
+
+lock-ci: ## Regenerate the CI locks for dev deps and CI tools (needs pip-tools, python 3.11 to match CI)
+	pip-compile --generate-hashes --no-strip-extras \
+		--output-file=requirements-dev.lock.txt requirements-dev.txt
+	pip-compile --generate-hashes --no-strip-extras --allow-unsafe \
+		--output-file=requirements-ci-tools.lock.txt requirements-ci-tools.txt
 
 dev-install: ## Install dev + runtime dependencies and pre-commit hooks
 	pip install -r requirements-dev.txt
