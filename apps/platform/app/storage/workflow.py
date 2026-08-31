@@ -8,7 +8,7 @@ from typing import Any
 
 from . import db
 from .entities import entity_id
-from .errors import RecordNotFound
+from .errors import DomainError, RecordNotFound
 from .raw_events import connect
 from .scoping import count_scoped_rows, scoped_rows
 
@@ -526,7 +526,7 @@ def ensure_owner_assignment(connection, app_context: dict[str, Any], subject_typ
 
 def upsert_owner_policy(policy: dict[str, Any], tenant_id: str) -> dict[str, Any]:
     if not tenant_id:
-        raise ValueError("a tenant_id is required to customize owner policies")
+        raise DomainError("a tenant_id is required to customize owner policies")
     with connect() as connection:
         connection.execute(
             """
@@ -648,7 +648,7 @@ def set_user_status(user_ref: str, status: str) -> dict[str, Any]:
     with connect() as connection:
         row = connection.execute("SELECT 1 FROM platform_users WHERE user_ref = ?", (user_ref,)).fetchone()
         if row is None:
-            raise ValueError("user not found")
+            raise DomainError("user not found")
         connection.execute(
             "UPDATE platform_users SET status = ?, updated_at = datetime('now') WHERE user_ref = ?",
             (status, user_ref),
@@ -778,7 +778,7 @@ def upsert_role_assignment(assignment: dict[str, Any]) -> dict[str, Any]:
 
 def upsert_review_queue_policy(policy: dict[str, Any], tenant_id: str) -> dict[str, Any]:
     if not tenant_id:
-        raise ValueError("a tenant_id is required to customize review routing")
+        raise DomainError("a tenant_id is required to customize review routing")
     with connect() as connection:
         connection.execute(
             """
@@ -878,7 +878,7 @@ def load_decision_target(target_type: str, target_id: str) -> dict[str, Any]:
         "incident": ("governance_incidents", "incident_id"),
     }
     if target_type not in table_by_target:
-        raise ValueError("unsupported decision target type")
+        raise DomainError("unsupported decision target type")
     table, id_column = table_by_target[target_type]
     with connect() as connection:
         row = connection.execute(f"SELECT * FROM {table} WHERE {id_column} = ?", (target_id,)).fetchone()

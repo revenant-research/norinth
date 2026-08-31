@@ -17,6 +17,7 @@ from app.services.authorization import (
     require_permission,
 )
 from app.storage.audit import record_audit
+from app.storage.errors import DomainError
 from app.storage.ingestion_keys import (
     create_ingestion_key,
     list_ingestion_keys,
@@ -74,7 +75,7 @@ def revoke_key(key_id: str, actor: ActorContext = Depends(current_actor)) -> dic
     _authorize(actor, tenant_id)
     try:
         record = revoke_ingestion_key(key_id, tenant_id)
-    except ValueError as error:
+    except DomainError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     record_audit(
         actor_ref=actor.user_ref,

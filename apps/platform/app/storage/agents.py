@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Any
 
 from .entities import decode_json, encode_json, entity_id
+from .errors import DomainError
 from .raw_events import connect
 
 AUTONOMY_LEVELS = {
@@ -185,7 +186,7 @@ def retire_agent(agent_id: str, tenant_id: str) -> dict[str, Any]:
             "SELECT 1 FROM agent_registry WHERE agent_id = ? AND tenant_id = ?", (agent_id, tenant_id)
         ).fetchone()
         if row is None:
-            raise ValueError("agent not found in this organization")
+            raise DomainError("agent not found in this organization")
         connection.execute(
             "UPDATE agent_registry SET status = 'retired', updated_at = datetime('now') WHERE agent_id = ?",
             (agent_id,),

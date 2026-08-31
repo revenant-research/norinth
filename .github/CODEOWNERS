@@ -1,0 +1,23 @@
+# Every pull request is routed to the maintainer. Paths that can change what
+# ships to users, or what a deployment trusts, are listed again so they stay
+# visible in the review request even when a change is large.
+
+*                               @nathanstaffel
+
+# Build, release and supply chain
+/.github/                       @nathanstaffel
+/scripts/install.sh             @nathanstaffel
+/scripts/backup.sh              @nathanstaffel
+/scripts/restore.sh             @nathanstaffel
+/apps/platform/Dockerfile       @nathanstaffel
+/docker-compose.yml             @nathanstaffel
+/deploy/                        @nathanstaffel
+
+# Licensing and policy
+/LICENSE                        @nathanstaffel
+/NOTICE                         @nathanstaffel
+/SECURITY.md                    @nathanstaffel
+/CODE_OF_CONDUCT.md             @nathanstaffel
+
+# The wire protocol between the SDK and the platform
+/packages/python-sdk/PROTOCOL.md @nathanstaffel

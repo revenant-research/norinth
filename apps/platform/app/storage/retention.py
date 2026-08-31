@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from .errors import DomainError
 from .raw_events import connect
 
 # every tenant-scoped table except audit_logs (retained) and organizations
@@ -126,14 +127,14 @@ MIN_RETENTION_DAYS = 7
 def set_retention_days(tenant_id: str, retention_days: int | None) -> dict[str, Any]:
     """set or clear an organization's retention window; None keeps everything"""
     if retention_days is not None and retention_days < MIN_RETENTION_DAYS:
-        raise ValueError(f"retention_days must be at least {MIN_RETENTION_DAYS}, or null to keep everything")
+        raise DomainError(f"retention_days must be at least {MIN_RETENTION_DAYS}, or null to keep everything")
     with connect() as connection:
         cur = connection.execute(
             "UPDATE organizations SET retention_days = ?, updated_at = datetime('now') WHERE tenant_id = ?",
             (retention_days, tenant_id),
         )
         if not cur.rowcount:
-            raise ValueError("organization not found")
+            raise DomainError("organization not found")
     return {"tenant_id": tenant_id, "retention_days": retention_days}
 
 

@@ -8,6 +8,7 @@ from typing import Any
 
 from . import db
 from .entities import as_object, decode_json, encode_json, entity_id
+from .errors import DomainError
 from .raw_events import connect, deserialize_raw_event
 from .scoping import count_scoped_rows, scoped_rows
 
@@ -890,7 +891,7 @@ def upsert_control_definition(control: dict[str, Any], tenant_id: str) -> dict[s
     """create or update a control override for one tenant; platform defaults
     (tenant_id '') are immutable here, writes land under the tenant's own id"""
     if not tenant_id:
-        raise ValueError("a tenant_id is required to customize the control library")
+        raise DomainError("a tenant_id is required to customize the control library")
     with connect() as connection:
         connection.execute(
             """
@@ -918,9 +919,9 @@ def upsert_control_definition(control: dict[str, Any], tenant_id: str) -> dict[s
 
 def upsert_risk_rule(rule: dict[str, Any], tenant_id: str) -> dict[str, Any]:
     if rule["signal"] not in SUPPORTED_RISK_SIGNALS:
-        raise ValueError(f"unsupported risk signal: {rule['signal']}")
+        raise DomainError(f"unsupported risk signal: {rule['signal']}")
     if not tenant_id:
-        raise ValueError("a tenant_id is required to customize risk rules")
+        raise DomainError("a tenant_id is required to customize risk rules")
     with connect() as connection:
         connection.execute(
             """
