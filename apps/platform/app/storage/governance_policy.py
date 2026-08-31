@@ -8,7 +8,12 @@ from typing import Any
 
 from . import db
 from .entities import as_object, decode_json, encode_json, entity_id
+from .errors import DomainError
 from .raw_events import connect, deserialize_raw_event
+from .scoping import count_scoped_rows, scoped_rows
+
+# only the last column takes DESC, matching the order these rows always had
+_ASSESSMENT_ORDER = "application_name, evaluated_at"
 
 # whole-word agentic terms; substring matching false-positives (e.g
 # "stool-sample-tracker" matching "tool"), and this is secondary to real
@@ -886,7 +891,7 @@ def upsert_control_definition(control: dict[str, Any], tenant_id: str) -> dict[s
     """create or update a control override for one tenant; platform defaults
     (tenant_id '') are immutable here, writes land under the tenant's own id"""
     if not tenant_id:
-        raise ValueError("a tenant_id is required to customize the control library")
+        raise DomainError("a tenant_id is required to customize the control library")
     with connect() as connection:
         connection.execute(
             """
@@ -914,9 +919,9 @@ def upsert_control_definition(control: dict[str, Any], tenant_id: str) -> dict[s
 
 def upsert_risk_rule(rule: dict[str, Any], tenant_id: str) -> dict[str, Any]:
     if rule["signal"] not in SUPPORTED_RISK_SIGNALS:
-        raise ValueError(f"unsupported risk signal: {rule['signal']}")
+        raise DomainError(f"unsupported risk signal: {rule['signal']}")
     if not tenant_id:
-        raise ValueError("a tenant_id is required to customize risk rules")
+        raise DomainError("a tenant_id is required to customize risk rules")
     with connect() as connection:
         connection.execute(
             """
@@ -941,25 +946,16 @@ def upsert_risk_rule(rule: dict[str, Any], tenant_id: str) -> dict[str, Any]:
     return {**rule, "tenant_id": tenant_id}
 
 
-def scoped_policy_rows(table: str, *, tenant_id: str | None, project: str | None, environment: str | None) -> list[dict[str, Any]]:
-    clauses: list[str] = []
-    params: dict[str, Any] = {}
-    if tenant_id:
-        clauses.append("tenant_id = :tenant_id")
-        params["tenant_id"] = tenant_id
-    if project:
-        clauses.append("project = :project")
-        params["project"] = project
-    if environment:
-        clauses.append("environment = :environment")
-        params["environment"] = environment
-    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    with connect() as connection:
-        rows = connection.execute(f"SELECT * FROM {table} {where} ORDER BY application_name, evaluated_at DESC", params).fetchall()
-    return [dict(row) for row in rows]
 
 
-def list_control_assessments(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
+def list_control_assessments(
+    *,
+    tenant_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
     return [
         {
             **row,
@@ -968,18 +964,27 @@ def list_control_assessments(*, tenant_id: str | None = None, project: str | Non
             "required_fields": decode_json(row["required_fields"], []),
             "evidence_trace_ids": decode_json(row["evidence_trace_ids"], []),
         }
-        for row in scoped_policy_rows("control_assessments", tenant_id=tenant_id, project=project, environment=environment)
+        for row in scoped_rows("control_assessments", tenant_id=tenant_id, project=project, environment=environment,
+                    order_by=_ASSESSMENT_ORDER, limit=limit, offset=offset)
     ]
 
 
-def list_risk_findings(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
+def list_risk_findings(
+    *,
+    tenant_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
     return [
         {
             **row,
             "framework_refs": decode_json(row["framework_refs"], []),
             "evidence_trace_ids": decode_json(row["evidence_trace_ids"], []),
         }
-        for row in scoped_policy_rows("risk_findings", tenant_id=tenant_id, project=project, environment=environment)
+        for row in scoped_rows("risk_findings", tenant_id=tenant_id, project=project, environment=environment,
+                    order_by=_ASSESSMENT_ORDER, limit=limit, offset=offset)
     ]
 
 
@@ -991,3 +996,15 @@ def list_controls_catalog(tenant_id: str | None = None) -> list[dict[str, Any]]:
 def list_configured_risk_rules(tenant_id: str | None = None) -> list[dict[str, Any]]:
     with connect() as connection:
         return list_risk_rules(connection, tenant_id)
+
+
+def count_control_assessments(
+    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
+) -> int:
+    return count_scoped_rows("control_assessments", tenant_id=tenant_id, project=project, environment=environment)
+
+
+def count_risk_findings(
+    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
+) -> int:
+    return count_scoped_rows("risk_findings", tenant_id=tenant_id, project=project, environment=environment)

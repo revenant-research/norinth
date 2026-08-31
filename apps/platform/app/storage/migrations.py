@@ -398,6 +398,26 @@ def _0020_org_require_mfa(connection) -> None:
         connection.execute("ALTER TABLE organizations ADD COLUMN require_mfa INTEGER NOT NULL DEFAULT 0")
 
 
+def _0021_detail_view_indexes(connection) -> None:
+    """indexes for the detail views now that they filter in sql
+
+    application and trace lookups already had one; workflow did not, and the
+    system rollup groups on COALESCE(system, service)
+    """
+    # tenant first, then the narrowing column. the existing app index leads with
+    # project and environment, which a tenant-only scope leaves unconstrained, so
+    # the planner could not use it and fell back to a scan
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sdk_events_tenant_application "
+        "ON sdk_events(tenant_id, application_name)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sdk_events_tenant_workflow "
+        "ON sdk_events(tenant_id, workflow_name)"
+    )
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_sdk_events_name ON sdk_events(name)")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
@@ -419,6 +439,7 @@ MIGRATIONS: list[Migration] = [
     Migration(18, "session activity timestamp for idle timeout", _0018_session_last_seen),
     Migration(19, "totp multi-factor authentication", _0019_mfa),
     Migration(20, "per-organization mfa requirement", _0020_org_require_mfa),
+    Migration(21, "workflow and system indexes for the detail views", _0021_detail_view_indexes),
 ]
 
 

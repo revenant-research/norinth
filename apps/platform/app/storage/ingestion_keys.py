@@ -15,6 +15,7 @@ import hashlib
 import secrets
 from typing import Any
 
+from .errors import DomainError
 from .raw_events import connect
 
 _TOKEN_PREFIX = "nrk_"
@@ -129,7 +130,7 @@ def revoke_ingestion_key(key_id: str, tenant_id: str) -> dict[str, Any]:
             (key_id, tenant_id),
         ).fetchone()
         if row is None:
-            raise ValueError("ingestion key not found in this organization")
+            raise DomainError("ingestion key not found in this organization")
         connection.execute(
             "UPDATE ingestion_keys SET status = 'revoked' WHERE key_id = ?",
             (key_id,),

@@ -15,6 +15,7 @@ from __future__ import annotations
 import secrets
 from typing import Any
 
+from .errors import DomainError
 from .raw_events import connect
 
 
@@ -96,7 +97,7 @@ def revoke_attestation_key(key_id: str, tenant_id: str) -> dict[str, Any]:
             "SELECT * FROM attestation_keys WHERE key_id = ? AND tenant_id = ?", (key_id, tenant_id)
         ).fetchone()
         if row is None:
-            raise ValueError("attestation key not found")
+            raise DomainError("attestation key not found")
         connection.execute(
             "UPDATE attestation_keys SET status = 'revoked', revoked_at = datetime('now') WHERE key_id = ? AND tenant_id = ?",
             (key_id, tenant_id),
