@@ -90,7 +90,7 @@ as_root() {
 install_docker_apt() {
   local repo_os codename
   # shellcheck disable=SC1091
-  repo_os=$(. /etc/os-release; case " ${ID_LIKE:-} ${ID:-} " in *ubuntu*) echo ubuntu ;; *debian*) echo debian ;; esac)
+  repo_os=$(. /etc/os-release; case " ${ID_LIKE:-} ${ID:-} " in (*ubuntu*) echo ubuntu ;; (*debian*) echo debian ;; esac)
   # shellcheck disable=SC1091
   codename=$(. /etc/os-release; echo "${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}")
   { [ -n "$repo_os" ] && [ -n "$codename" ]; } || die "Could not identify this distribution. Install Docker from https://docs.docker.com/get-docker/ and re-run."
@@ -115,11 +115,6 @@ ensure_docker() {
     if [ "$ASSUME_YES" = 1 ] || { [ -t 0 ] && read -r -p "  Install Docker Engine from Docker's official apt repository? [y/N] " a && [ "${a:-n}" = y ]; }; then
       [ "$(id -u)" = 0 ] || need sudo "Docker installation needs root. Install sudo or re-run as root."
       install_docker_apt
-    if [ "$ASSUME_YES" = 1 ] || { [ -t 0 ] && read -r -p "  Install Docker Engine with Docker's official script? [y/N] " a && [ "${a:-n}" = y ]; }; then
-      # Pinned commit of https://github.com/docker/docker-install, the source of
-      # get.docker.com, so this always runs a script that was reviewed rather
-      # than whatever the domain serves today. Bump the hash to update.
-      curl -fsSL https://raw.githubusercontent.com/docker/docker-install/42dcae692436f34526524ed46d3b32885c9355f5/install.sh | sh
       detect_compose || die "Docker installation failed."
       return
     fi
