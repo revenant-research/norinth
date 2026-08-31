@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 from fastapi import APIRouter, Depends, HTTPException, Response
 
-from app.api.pagination import PageParams, paginate
+from app.api.pagination import PageParams, paged
 from app.dependencies import ActorContext, current_actor, now, scoped_dependency
 from app.schemas.events import ScopeFilter
 from app.schemas.workflow import (
@@ -68,19 +70,30 @@ from app.services.notifications import emit as notify
 from app.services.notifications import public_base_url
 from app.storage.audit import record_audit
 from app.storage.deployments import (
+    count_deployment_gates,
     gate_deployer,
     load_deployment_gate,
     refresh_deployment_gates,
     set_deployment_gate_status,
 )
+from app.storage.entities import count_observed_events
 from app.storage.errors import RecordNotFound
-from app.storage.governance_policy import upsert_control_definition, upsert_risk_rule
-from app.storage.incidents import load_incident, set_incident_status
+from app.storage.governance_policy import (
+    count_control_assessments,
+    count_risk_findings,
+    upsert_control_definition,
+    upsert_risk_rule,
+)
+from app.storage.incidents import count_incidents, load_incident, set_incident_status
 from app.storage.intake import intake_submitter
+from app.storage.lifecycle import count_change_events, count_review_tasks
 from app.storage.raw_events import connect, count_scoped_events, list_events, list_scopes
 from app.storage.retention import MIN_RETENTION_DAYS, retention_days_for, set_retention_days
 from app.storage.workflow import (
     assign_owner,
+    count_decisions,
+    count_exceptions,
+    count_owner_assignments,
     create_exception,
     expire_due_exceptions,
     load_decision_target,
@@ -251,27 +264,27 @@ def resource_graph_neighborhood(node_id: str, scope: ScopeFilter = Depends(scope
 
 @router.get("/api/retrievals")
 def retrievals(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_retrievals(scope), "retrievals", page)
+    return paged(build_retrievals, "retrievals", scope, page, partial(count_observed_events, "retrieval.call"))
 
 
 @router.get("/api/tools")
 def tools(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_tools(scope), "tools", page)
+    return paged(build_tools, "tools", scope, page, partial(count_observed_events, "tool.call"))
 
 
 @router.get("/api/guardrails")
 def guardrails(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_guardrails(scope), "guardrails", page)
+    return paged(build_guardrails, "guardrails", scope, page, partial(count_observed_events, "guardrail.decision"))
 
 
 @router.get("/api/evals")
 def evals(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_evals(scope), "evals", page)
+    return paged(build_evals, "evals", scope, page, partial(count_observed_events, "eval.result"))
 
 
 @router.get("/api/agents")
 def agents(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_agents(scope), "agents", page)
+    return paged(build_agents, "agents", scope, page, partial(count_observed_events, "agent.run"))
 
 
 @router.get("/api/risk-register")
@@ -279,12 +292,12 @@ def risk_register(scope: ScopeFilter = Depends(scoped_dependency), page: PagePar
     # a lapsed exception reopens the finding it waived; without this the register
     # keeps reporting it as accepted until the next batch of telemetry
     expire_due_exceptions()
-    return paginate(build_risk_register(scope), "risks", page)
+    return paged(build_risk_register, "risks", scope, page, count_risk_findings)
 
 
 @router.get("/api/control-evidence")
 def control_evidence(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_control_evidence(scope), "controls", page)
+    return paged(build_control_evidence, "controls", scope, page, count_control_assessments)
 
 
 @router.get("/api/control-catalog")
@@ -382,12 +395,12 @@ def configure_review_queue_policy(payload: ReviewQueuePolicyRequest, actor: Acto
 
 @router.get("/api/change-events")
 def change_events(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_change_events(scope), "changes", page)
+    return paged(build_change_events, "changes", scope, page, count_change_events)
 
 
 @router.get("/api/review-tasks")
 def review_tasks(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_review_tasks(scope), "review_tasks", page)
+    return paged(build_review_tasks, "review_tasks", scope, page, count_review_tasks)
 
 
 @router.get("/api/reviews/{task_id}")
@@ -410,7 +423,7 @@ def deployment_versions(scope: ScopeFilter = Depends(scoped_dependency)):
 
 @router.get("/api/deployment-gates")
 def deployment_gates(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_deployment_gates(scope), "deployment_gates", page)
+    return paged(build_deployment_gates, "deployment_gates", scope, page, count_deployment_gates)
 
 
 @router.get("/api/deployment-gates/{gate_id}")
@@ -433,7 +446,7 @@ def prompt_versions(scope: ScopeFilter = Depends(scoped_dependency)):
 
 @router.get("/api/incidents")
 def incidents(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_incidents(scope), "incidents", page)
+    return paged(build_incidents, "incidents", scope, page, count_incidents)
 
 
 @router.get("/api/incidents/{incident_id}")
@@ -532,7 +545,7 @@ def reject_deployment_gate(gate_id: str, payload: DeploymentGateDecisionRequest,
 
 @router.get("/api/owner-assignments")
 def owner_assignments(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_owner_assignments(scope), "owners", page)
+    return paged(build_owner_assignments, "owners", scope, page, count_owner_assignments)
 
 
 @router.post("/api/owner-assignments/{owner_assignment_id}/assign")
@@ -549,7 +562,7 @@ def assign_owner_route(owner_assignment_id: str, payload: OwnerAssignmentRequest
 
 @router.get("/api/decisions")
 def decisions(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_decisions(scope), "decisions", page)
+    return paged(build_decisions, "decisions", scope, page, count_decisions)
 
 
 # the only decisions the workflow understands; anything else is rejected
@@ -601,7 +614,7 @@ def create_decision(payload: DecisionRequest, actor: ActorContext = Depends(curr
 def exceptions(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
     # never show a lapsed exception as still active
     expire_due_exceptions()
-    return paginate(build_exceptions(scope), "exceptions", page)
+    return paged(build_exceptions, "exceptions", scope, page, count_exceptions)
 
 
 def _validate_future_date(value: str) -> None:
