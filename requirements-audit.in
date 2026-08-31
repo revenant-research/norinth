@@ -1,0 +1,5 @@
+# pip-audit for the shipped-image dependency audit in CI. Regenerate the
+# hash-locked requirements-audit.txt with:
+#   pip-compile --allow-unsafe --generate-hashes --output-file=requirements-audit.txt requirements-audit.in
+# allow-unsafe pins pip itself, which pip-audit's pip-api needs at runtime.
+pip-audit

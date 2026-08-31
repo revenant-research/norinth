@@ -81,6 +81,30 @@ detect_compose() {
   return 1
 }
 
+as_root() {
+  if [ "$(id -u)" = 0 ]; then "$@"; else sudo "$@"; fi
+}
+
+# Installs Docker Engine from Docker's own apt repository. apt verifies every
+# package against Docker's GPG key, and nothing downloaded is ever executed.
+install_docker_apt() {
+  local repo_os codename
+  # shellcheck disable=SC1091
+  repo_os=$(. /etc/os-release; case " ${ID_LIKE:-} ${ID:-} " in (*ubuntu*) echo ubuntu ;; (*debian*) echo debian ;; esac)
+  # shellcheck disable=SC1091
+  codename=$(. /etc/os-release; echo "${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}")
+  { [ -n "$repo_os" ] && [ -n "$codename" ]; } || die "Could not identify this distribution. Install Docker from https://docs.docker.com/get-docker/ and re-run."
+  as_root apt-get update
+  as_root apt-get install -y ca-certificates curl
+  as_root install -m 0755 -d /etc/apt/keyrings
+  as_root curl -fsSL "https://download.docker.com/linux/${repo_os}/gpg" -o /etc/apt/keyrings/docker.asc
+  as_root chmod a+r /etc/apt/keyrings/docker.asc
+  printf 'deb [arch=%s signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/%s %s stable\n' \
+    "$(dpkg --print-architecture)" "$repo_os" "$codename" | as_root tee /etc/apt/sources.list.d/docker.list >/dev/null
+  as_root apt-get update
+  as_root apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+}
+
 ensure_docker() {
   if detect_compose; then
     docker info >/dev/null 2>&1 || die "Docker is installed but the daemon is not running (or you lack permission). Start Docker and re-run."
@@ -88,11 +112,9 @@ ensure_docker() {
   fi
   if [ -f /etc/os-release ] && grep -qiE 'ubuntu|debian' /etc/os-release; then
     say "Docker is not installed."
-    if [ "$ASSUME_YES" = 1 ] || { [ -t 0 ] && read -r -p "  Install Docker Engine with Docker's official script? [y/N] " a && [ "${a:-n}" = y ]; }; then
-      # Pinned commit of https://github.com/docker/docker-install, the source of
-      # get.docker.com, so this always runs a script that was reviewed rather
-      # than whatever the domain serves today. Bump the hash to update.
-      curl -fsSL https://raw.githubusercontent.com/docker/docker-install/42dcae692436f34526524ed46d3b32885c9355f5/install.sh | sh
+    if [ "$ASSUME_YES" = 1 ] || { [ -t 0 ] && read -r -p "  Install Docker Engine from Docker's official apt repository? [y/N] " a && [ "${a:-n}" = y ]; }; then
+      [ "$(id -u)" = 0 ] || need sudo "Docker installation needs root. Install sudo or re-run as root."
+      install_docker_apt
       detect_compose || die "Docker installation failed."
       return
     fi
