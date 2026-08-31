@@ -33,7 +33,7 @@ from app.services.auth import resolve_session
 from app.services.bootstrap import seed_dev_ingestion_key_if_dev, seed_super_admin
 from app.services.maintenance import start_worker as start_maintenance_worker
 from app.services.notifications import start_worker as start_notification_worker
-from app.storage.errors import RecordNotFound
+from app.storage.errors import DomainError, RecordNotFound
 from app.storage.migrations import run_migrations
 from app.storage.workflow import load_platform_user
 
@@ -122,15 +122,34 @@ app.include_router(onboarding_router)
 app.include_router(setup_router)
 app.include_router(notifications_router)
 
+_error_logger = logging.getLogger("norinth.error")
+
+
 @app.exception_handler(RecordNotFound)
 async def _record_not_found_handler(request: Request, exc: RecordNotFound):
     return JSONResponse(status_code=404, content={"detail": str(exc) or "Not found"})
 
 
+@app.exception_handler(DomainError)
+async def _domain_error_handler(request: Request, exc: DomainError):
+    # raised deliberately with text written for the caller, so it is safe to return
+    return JSONResponse(status_code=400, content={"detail": str(exc) or "Invalid request"})
+
+
 @app.exception_handler(ValueError)
 async def _value_error_handler(request: Request, exc: ValueError):
-    # domain ValueErrors are bad input, return 400 not a 500/stack trace
-    return JSONResponse(status_code=400, content={"detail": str(exc) or "Invalid request"})
+    """a ValueError nobody raised on purpose
+
+    this used to return str(exc), so int() on a bad token count answered the
+    caller with "invalid literal for int() with base 10", and an internal
+    invariant in the sql layer answered with a table name. the message is logged
+    with the request id and the caller gets a generic one
+    """
+    # the json formatter attaches the request id from the contextvar
+    _error_logger.warning(
+        "unhandled ValueError on %s %s: %s", request.method, request.url.path, exc, exc_info=True
+    )
+    return JSONResponse(status_code=400, content={"detail": "Invalid request"})
 
 
 # reachable while a user still owes a password change

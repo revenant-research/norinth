@@ -19,6 +19,7 @@ from app.storage.attestation_keys import (
     revoke_attestation_key,
 )
 from app.storage.audit import record_audit
+from app.storage.errors import DomainError
 
 router = APIRouter()
 
@@ -75,7 +76,7 @@ def revoke_key(key_id: str, actor: ActorContext = Depends(current_actor)) -> dic
     _authorize(actor, tenant_id)
     try:
         record = revoke_attestation_key(key_id, tenant_id)
-    except ValueError as error:
+    except DomainError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     record_audit(
         actor_ref=actor.user_ref,
