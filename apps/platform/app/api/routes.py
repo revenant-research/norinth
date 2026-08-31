@@ -73,7 +73,7 @@ from app.storage.deployments import (
     refresh_deployment_gates,
     set_deployment_gate_status,
 )
-from app.storage.errors import RecordNotFound
+from app.storage.errors import DomainError, RecordNotFound
 from app.storage.governance_policy import upsert_control_definition, upsert_risk_rule
 from app.storage.incidents import load_incident, set_incident_status
 from app.storage.intake import intake_submitter
@@ -338,7 +338,7 @@ def configure_retention_policy(payload: RetentionPolicyRequest, actor: ActorCont
     tenant_id = _require_tenant_for_config(actor)
     try:
         policy = set_retention_days(tenant_id, payload.retention_days)
-    except ValueError as error:
+    except DomainError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     record_audit(actor_ref=actor.user_ref, action="retention.configure", tenant_id=tenant_id,
                  target_type="retention", target_id=tenant_id,
@@ -484,7 +484,7 @@ def approve_deployment_gate(gate_id: str, payload: DeploymentGateDecisionRequest
     enforce_segregation_of_duties(actor, "deployment_gate", gate)
     try:
         updated_gate = set_deployment_gate_status(gate_id, "approved", actor.user_ref, payload.rationale)
-    except ValueError as error:
+    except DomainError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     decision = record_decision("deployment_gate", gate_id, "approve", payload.rationale, actor.user_ref)
     record_audit(actor_ref=actor.user_ref, action="gate.approve", tenant_id=gate.get("tenant_id"), target_type="deployment_gate", target_id=gate_id)
@@ -617,6 +617,7 @@ def _validate_future_date(value: str) -> None:
                 raise HTTPException(status_code=400, detail="expires_at must be a future date")
             return
         except ValueError:
+            # fromisoformat rejecting the candidate, not a domain rule
             continue
     raise HTTPException(status_code=400, detail="expires_at must be an ISO date (YYYY-MM-DD) or datetime")
 

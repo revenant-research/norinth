@@ -6,7 +6,27 @@ Semantic Versioning.
 
 ## [Unreleased]
 
-Nothing yet.
+### Security
+
+- **Every GitHub Action is pinned to a full commit SHA.** Workflows previously
+  referenced mutable tags, so whoever owned an action could change what ran
+  inside the release job that signs images and publishes the SDK. Dependabot
+  updates the SHAs.
+- **`main` and the release tags are protected.** `main` takes pull requests
+  only, with the CI and CodeQL checks required, no force-push, no deletion and
+  linear history. `v*` tags cannot be moved or deleted once pushed, so a
+  published release always corresponds to the commit it was built from.
+- **PyPI publishing runs in a gated environment.** The `pypi` environment
+  requires a maintainer's approval and only accepts `v*.*.*` tags.
+- Dependabot alerts, Dependabot security updates, and secret scanning push
+  protection are enabled on the repository.
+
+### Added
+
+- OpenSSF Scorecard runs weekly and on push to `main`, publishing supply-chain
+  results to the Security tab and the README badge.
+- `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), a CODEOWNERS file, a pull
+  request template, and issue forms for bug reports and feature requests.
 
 ## [0.3.0] - 2026-08-30
 

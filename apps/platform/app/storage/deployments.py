@@ -9,7 +9,7 @@ from typing import Any
 from . import db
 from .attestation_keys import tenant_requires_attestation
 from .entities import as_object, entity_id
-from .errors import RecordNotFound
+from .errors import DomainError, RecordNotFound
 from .raw_events import connect
 
 
@@ -418,7 +418,7 @@ def set_deployment_gate_status(gate_id: str, status: str, actor_ref: str, ration
         # release, with no distinct action). new telemetry already preserves a
         # decided status; a superseding build gets its own gate
         if gate["gate_status"] in {"approved", "rejected"}:
-            raise ValueError(f"deployment gate has already been {gate['gate_status']} and cannot be decided again")
+            raise DomainError(f"deployment gate has already been {gate['gate_status']} and cannot be decided again")
         evidence = None
         if status == "approved":
             # recompute from current state: accepting a finding or waiving a
@@ -427,15 +427,15 @@ def set_deployment_gate_status(gate_id: str, status: str, actor_ref: str, ration
             # remediation this gate asks for
             evidence = live_gate_evidence(connection, gate)
             if evidence["prompt_evidence_status"] != "linked" or int(evidence["passing_eval_count"] or 0) == 0:
-                raise ValueError("deployment gate requires a linked prompt version and passing eval evidence bound to this version")
+                raise DomainError("deployment gate requires a linked prompt version and passing eval evidence bound to this version")
             if int(evidence["risk_count"] or 0) > 0:
-                raise ValueError("deployment gate cannot be approved while risk findings are open; mitigate or accept them first")
+                raise DomainError("deployment gate cannot be approved while risk findings are open; mitigate or accept them first")
             if int(evidence["missing_control_count"] or 0) > 0:
-                raise ValueError("deployment gate cannot be approved while controls are missing evidence")
+                raise DomainError("deployment gate cannot be approved while controls are missing evidence")
             if int(evidence["material_change_count"] or 0) > 0:
-                raise ValueError("deployment gate cannot be approved while material changes are unreviewed; review or accept them first")
+                raise DomainError("deployment gate cannot be approved while material changes are unreviewed; review or accept them first")
         if not (rationale or "").strip():
-            raise ValueError("a decision rationale is required")
+            raise DomainError("a decision rationale is required")
         if evidence is not None:
             # the decision is recorded against the evidence that was actually checked
             connection.execute(
