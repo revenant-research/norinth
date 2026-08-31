@@ -418,6 +418,55 @@ def _0021_detail_view_indexes(connection) -> None:
     connection.execute("CREATE INDEX IF NOT EXISTS idx_sdk_events_name ON sdk_events(name)")
 
 
+def _0022_governance_policy_engine(connection) -> None:
+    """governance policy engine: versioned policy documents, approval stages,
+    vendor registry, gate policy pins, and custom intake fields
+
+    seeds the platform default policy (tenant_id '', version 1, active), which
+    encodes pre-policy behavior exactly; an install that never authors a policy
+    behaves as it did before this migration
+    """
+    from app.storage.entities import encode_json
+    from app.storage.policy_engine import (
+        VENDOR_RISK_RULES,
+        ensure_policy_engine_tables,
+        seed_default_policy,
+    )
+    from app.storage.workflow import seed_review_queue_policies
+
+    ensure_policy_engine_tables(connection)
+    seed_default_policy(connection)
+    # gate snapshots record the policy version consulted; intake stores the
+    # policy-declared custom fields
+    for table, statement in (
+        ("deployment_approval_gates", "ALTER TABLE deployment_approval_gates ADD COLUMN policy_tenant TEXT"),
+        ("deployment_approval_gates", "ALTER TABLE deployment_approval_gates ADD COLUMN policy_version INTEGER"),
+        ("ai_use_cases", "ALTER TABLE ai_use_cases ADD COLUMN custom_fields TEXT"),
+    ):
+        column = statement.rsplit(" ADD COLUMN ", 1)[1].split(" ")[0]
+        if not _has_column(connection, table, column):
+            connection.execute(statement)
+    # routing for the recertification tasks the maintenance worker opens
+    # (idempotent; also reaches installs that recorded the baseline earlier)
+    seed_review_queue_policies(connection)
+    # the vendor governance detection rule, for the same reason
+    for rule in VENDOR_RISK_RULES:
+        connection.execute(
+            """
+            INSERT OR IGNORE INTO risk_rules (rule_id, name, signal, severity, framework_refs, rationale)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                rule["rule_id"],
+                rule["name"],
+                rule["signal"],
+                rule["severity"],
+                encode_json(rule["framework_refs"]),
+                rule["rationale"],
+            ),
+        )
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
@@ -440,6 +489,7 @@ MIGRATIONS: list[Migration] = [
     Migration(19, "totp multi-factor authentication", _0019_mfa),
     Migration(20, "per-organization mfa requirement", _0020_org_require_mfa),
     Migration(21, "workflow and system indexes for the detail views", _0021_detail_view_indexes),
+    Migration(22, "governance policy engine (policies, approval stages, vendor registry)", _0022_governance_policy_engine),
 ]
 
 

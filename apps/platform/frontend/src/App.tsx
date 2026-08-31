@@ -47,6 +47,9 @@ import {
 import { AgentsView } from "./components/agents";
 import { ComplianceView } from "./components/compliance";
 import { IdentityView } from "./components/identity";
+import { PolicyView } from "./components/policy";
+import { StageWorkflow, type ApprovalStage } from "./components/stages";
+import { VendorsView } from "./components/vendors";
 import { Badge, Chip, EmptyState, MetricCard, RecordList, Section, SkeletonCards, SkeletonMetrics, formatList } from "./components/ui";
 import { ToastHost, toast } from "./components/toast";
 import { ConfirmHost, confirm } from "./components/confirm";
@@ -70,6 +73,7 @@ const baseRoutes: RouteDef[] = [
   { id: "inventory", label: "AI systems", description: "Every AI system seen in production, including the ones nobody registered. Open one to see its owners, risks, controls, releases and incidents.", group: "Systems" },
   { id: "intake", label: "Register a system", description: "Register an AI use case before it ships. It gets a risk tier and a review task the moment you submit.", permission: "intake.submit", group: "Systems" },
   { id: "agents", label: "Agents", description: "Register the agents you sanction with an autonomy level and tool allow-list. Unregistered agents and off-policy tool use become findings.", group: "Systems" },
+  { id: "vendors", label: "AI vendors", description: "The vendors behind the providers seen in production. Each is approved through your policy's review stages; unreviewed providers become findings.", group: "Systems" },
   { id: "myqueue", label: "My queue", description: "Review tasks assigned to you. Decide them here with a rationale; the decision is recorded in the audit trail.", group: "Work" },
   { id: "reviews", label: "Reviews & owners", description: "Decide open reviews, name accountable owners, and manage accepted risks. Submitters can never decide their own work.", group: "Work" },
   { id: "deployments", label: "Release gates", description: "Nothing ships without a gate. Gates are approved by a named reviewer with a linked prompt version and signed eval evidence, never automatically.", group: "Work" },
@@ -79,6 +83,7 @@ const baseRoutes: RouteDef[] = [
   { id: "controls", label: "Controls", description: "Each control assessed from what actually ran: passing with linked evidence, or missing with the gap named.", group: "Evidence" },
   { id: "monitoring", label: "Telemetry", description: "The raw evidence: traces, model calls, tool use, guardrail decisions and eval results as the SDK reported them.", group: "Evidence" },
   { id: "audit", label: "Audit log", description: "Who did what, when. Hash-chained and verifiable; it is the trail your auditor will read.", group: "Evidence" },
+  { id: "policy", label: "Governance policy", description: "How your organization approves, recertifies and gates AI systems, as one versioned document. Every decision records the version that governed it.", permission: "config.write", group: "Setup" },
   { id: "overview", label: "Organization posture", description: "How much of your AI estate is governed, who is accountable for it, and what is waiting on a decision.", permission: "user.manage", group: "Setup" },
   { id: "team", label: "People & access", description: "Invite people and give them a role. Administrators and decision-makers are kept separate by design.", permission: "user.manage", group: "Setup" },
   { id: "identity", label: "Identity & integrations", description: "Connect your identity provider, issue SDK ingestion keys, register the CI key that signs release evidence, and route notifications.", permission: "user.manage", group: "Setup" },
@@ -618,7 +623,7 @@ function roleLabel(user: User): string {
   return "Member";
 }
 
-const ADMIN_ROUTES = new Set(["overview", "intake", "team", "audit", "agents", "identity", "compliance", "guide", "docs"]);
+const ADMIN_ROUTES = new Set(["overview", "intake", "team", "audit", "agents", "vendors", "policy", "identity", "compliance", "guide", "docs"]);
 
 function isAdminRoute(active: string): boolean {
   return ADMIN_ROUTES.has(active);
@@ -638,6 +643,15 @@ function AdminRoutes({ active, scope, user }: { active: string; scope: Scope; us
           canRetire={user.permissions.includes("lifecycle.manage")}
         />
       );
+    case "vendors":
+      return (
+        <VendorsView
+          canManage={user.permissions.includes("config.write")}
+          canRetire={user.permissions.includes("lifecycle.manage")}
+        />
+      );
+    case "policy":
+      return <PolicyView />;
     case "team":
       return <TeamConsole />;
     case "identity":
@@ -753,7 +767,7 @@ export function DetailRoute({ kind, id, scope, mutate }: { kind: DetailKind; id:
     case "workflow":
       return <WorkflowDetail detail={detail} graph={graph} mutate={detailMutate} />;
     case "review":
-      return <ReviewDetail detail={detail} mutate={detailMutate} />;
+      return <ReviewDetail detail={detail} mutate={detailMutate} reload={() => setReloadToken((n) => n + 1)} />;
     case "gate":
       return <GateDetail detail={detail} mutate={detailMutate} />;
     case "incident":
@@ -1126,21 +1140,34 @@ function WorkflowDetail({ detail, graph, mutate }: { detail: Record<string, any>
   );
 }
 
-function ReviewDetail({ detail, mutate }: { detail: Record<string, any>; mutate: Mutate }) {
+function ReviewDetail({ detail, mutate, reload }: { detail: Record<string, any>; mutate: Mutate; reload?: () => void }) {
   const task = detail.review_task;
   if (!task) return <EmptyState>The requested record is no longer available.</EmptyState>;
+  // the governing policy decides the decision surface: a multi-stage review is
+  // decided stage by stage (each by a different person), a single-stage review
+  // keeps the familiar decision packet
+  const stages: ApprovalStage[] = detail.approval_stages || [];
+  const multiStage = stages.length > 1;
   return (
     <ObjectWorkspace title={task.title} subtitle={`${task.application_name} / ${task.assigned_role || "unrouted"} / ${task.assigned_to || "no assignee"}`}>
       <div className="detail-rail">
         <MetricCard label="Status" value={task.status} />
         <MetricCard label="Priority" value={task.priority || "n/a"} />
         <MetricCard label="Escalation" value={task.escalation_status || "unassigned"} />
-        <MetricCard label="Decisions" value={(detail.decisions || []).length} />
+        <MetricCard
+          label={multiStage ? "Stages approved" : "Decisions"}
+          value={multiStage ? `${stages.filter((s) => s.status === "approved").length} of ${stages.length}` : (detail.decisions || []).length}
+        />
       </div>
       <div className="detail-stack">
+        {multiStage ? (
+          <Section title="Approval Stages" description="This review is governed by a multi-stage policy: every stage is decided by a different person, in order, and each decision is final.">
+            <StageWorkflow stages={stages} subjectLabel={task.application_name || "this review"} onDecided={() => reload?.()} />
+          </Section>
+        ) : null}
         <Section title="Review Context" description="This page uses the review detail API, including the triggering change and prior decisions.">
           <ReviewCards rows={[task]} />
-          <ReviewDecisionPanel task={task} mutate={mutate} />
+          {multiStage ? null : <ReviewDecisionPanel task={task} mutate={mutate} />}
         </Section>
         <Section title="Detected Change">
           {detail.change_event ? <ChangeCard change={detail.change_event} /> : <EmptyState>No change event is linked to this review task.</EmptyState>}
@@ -1187,6 +1214,9 @@ function GateDetail({ detail, mutate }: { detail: Record<string, any>; mutate: M
             <MiniStat label="Prompt Record" value={gate.prompt_evidence_status} />
             <MiniStat label="Prompt Version" value={detail.prompt_version?.version || gate.prompt_version_id || "missing"} />
             <MiniStat label="Passing Evals" value={gate.passing_eval_count} />
+            {gate.policy_version ? (
+              <MiniStat label="Evidence Rules" value={`policy ${gate.policy_tenant || "default"} v${gate.policy_version}`} />
+            ) : null}
           </div>
         </Section>
         <Section title="Blocking Records">

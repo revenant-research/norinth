@@ -1,6 +1,22 @@
 # RFC: Governance policy engine
 
-**Status:** Proposed.
+**Status:** Implemented. The engine landed as one change set: policy storage
+and validation with the seeded default (`storage/policy_engine.py`, migration
+21), the stage engine for intake and vendor reviews, gate requirements from
+policy, the vendor registry with the `RISK-VND-001` telemetry rule,
+recertification clocks in the maintenance worker, the builder UI and packet
+sections, and policy-declared intake fields. Deviations from the sketch below:
+risk tiers key by the platform's real tiers (`limited`/`elevated`/`high`); a
+stage's role requirement is an authority floor (a role granting at least the
+named role's permissions satisfies it), which keeps the seeded single-stage
+default byte-compatible with the pre-policy permission check; approval stages
+carry denormalized scope columns and a `review_round` so vendor re-reviews get
+fresh stage rows; and `vendor_registry` gains `submitted_by` (the review
+maker) and `review_round`. In the builder UI, the sketch's JSON view became a
+read-only raw-document disclosure in the history section: the working surface
+edits each approval path directly as its pipeline of steps, because the
+people who own governance policy think in approvers, not JSON. The document
+stays the stored truth either way.
 
 ## Problem
 

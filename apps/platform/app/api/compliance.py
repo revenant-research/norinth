@@ -84,6 +84,7 @@ def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilte
     )
     from app.storage.agents import compute_agent_posture, list_registered_agents, public_posture
     from app.storage.entities import list_providers
+    from app.storage.policy_engine import build_policy_evidence, list_stages, list_vendors, vendor_coverage
 
     # exporting evidence is itself auditable; record it before assembling
     record_audit(
@@ -118,6 +119,12 @@ def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilte
         "incidents": build_incidents(scope).get("incidents", []),
         "material_changes": build_change_events(scope).get("changes", []),
         "open_review_tasks": build_review_tasks(scope).get("review_tasks", []),
+        # the policy that governed decisions, its hash-anchored history, and the
+        # stage records that prove which rules each approval satisfied
+        "governance_policy": build_policy_evidence(scope.tenant_id),
+        "approval_stages": list_stages(tenant_id=scope.tenant_id),
+        "vendor_registry": list_vendors(scope.tenant_id or ""),
+        "vendor_coverage": vendor_coverage(scope.tenant_id or ""),
         "agent_registry": list_registered_agents(scope.tenant_id or ""),
         "agent_posture": public_posture(compute_agent_posture(scope.tenant_id or "")),
         "aibom": generate_aibom(

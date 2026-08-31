@@ -14,6 +14,25 @@ import { DataTable, formatTimestamp } from "./table";
 const DATA_SENSITIVITY = ["public", "internal", "confidential", "restricted"];
 const AUTONOMY = ["assistive", "supervised", "autonomous"];
 
+/** client-side mirror of storage/intake.compute_risk_tier, used only to hint
+ * which policy fields will be required; the server recomputes and enforces */
+export function computeRiskTier(dataSensitivity: string, autonomyLevel: string, affectsIndividuals: boolean): string {
+  const sensitivity = Math.max(0, DATA_SENSITIVITY.indexOf(dataSensitivity));
+  const autonomy = Math.max(0, AUTONOMY.indexOf(autonomyLevel));
+  const score = sensitivity + autonomy + (affectsIndividuals ? 1 : 0);
+  if (dataSensitivity === "restricted" || score >= 4) return "high";
+  if (score >= 2) return "elevated";
+  return "limited";
+}
+
+type IntakeField = {
+  key: string;
+  label?: string;
+  type?: string;
+  max_length?: number;
+  required_tiers?: string[];
+};
+
 // deep-link handoff from org overview into people & access without threading
 // router state through both consoles: overview stashes the role, team console
 // reads it on mount, pre-selects the role and scrolls to the assign form
@@ -41,6 +60,9 @@ function Feedback({ message }: { message: string }) {
 
 export function IntakeView({ scope }: { scope: Scope }) {
   const { value, error, reload } = useResource(() => getJson<{ intake: Array<Record<string, any>> }>("/api/intake", scope));
+  // the governance policy can declare extra intake fields; render them from
+  // the document so the form always matches what the server will enforce
+  const policy = useResource(() => getJson<{ policy: { body: { intake?: { fields?: IntakeField[] } } } }>("/api/governance-policy"));
   const [form, setForm] = useState({
     application_name: "",
     use_case: "",
@@ -50,13 +72,30 @@ export function IntakeView({ scope }: { scope: Scope }) {
     autonomy_level: "assistive",
     affects_individuals: false,
   });
+  const [customFields, setCustomFields] = useState<Record<string, string | number | boolean>>({});
+
+  const declaredFields = policy.value?.policy.body.intake?.fields || [];
+  const projectedTier = computeRiskTier(form.data_sensitivity, form.autonomy_level, form.affects_individuals);
+
+  function setField(field: IntakeField, raw: string | boolean) {
+    const type = field.type || "string";
+    setCustomFields((current) => {
+      const next = { ...current };
+      if (type === "boolean") next[field.key] = Boolean(raw);
+      else if (raw === "") delete next[field.key];
+      else if (type === "number") next[field.key] = Number(raw);
+      else next[field.key] = String(raw);
+      return next;
+    });
+  }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     try {
-      await postJson("/api/intake", form);
+      await postJson("/api/intake", { ...form, custom_fields: customFields });
       toast.success("Use case registered and routed for review.");
       setForm({ ...form, application_name: "", use_case: "", description: "", intended_purpose: "" });
+      setCustomFields({});
       reload();
     } catch (caught) {
       toast.error(caught instanceof Error ? caught.message : "Submission failed.");
@@ -101,6 +140,40 @@ export function IntakeView({ scope }: { scope: Scope }) {
             <input type="checkbox" checked={form.affects_individuals} onChange={(event) => setForm({ ...form, affects_individuals: event.target.checked })} />
             Makes or influences decisions about individuals
           </label>
+          {declaredFields.map((field) => {
+            const label = field.label || field.key;
+            const required = (field.required_tiers || []).includes(projectedTier);
+            const type = field.type || "string";
+            if (type === "boolean") {
+              return (
+                <label className="check-row" key={field.key}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(customFields[field.key])}
+                    onChange={(event) => setField(field, event.target.checked)}
+                  />
+                  {label}
+                </label>
+              );
+            }
+            return (
+              <label key={field.key}>
+                {label}
+                {required ? " (required for this risk tier)" : ""}
+                <input
+                  type={type === "number" ? "number" : "text"}
+                  required={required}
+                  maxLength={type === "string" ? field.max_length || 500 : undefined}
+                  value={customFields[field.key] === undefined ? "" : String(customFields[field.key])}
+                  onChange={(event) => setField(field, event.target.value)}
+                />
+              </label>
+            );
+          })}
+          <p className="hint">
+            Projected risk tier: <strong>{projectedTier}</strong>. The tier is computed from sensitivity, autonomy and
+            whether individuals are affected; the server recomputes it on submission.
+          </p>
           <button type="submit">Submit for review</button>
         </form>
       </Section>

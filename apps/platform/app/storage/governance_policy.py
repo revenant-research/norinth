@@ -33,6 +33,8 @@ SUPPORTED_RISK_SIGNALS = {
     "unauthorized_tool",
     "agent_trifecta",
     "autonomy_without_oversight",
+    # vendor signal, evaluated by storage/policy_engine.py against the vendor registry
+    "unreviewed_vendor",
 }
 
 DEFAULT_CONTROLS = [
@@ -282,10 +284,11 @@ def init_governance_policy() -> None:
                 )
             )
 
-        # seed default risk rules, including the agentic ones
+        # seed default risk rules, including the agentic and vendor ones
         from .agents import AGENT_RISK_RULES
+        from .policy_engine import VENDOR_RISK_RULES
 
-        for rule in [*DEFAULT_RISK_RULES, *AGENT_RISK_RULES]:
+        for rule in [*DEFAULT_RISK_RULES, *AGENT_RISK_RULES, *VENDOR_RISK_RULES]:
             connection.execute(
                 """
                 INSERT OR IGNORE INTO risk_rules (

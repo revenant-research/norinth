@@ -463,9 +463,12 @@ def build_review_detail(scope: ScopeFilter, task_id: str) -> dict[str, Any] | No
     if task is None:
         return None
     change = find_record(list_change_events(**scope_kwargs), "change_id", task.get("change_id"))
+    from app.storage.policy_engine import stages_for_subject
+
     return {
         "review_task": task,
         "change_event": change,
+        "approval_stages": stages_for_subject("review_task", task_id),
         "owners": [
             owner
             for owner in list_owner_assignments(**scope_kwargs)

@@ -24,6 +24,7 @@ from app.storage.entities import process_events
 from app.storage.governance_policy import fold_batch_assessments
 from app.storage.incidents import process_incident_events
 from app.storage.lifecycle import fold_batch_fingerprints
+from app.storage.policy_engine import refresh_vendor_posture
 from app.storage.prompts import process_prompt_events
 from app.storage.raw_events import insert_events
 from app.storage.workflow import expire_due_exceptions, refresh_workflow_state
@@ -254,6 +255,7 @@ def _ingest(events: list[dict[str, Any]], tenant_id: str) -> dict[str, Any]:
         fold_batch_fingerprints(inserted)
         fold_batch_assessments(inserted)
         refresh_agent_posture([tenant_id])
+        refresh_vendor_posture([tenant_id])
         refresh_workflow_state(scopes)
         refresh_deployment_gates(scopes)
     return {"accepted": len(inserted)}
