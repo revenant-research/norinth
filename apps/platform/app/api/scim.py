@@ -20,6 +20,7 @@ from app.services.authorization import (
     require_permission,
 )
 from app.storage.audit import record_audit
+from app.storage.errors import DomainError
 from app.storage.scim import (
     create_scim_token,
     list_scim_tokens,
@@ -337,7 +338,7 @@ def revoke_org_scim_token(token_id: str, actor: ActorContext = Depends(current_a
     tenant_id = _require_tenant_admin(actor)
     try:
         record = revoke_scim_token(token_id, tenant_id)
-    except ValueError as error:
+    except DomainError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     record_audit(actor_ref=actor.user_ref, action="scim_token.revoke", tenant_id=tenant_id, target_type="scim_token", target_id=token_id)
     return {"scim_token": record}

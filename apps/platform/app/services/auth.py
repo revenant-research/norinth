@@ -9,6 +9,7 @@ import os
 import secrets
 from datetime import UTC, datetime, timedelta
 
+from app.storage.errors import DomainError
 from app.storage.workflow import (
     delete_session,
     delete_sessions_for_user,
@@ -46,7 +47,7 @@ MIN_PASSWORD_LENGTH = 12
 
 def hash_password(password: str) -> str:
     if not password:
-        raise ValueError("password must not be empty")
+        raise DomainError("password must not be empty")
     salt = secrets.token_bytes(_SALT_BYTES)
     derived = hashlib.pbkdf2_hmac(_PBKDF2_ALGORITHM, password.encode("utf-8"), salt, _PBKDF2_ITERATIONS)
     return f"pbkdf2_{_PBKDF2_ALGORITHM}${_PBKDF2_ITERATIONS}${salt.hex()}${derived.hex()}"
