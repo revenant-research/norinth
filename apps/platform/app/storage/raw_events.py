@@ -269,7 +269,13 @@ def list_scopes(tenant_id: str) -> dict[str, list[str]]:
 
 
 def _event_filters(
-    tenant_id: str | None, project: str | None, environment: str | None, event_type: str | None
+    tenant_id: str | None,
+    project: str | None,
+    environment: str | None,
+    event_type: str | None,
+    application_name: str | None = None,
+    workflow_name: str | None = None,
+    trace_id: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
     clauses: list[str] = []
     params: dict[str, Any] = {}
@@ -285,8 +291,75 @@ def _event_filters(
     if event_type:
         clauses.append("event_type = :event_type")
         params["event_type"] = event_type
+    if application_name:
+        clauses.append("application_name = :application_name")
+        params["application_name"] = application_name
+    if workflow_name:
+        # the span name is the workflow when metadata does not declare one, which
+        # is the match the python filter made before this moved into sql
+        clauses.append("(workflow_name = :workflow_name OR name = :workflow_name)")
+        params["workflow_name"] = workflow_name
+    if trace_id:
+        clauses.append("trace_id = :trace_id")
+        params["trace_id"] = trace_id
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     return where, params
+
+
+def aggregate_systems(
+    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
+) -> list[dict[str, Any]]:
+    """one row per observed system, counted and rolled up in sql
+
+    the models and vendors a system used come from its model.call rows only,
+    matching what the in-python fold produced
+    """
+    where, params = _event_filters(tenant_id, project, environment, None)
+    rows = connect_execute_all(
+        f"""
+        SELECT
+            COALESCE(system, service) AS system,
+            MIN(service) AS service,
+            MIN(environment) AS environment,
+            COUNT(*) AS events
+        FROM sdk_events {where}
+        GROUP BY COALESCE(system, service)
+        ORDER BY COALESCE(system, service)
+        """,
+        params,
+    )
+    detail_where, detail_params = _event_filters(tenant_id, project, environment, "model.call")
+    detail = connect_execute_all(
+        f"""
+        SELECT COALESCE(system, service) AS system,
+               COALESCE(model, 'unknown') AS model,
+               COALESCE(provider, 'unknown') AS provider
+        FROM sdk_events {detail_where}
+        GROUP BY COALESCE(system, service), COALESCE(model, 'unknown'), COALESCE(provider, 'unknown')
+        """,
+        detail_params,
+    )
+    models: dict[str, set[str]] = {}
+    vendors: dict[str, set[str]] = {}
+    for row in detail:
+        models.setdefault(row["system"], set()).add(row["model"])
+        vendors.setdefault(row["system"], set()).add(row["provider"])
+    return [
+        {
+            "system": row["system"],
+            "service": row["service"],
+            "environment": row["environment"],
+            "events": int(row["events"]),
+            "models": sorted(models.get(row["system"], set())),
+            "vendors": sorted(vendors.get(row["system"], set())),
+        }
+        for row in rows
+    ]
+
+
+def connect_execute_all(query: str, params: dict[str, Any]) -> list[dict[str, Any]]:
+    with connect() as connection:
+        return [dict(row) for row in connection.execute(query, params).fetchall()]
 
 
 def count_scoped_events(
@@ -375,18 +448,83 @@ def aggregate_traces(
     return traces, int(total_row["count"])
 
 
+def aggregate_trace_summaries(
+    *,
+    tenant_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+    application_name: str | None = None,
+    workflow_name: str | None = None,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """the busiest traces in scope with their event count and error state
+
+    grouped in sql. the detail views used to build this by materializing every
+    event in scope, so its cost tracked the whole history rather than the fifty
+    rows it shows
+    """
+    where, params = _event_filters(tenant_id, project, environment, None, application_name, workflow_name)
+    rows = connect_execute_all(
+        f"""
+        SELECT trace_id,
+               COUNT(*) AS event_count,
+               MAX(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS has_error
+        FROM sdk_events {where}
+        GROUP BY trace_id
+        ORDER BY event_count DESC, trace_id
+        LIMIT :limit
+        """,
+        {**params, "limit": limit},
+    )
+    return [
+        {
+            "trace_id": row["trace_id"],
+            "event_count": int(row["event_count"]),
+            "status": "error" if int(row["has_error"]) else "success",
+        }
+        for row in rows
+    ]
+
+
+def distinct_trace_ids(
+    *,
+    tenant_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+    application_name: str | None = None,
+    workflow_name: str | None = None,
+    limit: int = 1000,
+) -> list[str]:
+    where, params = _event_filters(tenant_id, project, environment, None, application_name, workflow_name)
+    rows = connect_execute_all(
+        f"SELECT DISTINCT trace_id FROM sdk_events {where} ORDER BY trace_id LIMIT :limit",
+        {**params, "limit": limit},
+    )
+    return [row["trace_id"] for row in rows]
+
+
 def list_events(
     *,
     tenant_id: str | None = None,
     project: str | None = None,
     environment: str | None = None,
     event_type: str | None = None,
+    application_name: str | None = None,
+    workflow_name: str | None = None,
+    trace_id: str | None = None,
     limit: int = 200,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
     """newest-first window of events (offset 0 = most recent), returned in
-    chronological order within the window for display"""
-    where, params = _event_filters(tenant_id, project, environment, event_type)
+    chronological order within the window for display
+
+    application_name, workflow_name and trace_id narrow the query in sql. the
+    detail views used to page the whole scope into memory and filter there, which
+    grew with total event count and silently stopped at the scan ceiling
+    """
+    where, params = _event_filters(
+        tenant_id, project, environment, event_type, application_name, workflow_name, trace_id
+    )
     params.update({"limit": limit, "offset": offset})
     query = f"SELECT raw_event FROM sdk_events {where} ORDER BY id DESC LIMIT :limit OFFSET :offset"
     with connect() as connection:
