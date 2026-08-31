@@ -1,4 +1,6 @@
 # Development & CI tooling (pinned to majors for reproducibility).
+# CI installs the hash-pinned requirements-dev.lock.txt generated from this
+# file. Run `make lock-ci` after changing it.
 -r apps/platform/requirements.txt
 pytest>=9.1.1,<10
 pytest-asyncio>=1.4.0
