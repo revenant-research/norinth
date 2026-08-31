@@ -1,5 +1,9 @@
 # Contributing to Norinth
 
+This project follows the [Contributor Covenant](CODE_OF_CONDUCT.md). By taking
+part you agree to uphold it. Report a vulnerability through the private
+advisory form described in [SECURITY.md](SECURITY.md), never a public issue.
+
 ## Repository layout
 
 | Zone | Path | License |
@@ -39,6 +43,14 @@ make run              # run the platform on :8001
 - **Never commit** secrets, `.env`, databases, `node_modules`, or virtualenvs
   (all git-ignored). `check-added-large-files` and `detect-private-key`
   pre-commit hooks guard this.
+- **`main` is protected.** It takes pull requests only, with every required
+  check green and every review thread resolved. It cannot be force-pushed or
+  deleted, and history stays linear (squash merges only). Release tags
+  (`v*`) cannot be moved or deleted once pushed.
+- **Pin every GitHub Action to a full commit SHA**, with the version in a
+  trailing comment: `uses: actions/checkout@3d3c42e... # v7`. A tag can be
+  moved by whoever owns the action; a SHA cannot. Dependabot updates the SHA
+  and the comment together. Unpinned actions are rejected by the repository.
 
 ## Commit messages
 
@@ -64,8 +76,9 @@ attaches it to the GitHub Release. To turn publishing on:
 1. On pypi.org, create/claim the `norinth-logger` project and add a **trusted
    publisher**: owner `revenant-research`, repository `norinth`, workflow
    `release.yml`, environment `pypi`.
-2. In this repo's settings, create an environment named `pypi` (optionally with
-   required reviewers — that makes every PyPI publish a manual approval).
+2. The `pypi` environment already exists in this repo's settings. It requires a
+   maintainer's approval and only accepts deployments from `v*.*.*` tags, so
+   every PyPI publish is a manual approval on a tagged commit.
 3. Set the repository **variable** `PYPI_PUBLISH=true`.
 
 The next `v*` tag publishes to PyPI with PEP 740 attestations.
