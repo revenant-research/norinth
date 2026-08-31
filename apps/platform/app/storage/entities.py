@@ -181,6 +181,24 @@ def init_entities() -> None:
             connection.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_scope ON {table}(tenant_id, project, environment)")
 
 
+# event types that show the application ran; any of them creates its inventory
+# record. prompt/deployment/incident/eval events are excluded: they carry intent
+# and ci evidence, not execution, and lifecycle.application_is_registered gates
+# control assessment on inventory membership, so a record built from them gives
+# an application that never ran a full set of missing controls
+RUNTIME_EVENT_TYPES = frozenset(
+    {
+        "model.call",
+        "agent.run",
+        "tool.call",
+        "retrieval.call",
+        "guardrail.decision",
+        "trace.completed",
+        "sdk.health",
+    }
+)
+
+
 def process_events(events: list[dict[str, Any]]) -> None:
     # entity upserts are read-modify-write on json set columns; under concurrent
     # ingest two batches could each read the old set and the second write clobber
@@ -207,9 +225,15 @@ def process_event(connection, event: dict[str, Any]) -> None:
     metadata = as_object(attrs.get("metadata"))
     usage = as_object(attrs.get("usage"))
 
-    if event_type == "model.call":
-        upsert_application(connection, event, attrs, metadata, usage)
-        upsert_workflow(connection, event, attrs, metadata, usage)
+    # inventory identity comes from the application an event names, not from the
+    # event being a model call: an agentic service whose model calls go through
+    # an unwrapped path is otherwise absent from the inventory entirely
+    is_model_call = event_type == "model.call"
+    if event_type in RUNTIME_EVENT_TYPES and (is_model_call or metadata.get("application_name")):
+        upsert_application(connection, event, attrs, metadata, usage, is_model_call=is_model_call)
+        upsert_workflow(connection, event, attrs, metadata, usage, is_model_call=is_model_call)
+
+    if is_model_call:
         upsert_model(connection, event, attrs, metadata, usage)
         upsert_provider(connection, event, attrs, metadata)
         upsert_model_risks(connection, event, attrs, metadata, usage)
@@ -239,7 +263,20 @@ def process_event(connection, event: dict[str, Any]) -> None:
         upsert_eval_risk(connection, event, attrs, metadata)
 
 
-def upsert_application(connection, event: dict[str, Any], attrs: dict[str, Any], metadata: dict[str, Any], usage: dict[str, Any]) -> None:
+def upsert_application(
+    connection,
+    event: dict[str, Any],
+    attrs: dict[str, Any],
+    metadata: dict[str, Any],
+    usage: dict[str, Any],
+    *,
+    is_model_call: bool = True,
+) -> None:
+    """record the application this event names
+
+    only a model.call increments model_calls, so an application seen through
+    agent or tool telemetry alone reads as zero calls rather than absent
+    """
     application_name = metadata.get("application_name")
     if not application_name:
         return
@@ -266,7 +303,7 @@ def upsert_application(connection, event: dict[str, Any], attrs: dict[str, Any],
             model_purposes=excluded.model_purposes,
             providers=excluded.providers,
             models=excluded.models,
-            model_calls=governance_applications.model_calls + 1,
+            model_calls=governance_applications.model_calls + excluded.model_calls,
             errors=governance_applications.errors + excluded.errors,
             input_tokens=governance_applications.input_tokens + excluded.input_tokens,
             output_tokens=governance_applications.output_tokens + excluded.output_tokens,
@@ -282,7 +319,7 @@ def upsert_application(connection, event: dict[str, Any], attrs: dict[str, Any],
             encode_json(values["model_purposes"]),
             encode_json(values["providers"]),
             encode_json(values["models"]),
-            1,
+            1 if is_model_call else 0,
             1 if event.get("status") == "error" else 0,
             int(usage.get("input_tokens") or 0),
             int(usage.get("output_tokens") or 0),
@@ -292,8 +329,23 @@ def upsert_application(connection, event: dict[str, Any], attrs: dict[str, Any],
     )
 
 
-def upsert_workflow(connection, event: dict[str, Any], attrs: dict[str, Any], metadata: dict[str, Any], usage: dict[str, Any]) -> None:
-    workflow_name = metadata.get("workflow_name") or event.get("name") or "unknown"
+def upsert_workflow(
+    connection,
+    event: dict[str, Any],
+    attrs: dict[str, Any],
+    metadata: dict[str, Any],
+    usage: dict[str, Any],
+    *,
+    is_model_call: bool = True,
+) -> None:
+    workflow_name = metadata.get("workflow_name")
+    if not workflow_name:
+        # a model call falls back to its span name. other event types carry
+        # names that are not workflows (an sdk.health name is a lifecycle
+        # state), so they only join a workflow they declare
+        if not is_model_call:
+            return
+        workflow_name = event.get("name") or "unknown"
     key = entity_id("workflow", metadata.get("tenant_id"), event["project"], event["environment"], workflow_name)
     row = fetch_one(connection, "governance_workflows", key)
     values = merge_sets(
@@ -315,7 +367,7 @@ def upsert_workflow(connection, event: dict[str, Any], attrs: dict[str, Any], me
             applications=excluded.applications,
             providers=excluded.providers,
             models=excluded.models,
-            model_calls=governance_workflows.model_calls + 1,
+            model_calls=governance_workflows.model_calls + excluded.model_calls,
             errors=governance_workflows.errors + excluded.errors,
             input_tokens=governance_workflows.input_tokens + excluded.input_tokens,
             output_tokens=governance_workflows.output_tokens + excluded.output_tokens,
@@ -330,7 +382,7 @@ def upsert_workflow(connection, event: dict[str, Any], attrs: dict[str, Any], me
             encode_json(values["applications"]),
             encode_json(values["providers"]),
             encode_json(values["models"]),
-            1,
+            1 if is_model_call else 0,
             1 if event.get("status") == "error" else 0,
             int(usage.get("input_tokens") or 0),
             int(usage.get("output_tokens") or 0),
