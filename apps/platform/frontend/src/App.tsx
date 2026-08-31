@@ -824,7 +824,7 @@ function Inventory({ data }: { data: DashboardData }) {
       <div className="toolbar">
         <input className="search" placeholder="Search applications, workflows, models, prompts, deployments" aria-label="Search inventory" value={query} onChange={(event) => setQuery(event.target.value)} />
       </div>
-      <Section title="AI systems" description="Everything that has called a model from your organization, registered or not.">
+      <Section title="AI systems" description="Every system your telemetry has seen running, registered or not. A system with no model calls is one whose model path is not instrumented, not an empty one.">
         <ApplicationCards rows={data.applications.filter((row) => matches(row, ["application_name", "tenant_id", "environment"]))} />
       </Section>
       <Section title="Workflows" description="The business processes inside those systems, each with its own models, prompts and controls.">
