@@ -77,7 +77,7 @@ from app.storage.deployments import (
     set_deployment_gate_status,
 )
 from app.storage.entities import count_observed_events
-from app.storage.errors import RecordNotFound
+from app.storage.errors import DomainError, RecordNotFound
 from app.storage.governance_policy import (
     count_control_assessments,
     count_risk_findings,
@@ -85,9 +85,6 @@ from app.storage.governance_policy import (
     upsert_risk_rule,
 )
 from app.storage.incidents import count_incidents, load_incident, set_incident_status
-from app.storage.errors import DomainError, RecordNotFound
-from app.storage.governance_policy import upsert_control_definition, upsert_risk_rule
-from app.storage.incidents import load_incident, set_incident_status
 from app.storage.intake import intake_submitter
 from app.storage.lifecycle import count_change_events, count_review_tasks
 from app.storage.raw_events import connect, count_scoped_events, list_events, list_scopes
