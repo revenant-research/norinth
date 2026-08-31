@@ -8,6 +8,7 @@ from typing import Any
 
 from .entities import as_object, entity_id
 from .raw_events import connect
+from .scoping import scoped_rows
 
 
 def init_prompts() -> None:
@@ -176,22 +177,6 @@ def load_prompt_version(
     return None if row is None else dict(row)
 
 
-def scoped_rows(table: str, *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None, order_by: str) -> list[dict[str, Any]]:
-    clauses: list[str] = []
-    params: dict[str, Any] = {}
-    if tenant_id:
-        clauses.append("tenant_id = :tenant_id")
-        params["tenant_id"] = tenant_id
-    if project:
-        clauses.append("project = :project")
-        params["project"] = project
-    if environment:
-        clauses.append("environment = :environment")
-        params["environment"] = environment
-    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    with connect() as connection:
-        rows = connection.execute(f"SELECT * FROM {table} {where} ORDER BY {order_by} DESC", params).fetchall()
-    return [dict(row) for row in rows]
 
 
 def list_prompt_templates(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:

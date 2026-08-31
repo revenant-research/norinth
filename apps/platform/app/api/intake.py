@@ -20,11 +20,14 @@ from app.storage.audit import record_audit
 from app.storage.intake import (
     AUTONOMY_LEVELS,
     DATA_SENSITIVITY_LEVELS,
+    compute_risk_tier,
     create_intake,
     list_intake,
     load_intake,
     set_intake_status,
 )
+from app.storage.policy_engine import resolve_intake_fields, validate_custom_field_values
+from app.storage.raw_events import connect
 from app.storage.workflow import refresh_workflow_state
 
 router = APIRouter()
@@ -40,6 +43,10 @@ class IntakeRequest(BaseModel):
     affects_individuals: bool = False
     project: str = Field(default="default", min_length=1)
     environment: str = Field(default="production", min_length=1)
+    # extra fields declared by the organization's governance policy: typed,
+    # length-capped, and rejected unless declared. like every intake field,
+    # they must not carry PHI or other regulated content
+    custom_fields: dict[str, Any] = Field(default_factory=dict)
 
 
 class LifecycleActionRequest(BaseModel):
@@ -67,9 +74,20 @@ def submit_intake(payload: IntakeRequest, actor: ActorContext = Depends(current_
         require_permission(actor, PERM_INTAKE_SUBMIT, {"tenant_id": tenant_id})
     except AuthorizationError as error:
         _raise_forbidden(error)
+    # custom fields are validated against the governance policy in force:
+    # undeclared keys are rejected, types and lengths enforced, and fields the
+    # policy requires for the computed risk tier must be present
+    risk_tier = compute_risk_tier(payload.data_sensitivity, payload.autonomy_level, payload.affects_individuals)
+    with connect() as connection:
+        declared_fields = resolve_intake_fields(connection, tenant_id)
+    try:
+        custom_fields = validate_custom_field_values(declared_fields, payload.custom_fields, risk_tier)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     record = create_intake(
         {
             **payload.model_dump(),
+            "custom_fields": custom_fields,
             "tenant_id": tenant_id,
             "submitted_by": actor.user_ref,
         }

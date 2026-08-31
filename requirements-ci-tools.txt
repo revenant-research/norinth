@@ -1,0 +1,6 @@
+# Standalone tools some CI jobs install outside the dev environment:
+# pip-audit audits the frozen dependency set of the built image, and build
+# builds the SDK wheel for release. Locked with hashes in
+# requirements-ci-tools.lock.txt so those jobs install nothing unpinned.
+build>=1.2,<2
+pip-audit>=2.9,<3

@@ -3,9 +3,11 @@
 
 from __future__ import annotations
 
+from functools import partial
+
 from fastapi import APIRouter, Depends, HTTPException, Response
 
-from app.api.pagination import PageParams, paginate
+from app.api.pagination import PageParams, paged
 from app.dependencies import ActorContext, current_actor, now, scoped_dependency
 from app.schemas.events import ScopeFilter
 from app.schemas.workflow import (
@@ -68,19 +70,30 @@ from app.services.notifications import emit as notify
 from app.services.notifications import public_base_url
 from app.storage.audit import record_audit
 from app.storage.deployments import (
+    count_deployment_gates,
     gate_deployer,
     load_deployment_gate,
     refresh_deployment_gates,
     set_deployment_gate_status,
 )
+from app.storage.entities import count_observed_events
 from app.storage.errors import DomainError, RecordNotFound
-from app.storage.governance_policy import upsert_control_definition, upsert_risk_rule
-from app.storage.incidents import load_incident, set_incident_status
+from app.storage.governance_policy import (
+    count_control_assessments,
+    count_risk_findings,
+    upsert_control_definition,
+    upsert_risk_rule,
+)
+from app.storage.incidents import count_incidents, load_incident, set_incident_status
 from app.storage.intake import intake_submitter
+from app.storage.lifecycle import count_change_events, count_review_tasks
 from app.storage.raw_events import connect, count_scoped_events, list_events, list_scopes
 from app.storage.retention import MIN_RETENTION_DAYS, retention_days_for, set_retention_days
 from app.storage.workflow import (
     assign_owner,
+    count_decisions,
+    count_exceptions,
+    count_owner_assignments,
     create_exception,
     expire_due_exceptions,
     load_decision_target,
@@ -107,7 +120,7 @@ def _require_tenant_for_config(actor: ActorContext) -> str:
 def enforce_segregation_of_duties(actor: ActorContext, target_type: str, target: dict) -> None:
     """maker-checker: a user can't approve work they originated"""
     maker: str | None = None
-    if target_type == "review_task" and target.get("task_type") == "intake_review":
+    if target_type == "review_task" and target.get("task_type") in {"intake_review", "recertification_review"}:
         maker = intake_submitter(target.get("change_id", ""))
     elif target_type == "deployment_gate":
         # deployer can't approve its own release
@@ -121,6 +134,44 @@ def enforce_segregation_of_duties(actor: ActorContext, target_type: str, target:
             status_code=403,
             detail="Segregation of duties: a user cannot record a decision on work they originated",
         )
+
+
+def enforce_stage_policy(actor: ActorContext, target_type: str, target: dict, decision: str) -> None:
+    """route staged approvals through the stage machinery
+
+    a review task whose governing policy declared several stages cannot be
+    approved or rejected in one direct decision: each stage is decided by a
+    different person via /api/approval-stages/{id}/decide. a single-stage task
+    keeps this route's pre-policy wire behavior, with the stage's role
+    authority checked here so the policy's chosen role is enforced
+    """
+    if target_type != "review_task" or decision not in {"approve", "reject"}:
+        return
+    from app.services.authorization import require_stage_role
+    from app.storage.policy_engine import stages_for_subject
+
+    stages = stages_for_subject("review_task", target.get("task_id", ""), 0)
+    if not stages:
+        return
+    undecided = [stage for stage in stages if stage["status"] in {"open", "pending"}]
+    if len(stages) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This review is governed by a multi-stage approval policy "
+                f"(policy {stages[0]['policy_tenant'] or 'default'}/v{stages[0]['policy_version']}). "
+                "Decide its open stage via /api/approval-stages/{stage_id}/decide instead."
+            ),
+        )
+    if undecided:
+        try:
+            require_stage_role(actor, stages[0]["required_role"], {
+                "tenant_id": target.get("tenant_id"),
+                "project": target.get("project"),
+                "environment": target.get("environment"),
+            })
+        except AuthorizationError as error:
+            raise_forbidden(error)
 
 
 @router.get("/health")
@@ -251,27 +302,27 @@ def resource_graph_neighborhood(node_id: str, scope: ScopeFilter = Depends(scope
 
 @router.get("/api/retrievals")
 def retrievals(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_retrievals(scope), "retrievals", page)
+    return paged(build_retrievals, "retrievals", scope, page, partial(count_observed_events, "retrieval.call"))
 
 
 @router.get("/api/tools")
 def tools(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_tools(scope), "tools", page)
+    return paged(build_tools, "tools", scope, page, partial(count_observed_events, "tool.call"))
 
 
 @router.get("/api/guardrails")
 def guardrails(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_guardrails(scope), "guardrails", page)
+    return paged(build_guardrails, "guardrails", scope, page, partial(count_observed_events, "guardrail.decision"))
 
 
 @router.get("/api/evals")
 def evals(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_evals(scope), "evals", page)
+    return paged(build_evals, "evals", scope, page, partial(count_observed_events, "eval.result"))
 
 
 @router.get("/api/agents")
 def agents(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_agents(scope), "agents", page)
+    return paged(build_agents, "agents", scope, page, partial(count_observed_events, "agent.run"))
 
 
 @router.get("/api/risk-register")
@@ -279,12 +330,12 @@ def risk_register(scope: ScopeFilter = Depends(scoped_dependency), page: PagePar
     # a lapsed exception reopens the finding it waived; without this the register
     # keeps reporting it as accepted until the next batch of telemetry
     expire_due_exceptions()
-    return paginate(build_risk_register(scope), "risks", page)
+    return paged(build_risk_register, "risks", scope, page, count_risk_findings)
 
 
 @router.get("/api/control-evidence")
 def control_evidence(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_control_evidence(scope), "controls", page)
+    return paged(build_control_evidence, "controls", scope, page, count_control_assessments)
 
 
 @router.get("/api/control-catalog")
@@ -382,12 +433,12 @@ def configure_review_queue_policy(payload: ReviewQueuePolicyRequest, actor: Acto
 
 @router.get("/api/change-events")
 def change_events(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_change_events(scope), "changes", page)
+    return paged(build_change_events, "changes", scope, page, count_change_events)
 
 
 @router.get("/api/review-tasks")
 def review_tasks(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_review_tasks(scope), "review_tasks", page)
+    return paged(build_review_tasks, "review_tasks", scope, page, count_review_tasks)
 
 
 @router.get("/api/reviews/{task_id}")
@@ -410,7 +461,7 @@ def deployment_versions(scope: ScopeFilter = Depends(scoped_dependency)):
 
 @router.get("/api/deployment-gates")
 def deployment_gates(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_deployment_gates(scope), "deployment_gates", page)
+    return paged(build_deployment_gates, "deployment_gates", scope, page, count_deployment_gates)
 
 
 @router.get("/api/deployment-gates/{gate_id}")
@@ -433,7 +484,7 @@ def prompt_versions(scope: ScopeFilter = Depends(scoped_dependency)):
 
 @router.get("/api/incidents")
 def incidents(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_incidents(scope), "incidents", page)
+    return paged(build_incidents, "incidents", scope, page, count_incidents)
 
 
 @router.get("/api/incidents/{incident_id}")
@@ -532,7 +583,7 @@ def reject_deployment_gate(gate_id: str, payload: DeploymentGateDecisionRequest,
 
 @router.get("/api/owner-assignments")
 def owner_assignments(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_owner_assignments(scope), "owners", page)
+    return paged(build_owner_assignments, "owners", scope, page, count_owner_assignments)
 
 
 @router.post("/api/owner-assignments/{owner_assignment_id}/assign")
@@ -549,7 +600,7 @@ def assign_owner_route(owner_assignment_id: str, payload: OwnerAssignmentRequest
 
 @router.get("/api/decisions")
 def decisions(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
-    return paginate(build_decisions(scope), "decisions", page)
+    return paged(build_decisions, "decisions", scope, page, count_decisions)
 
 
 # the only decisions the workflow understands; anything else is rejected
@@ -563,13 +614,15 @@ def create_decision(payload: DecisionRequest, actor: ActorContext = Depends(curr
             status_code=400,
             detail=f"decision must be one of {sorted(_ALLOWED_DECISIONS)}",
         )
-    # gates and incidents have dedicated guarded endpoints; don't let the generic route bypass them
-    if payload.target_type in {"deployment_gate", "incident"}:
+    # gates, incidents and approval stages have dedicated guarded endpoints;
+    # don't let the generic route bypass them
+    if payload.target_type in {"deployment_gate", "incident", "approval_stage"}:
         raise HTTPException(
             status_code=400,
             detail=(
                 "Use the dedicated endpoint for this target type: deployment gates via "
-                "/api/deployment-gates/{id}/approve|reject, incidents via /api/incidents/{id}/close"
+                "/api/deployment-gates/{id}/approve|reject, incidents via /api/incidents/{id}/close, "
+                "approval stages via /api/approval-stages/{id}/decide"
             ),
         )
     try:
@@ -583,6 +636,7 @@ def create_decision(payload: DecisionRequest, actor: ActorContext = Depends(curr
     except AuthorizationError as error:
         raise_forbidden(error)
     enforce_segregation_of_duties(actor, payload.target_type, target)
+    enforce_stage_policy(actor, payload.target_type, target, payload.decision)
     decision = record_decision(payload.target_type, payload.target_id, payload.decision, payload.rationale, actor.user_ref)
     record_audit(actor_ref=actor.user_ref, action="review.decide", tenant_id=target.get("tenant_id"), target_type=payload.target_type, target_id=payload.target_id, detail={"decision": payload.decision})
     # these targets are gate blockers; without this the gate keeps reporting the
@@ -601,7 +655,7 @@ def create_decision(payload: DecisionRequest, actor: ActorContext = Depends(curr
 def exceptions(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams = Depends()):
     # never show a lapsed exception as still active
     expire_due_exceptions()
-    return paginate(build_exceptions(scope), "exceptions", page)
+    return paged(build_exceptions, "exceptions", scope, page, count_exceptions)
 
 
 def _validate_future_date(value: str) -> None:

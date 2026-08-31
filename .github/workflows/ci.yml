@@ -22,9 +22,10 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install dependencies
+      - name: Install dependencies (hash-pinned)
         run: |
           pip install --require-hashes -r requirements-dev.txt
+          pip install --require-hashes -r requirements-dev.lock.txt
           pip install --no-deps -e packages/python-sdk
       - name: Lint (ruff)
         run: ruff check apps/platform/app packages/python-sdk/norinth_logger tests scripts
@@ -58,9 +59,10 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install dependencies
+      - name: Install dependencies (hash-pinned)
         run: |
           pip install --require-hashes -r requirements-dev.txt
+          pip install --require-hashes -r requirements-dev.lock.txt
           pip install --no-deps -e packages/python-sdk
       - name: Test against PostgreSQL
         env:
@@ -106,6 +108,8 @@ jobs:
           cache: pip
       - name: Install platform dependencies
         run: pip install --require-hashes -r requirements-dev.txt
+      - name: Install platform dependencies (hash-pinned)
+        run: pip install --require-hashes -r requirements-dev.lock.txt
       - name: Without a bundle the root route is an explicit 503, never a stale UI
         run: pytest tests/test_dashboard_bundle.py -q -k "not_built"
       - name: Download dashboard bundle
@@ -143,6 +147,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.11"
+          cache: pip
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
       - name: Build image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
@@ -162,6 +167,7 @@ jobs:
           docker run --rm --entrypoint python norinth-platform:ci -m pip freeze > shipped-requirements.txt
           echo "shipped packages:"; wc -l < shipped-requirements.txt
           python -m pip install --require-hashes -r requirements-audit.txt
+          pip install --require-hashes -r requirements-ci-tools.lock.txt
           pip-audit -r shipped-requirements.txt
       - name: Lint installer scripts (shellcheck)
         run: shellcheck scripts/install.sh scripts/backup.sh scripts/restore.sh

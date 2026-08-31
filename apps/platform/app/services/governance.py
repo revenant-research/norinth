@@ -124,7 +124,7 @@ def build_models(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
     return {"models": list_models(**scope.model_dump())}
 
 
-def build_retrievals(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
+def build_retrievals(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
     return {
         "retrievals": [
             {
@@ -137,12 +137,12 @@ def build_retrievals(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
                 "status": event["status"],
                 "duration_ms": event["duration_ms"],
             }
-            for event in list_observed_events("retrieval.call", **scope.model_dump())
+            for event in list_observed_events("retrieval.call", **scope.model_dump(), limit=limit, offset=offset)
         ]
     }
 
 
-def build_tools(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
+def build_tools(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
     return {
         "tools": [
             {
@@ -154,12 +154,12 @@ def build_tools(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
                 "status": event["status"],
                 "duration_ms": event["duration_ms"],
             }
-            for event in list_observed_events("tool.call", **scope.model_dump())
+            for event in list_observed_events("tool.call", **scope.model_dump(), limit=limit, offset=offset)
         ]
     }
 
 
-def build_guardrails(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
+def build_guardrails(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
     return {
         "guardrails": [
             {
@@ -173,12 +173,12 @@ def build_guardrails(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
                 "application_name": event.get("application_name") or "unknown",
                 "status": event["status"],
             }
-            for event in list_observed_events("guardrail.decision", **scope.model_dump())
+            for event in list_observed_events("guardrail.decision", **scope.model_dump(), limit=limit, offset=offset)
         ]
     }
 
 
-def build_evals(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
+def build_evals(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
     return {
         "evals": [
             {
@@ -194,12 +194,12 @@ def build_evals(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
                 "application_name": event.get("application_name") or "unknown",
                 "status": event["status"],
             }
-            for event in list_observed_events("eval.result", **scope.model_dump())
+            for event in list_observed_events("eval.result", **scope.model_dump(), limit=limit, offset=offset)
         ]
     }
 
 
-def build_agents(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
+def build_agents(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
     return {
         "agents": [
             {
@@ -213,7 +213,7 @@ def build_agents(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
                 "status": event["status"],
                 "duration_ms": event["duration_ms"],
             }
-            for event in list_observed_events("agent.run", **scope.model_dump())
+            for event in list_observed_events("agent.run", **scope.model_dump(), limit=limit, offset=offset)
         ]
     }
 
@@ -463,9 +463,12 @@ def build_review_detail(scope: ScopeFilter, task_id: str) -> dict[str, Any] | No
     if task is None:
         return None
     change = find_record(list_change_events(**scope_kwargs), "change_id", task.get("change_id"))
+    from app.storage.policy_engine import stages_for_subject
+
     return {
         "review_task": task,
         "change_event": change,
+        "approval_stages": stages_for_subject("review_task", task_id),
         "owners": [
             owner
             for owner in list_owner_assignments(**scope_kwargs)
@@ -595,8 +598,8 @@ def find_record(rows: list[dict[str, Any]], key: str, value: Any) -> dict[str, A
     return next((row for row in rows if row.get(key) == value), None)
 
 
-def build_risk_register(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
-    return {"risks": list_risk_findings(**scope.model_dump())}
+def build_risk_register(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
+    return {"risks": list_risk_findings(**scope.model_dump(), limit=limit, offset=offset)}
 
 
 def build_control_catalog(tenant_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
@@ -631,8 +634,8 @@ def build_deployment_versions(scope: ScopeFilter) -> dict[str, list[dict[str, An
     return {"deployment_versions": list_deployment_versions(**scope.model_dump())}
 
 
-def build_deployment_gates(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
-    return {"deployment_gates": list_deployment_gates(**scope.model_dump())}
+def build_deployment_gates(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
+    return {"deployment_gates": list_deployment_gates(**scope.model_dump(), limit=limit, offset=offset)}
 
 
 def build_prompt_templates(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
@@ -643,12 +646,12 @@ def build_prompt_versions(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]
     return {"prompt_versions": list_prompt_versions(**scope.model_dump())}
 
 
-def build_incidents(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
-    return {"incidents": list_incidents(**scope.model_dump())}
+def build_incidents(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
+    return {"incidents": list_incidents(**scope.model_dump(), limit=limit, offset=offset)}
 
 
-def build_control_evidence(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
-    return {"controls": list_control_assessments(**scope.model_dump())}
+def build_control_evidence(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
+    return {"controls": list_control_assessments(**scope.model_dump(), limit=limit, offset=offset)}
 
 
 # framework_ref prefix -> display family. a control assessment cites specific
@@ -749,24 +752,24 @@ def build_framework_coverage(scope: ScopeFilter) -> dict[str, Any]:
     }
 
 
-def build_change_events(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
-    return {"changes": list_change_events(**scope.model_dump())}
+def build_change_events(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
+    return {"changes": list_change_events(**scope.model_dump(), limit=limit, offset=offset)}
 
 
-def build_review_tasks(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
-    return {"review_tasks": list_review_tasks(**scope.model_dump())}
+def build_review_tasks(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
+    return {"review_tasks": list_review_tasks(**scope.model_dump(), limit=limit, offset=offset)}
 
 
-def build_owner_assignments(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
-    return {"owners": list_owner_assignments(**scope.model_dump())}
+def build_owner_assignments(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
+    return {"owners": list_owner_assignments(**scope.model_dump(), limit=limit, offset=offset)}
 
 
-def build_decisions(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
-    return {"decisions": list_decisions(**scope.model_dump())}
+def build_decisions(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
+    return {"decisions": list_decisions(**scope.model_dump(), limit=limit, offset=offset)}
 
 
-def build_exceptions(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
-    return {"exceptions": list_exceptions(**scope.model_dump())}
+def build_exceptions(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
+    return {"exceptions": list_exceptions(**scope.model_dump(), limit=limit, offset=offset)}
 
 
 def build_traces_page(scope: ScopeFilter, *, limit: int, offset: int) -> dict[str, Any]:

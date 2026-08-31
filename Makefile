@@ -18,6 +18,11 @@ lock-ci: ## Regenerate the CI locks from the .in files (needs pip-tools, python 
 		--output-file=requirements-audit.txt requirements-audit.in
 	pip-compile --generate-hashes \
 		--output-file=requirements-build.txt requirements-build.in
+lock-ci: ## Regenerate the CI locks for dev deps and CI tools (needs pip-tools, python 3.11 to match CI)
+	pip-compile --generate-hashes --no-strip-extras \
+		--output-file=requirements-dev.lock.txt requirements-dev.txt
+	pip-compile --generate-hashes --no-strip-extras --allow-unsafe \
+		--output-file=requirements-ci-tools.lock.txt requirements-ci-tools.txt
 
 dev-install: ## Install dev + runtime dependencies and pre-commit hooks
 	pip install -r requirements-dev.txt

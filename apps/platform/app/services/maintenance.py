@@ -25,6 +25,7 @@ from typing import Any
 
 from app.storage import db
 from app.storage.audit import record_audit
+from app.storage.policy_engine import age_recertifications, age_vendor_recertifications
 from app.storage.raw_events import connect
 from app.storage.retention import purge_events_older_than, tenants_with_retention_window
 from app.storage.workflow import expire_due_exceptions, refresh_workflow_state
@@ -73,10 +74,21 @@ def run_once() -> dict[str, Any]:
 
 def _pass() -> dict[str, Any]:
     expired = expire_due_exceptions()
+    # recertification runs on the calendar: the governance policy's per-tier and
+    # vendor clocks open review work and flip stale vendor approvals, before the
+    # queue refresh below routes the new tasks
+    recertifications_opened = age_recertifications()
+    vendors_due = age_vendor_recertifications()
     # recomputes review queue due/overdue/escalated state, which also raises the
     # overdue and escalation notifications
     refresh_workflow_state()
-    return {"skipped": False, "expired_exceptions": expired, "purged_events": _enforce_retention()}
+    return {
+        "skipped": False,
+        "expired_exceptions": expired,
+        "recertifications_opened": recertifications_opened,
+        "vendor_recertifications_due": vendors_due,
+        "purged_events": _enforce_retention(),
+    }
 
 
 def _enforce_retention() -> dict[str, int]:
