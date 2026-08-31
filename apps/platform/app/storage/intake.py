@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Any
 
 from .entities import decode_json, encode_json, entity_id
+from .errors import DomainError
 from .raw_events import connect
 
 # inputs to the risk tier; order matters, higher index is higher risk
@@ -202,7 +203,7 @@ def set_intake_status(intake_id: str, status: str) -> dict[str, Any]:
     with connect() as connection:
         row = connection.execute("SELECT 1 FROM ai_use_cases WHERE intake_id = ?", (intake_id,)).fetchone()
         if row is None:
-            raise ValueError("intake record not found")
+            raise DomainError("intake record not found")
         connection.execute(
             "UPDATE ai_use_cases SET status = ?, updated_at = datetime('now') WHERE intake_id = ?",
             (status, intake_id),

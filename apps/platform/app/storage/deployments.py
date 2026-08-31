@@ -9,8 +9,9 @@ from typing import Any
 from . import db
 from .attestation_keys import tenant_requires_attestation
 from .entities import as_object, entity_id
-from .errors import RecordNotFound
+from .errors import DomainError, RecordNotFound
 from .raw_events import connect
+from .scoping import count_scoped_rows, scoped_rows
 
 
 def init_deployments() -> None:
@@ -440,7 +441,7 @@ def set_deployment_gate_status(gate_id: str, status: str, actor_ref: str, ration
         # release, with no distinct action). new telemetry already preserves a
         # decided status; a superseding build gets its own gate
         if gate["gate_status"] in {"approved", "rejected"}:
-            raise ValueError(f"deployment gate has already been {gate['gate_status']} and cannot be decided again")
+            raise DomainError(f"deployment gate has already been {gate['gate_status']} and cannot be decided again")
         evidence = None
         if status == "approved":
             # recompute from current state: accepting a finding or waiving a
@@ -451,19 +452,19 @@ def set_deployment_gate_status(gate_id: str, status: str, actor_ref: str, ration
             evidence = live_gate_evidence(connection, gate)
             if evidence["prompt_evidence_status"] != "linked" or int(evidence["passing_eval_count"] or 0) == 0:
                 if evidence.get("require_attested_evals"):
-                    raise ValueError(
+                    raise DomainError(
                         "deployment gate requires a linked prompt version and attested passing eval evidence "
                         "bound to this version (the governance policy requires attestation for this environment)"
                     )
-                raise ValueError("deployment gate requires a linked prompt version and passing eval evidence bound to this version")
+                raise DomainError("deployment gate requires a linked prompt version and passing eval evidence bound to this version")
             if int(evidence["risk_count"] or 0) > 0:
-                raise ValueError("deployment gate cannot be approved while risk findings are open; mitigate or accept them first")
+                raise DomainError("deployment gate cannot be approved while risk findings are open; mitigate or accept them first")
             if int(evidence["missing_control_count"] or 0) > 0:
-                raise ValueError("deployment gate cannot be approved while controls are missing evidence")
+                raise DomainError("deployment gate cannot be approved while controls are missing evidence")
             if int(evidence["material_change_count"] or 0) > int(evidence.get("max_open_material_changes") or 0):
-                raise ValueError("deployment gate cannot be approved while material changes are unreviewed; review or accept them first")
+                raise DomainError("deployment gate cannot be approved while material changes are unreviewed; review or accept them first")
         if not (rationale or "").strip():
-            raise ValueError("a decision rationale is required")
+            raise DomainError("a decision rationale is required")
         if evidence is not None:
             # the decision is recorded against the evidence that was actually
             # checked, including the policy version whose rules governed it
@@ -515,22 +516,6 @@ def load_deployment_gate(gate_id: str) -> dict[str, Any]:
     return dict(row)
 
 
-def scoped_rows(table: str, *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None, order_by: str = "updated_at") -> list[dict[str, Any]]:
-    clauses: list[str] = []
-    params: dict[str, Any] = {}
-    if tenant_id:
-        clauses.append("tenant_id = :tenant_id")
-        params["tenant_id"] = tenant_id
-    if project:
-        clauses.append("project = :project")
-        params["project"] = project
-    if environment:
-        clauses.append("environment = :environment")
-        params["environment"] = environment
-    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    with connect() as connection:
-        rows = connection.execute(f"SELECT * FROM {table} {where} ORDER BY {order_by} DESC", params).fetchall()
-    return [dict(row) for row in rows]
 
 
 def list_deployments(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
@@ -541,10 +526,18 @@ def list_deployment_versions(*, tenant_id: str | None = None, project: str | Non
     return scoped_rows("deployment_versions", tenant_id=tenant_id, project=project, environment=environment, order_by="observed_at")
 
 
-def list_deployment_gates(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
+def list_deployment_gates(
+    *,
+    tenant_id: str | None = None,
+    project: str | None = None,
+    environment: str | None = None,
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
     # enrich each gate with the version and artifact it gates, so callers can
     # see which build a decision applies to
-    clauses, params = ["1=1"], {}
+    clauses: list[str] = ["1=1"]
+    params: dict[str, Any] = {}
     if tenant_id:
         clauses.append("g.tenant_id = :tenant_id")
         params["tenant_id"] = tenant_id
@@ -554,6 +547,10 @@ def list_deployment_gates(*, tenant_id: str | None = None, project: str | None =
     if environment:
         clauses.append("g.environment = :environment")
         params["environment"] = environment
+    window = ""
+    if limit is not None:
+        window = " LIMIT :limit OFFSET :offset"
+        params.update({"limit": limit, "offset": offset})
     with connect() as connection:
         rows = connection.execute(
             f"""
@@ -561,7 +558,7 @@ def list_deployment_gates(*, tenant_id: str | None = None, project: str | None =
             FROM deployment_approval_gates g
             LEFT JOIN deployment_versions v ON v.version_id = g.version_id
             WHERE {' AND '.join(clauses)}
-            ORDER BY g.updated_at DESC
+            ORDER BY g.updated_at DESC{window}
             """,
             params,
         ).fetchall()
@@ -585,3 +582,9 @@ def find_gate_for_release(tenant_id: str, deployment_id: str, version: str) -> d
             (deployment_id, version, tenant_id),
         ).fetchone()
     return None if row is None else dict(row)
+
+
+def count_deployment_gates(
+    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
+) -> int:
+    return count_scoped_rows("deployment_approval_gates", tenant_id=tenant_id, project=project, environment=environment)

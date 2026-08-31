@@ -14,6 +14,7 @@ import hashlib
 import secrets
 from typing import Any
 
+from .errors import DomainError
 from .raw_events import connect
 
 _TOKEN_PREFIX = "nrs_"
@@ -104,7 +105,7 @@ def revoke_scim_token(token_id: str, tenant_id: str) -> dict[str, Any]:
             "SELECT * FROM scim_tokens WHERE token_id = ? AND tenant_id = ?", (token_id, tenant_id)
         ).fetchone()
         if row is None:
-            raise ValueError("SCIM token not found in this organization")
+            raise DomainError("SCIM token not found in this organization")
         connection.execute("UPDATE scim_tokens SET status = 'revoked' WHERE token_id = ?", (token_id,))
         updated = connection.execute("SELECT * FROM scim_tokens WHERE token_id = ?", (token_id,)).fetchone()
     return _public(updated)

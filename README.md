@@ -11,6 +11,7 @@ exists, and an audit packet you can hand to an auditor.
 [![CI](https://github.com/revenant-research/norinth/actions/workflows/ci.yml/badge.svg)](https://github.com/revenant-research/norinth/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/revenant-research/norinth)](https://github.com/revenant-research/norinth/releases)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/revenant-research/norinth/badge)](https://scorecard.dev/viewer/?uri=github.com/revenant-research/norinth)
 
 You run Norinth on your own infrastructure. There is no hosted version, no paid
 tier, and no account with anyone. Everything in this repository is licensed

@@ -27,6 +27,7 @@ from app.services.notifications import emit as notify
 from app.services.notifications import public_base_url, smtp_configured
 from app.storage.audit import count_audit_logs, list_audit_logs, record_audit, verify_audit_chain
 from app.storage.entities import tenant_application_stats
+from app.storage.errors import DomainError
 from app.storage.mfa import clear_mfa
 from app.storage.migrations import schema_status
 from app.storage.notifications import INVITE_TTL_DAYS, create_invite
@@ -198,7 +199,7 @@ def provision_organization(payload: CreateOrganizationRequest, actor: ActorConte
         raise HTTPException(status_code=409, detail="A user with that email already exists")
     try:
         organization = create_organization(payload.tenant_id, payload.name, actor.user_ref)
-    except ValueError as error:
+    except DomainError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     generated_password = payload.admin_password or _temp_password()
     admin_user = create_platform_user(
@@ -245,7 +246,7 @@ def update_organization_status(tenant_id: str, payload: OrganizationStatusReques
         raise HTTPException(status_code=400, detail="status must be 'active' or 'suspended'")
     try:
         organization = set_organization_status(tenant_id, payload.status)
-    except ValueError as error:
+    except DomainError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     record_audit(
         actor_ref=actor.user_ref,
@@ -376,7 +377,7 @@ def update_account_status(user_ref: str, payload: AccountStatusRequest, actor: A
             raise HTTPException(status_code=400, detail="Cannot suspend the last active super admin")
     try:
         updated = set_user_status(user_ref, payload.status)
-    except ValueError as error:
+    except DomainError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     record_audit(
         actor_ref=actor.user_ref,

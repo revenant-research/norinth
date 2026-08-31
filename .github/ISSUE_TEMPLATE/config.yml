@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/revenant-research/norinth/security/advisories/new
+    about: Do not open a public issue. Use the private advisory form. See SECURITY.md.
+  - name: Question about running or configuring Norinth
+    url: https://github.com/revenant-research/norinth/blob/main/docs
+    about: Check the documentation first. Open a bug report if the docs are wrong or missing.
