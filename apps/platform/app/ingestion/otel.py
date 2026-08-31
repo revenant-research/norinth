@@ -24,6 +24,26 @@ _OPERATION_TO_EVENT = {
 }
 
 
+class OtelPayloadError(ValueError):
+    """the payload is not shaped like OTLP/HTTP JSON traces"""
+
+
+def _as_list(value: Any, path: str) -> list[Any]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise OtelPayloadError(f"{path} must be an array")
+    return value
+
+
+def _as_dict(value: Any, path: str) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise OtelPayloadError(f"{path} must be an object")
+    return value
+
+
 def _attr_value(value: dict[str, Any]) -> Any:
     """scalar from an otlp AnyValue"""
     for key in ("stringValue", "boolValue"):
@@ -39,12 +59,20 @@ def _attr_value(value: dict[str, Any]) -> Any:
     return value.get("stringValue")
 
 
-def _attributes_to_dict(attributes: list[dict[str, Any]] | None) -> dict[str, Any]:
+def _attributes_to_dict(attributes: list[Any] | None) -> dict[str, Any]:
+    """an attribute that is not a {key, value} pair is skipped, not fatal
+
+    the envelope shape is the caller's contract and is enforced; one odd
+    attribute inside an otherwise valid span is not worth rejecting a batch over
+    """
     result: dict[str, Any] = {}
     for item in attributes or []:
+        if not isinstance(item, dict):
+            continue
         key = item.get("key")
-        if key is not None and "value" in item:
-            result[key] = _attr_value(item["value"])
+        value = item.get("value")
+        if key is not None and isinstance(value, dict):
+            result[key] = _attr_value(value)
     return result
 
 
@@ -65,8 +93,8 @@ def _event_type(operation: str | None, attrs: dict[str, Any]) -> str | None:
     return None
 
 
-def _span_to_event(span: dict[str, Any], resource_attrs: dict[str, Any]) -> dict[str, Any] | None:
-    attrs = _attributes_to_dict(span.get("attributes"))
+def _span_to_event(span: dict[str, Any], resource_attrs: dict[str, Any], path: str) -> dict[str, Any] | None:
+    attrs = _attributes_to_dict(_as_list(span.get("attributes"), f"{path}.attributes"))
     operation = attrs.get("gen_ai.operation.name")
     event_type = _event_type(operation, attrs)
     if event_type is None:
@@ -125,13 +153,29 @@ def _span_to_event(span: dict[str, Any], resource_attrs: dict[str, Any]) -> dict
 
 
 def otel_spans_to_events(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    """convert an otlp/http json traces payload into events; non-gen_ai spans skipped"""
+    """convert an otlp/http json traces payload into events; non-gen_ai spans skipped
+
+    raises OtelPayloadError naming the offending path when the envelope is not
+    shaped like OTLP. every level is checked because the sender is a third-party
+    collector: an unchecked string here was iterated as characters, and the
+    AttributeError that followed surfaced as a 500
+    """
     events: list[dict[str, Any]] = []
-    for resource_span in payload.get("resourceSpans", []):
-        resource_attrs = _attributes_to_dict((resource_span.get("resource") or {}).get("attributes"))
-        for scope_span in resource_span.get("scopeSpans", []):
-            for span in scope_span.get("spans", []):
-                event = _span_to_event(span, resource_attrs)
+    resource_spans = _as_list(payload.get("resourceSpans"), "resourceSpans")
+    for outer, raw_resource_span in enumerate(resource_spans):
+        resource_path = f"resourceSpans[{outer}]"
+        resource_span = _as_dict(raw_resource_span, resource_path)
+        resource = _as_dict(resource_span.get("resource"), f"{resource_path}.resource")
+        resource_attrs = _attributes_to_dict(
+            _as_list(resource.get("attributes"), f"{resource_path}.resource.attributes")
+        )
+        scope_spans = _as_list(resource_span.get("scopeSpans"), f"{resource_path}.scopeSpans")
+        for middle, raw_scope_span in enumerate(scope_spans):
+            scope_path = f"{resource_path}.scopeSpans[{middle}]"
+            scope_span = _as_dict(raw_scope_span, scope_path)
+            for inner, raw_span in enumerate(_as_list(scope_span.get("spans"), f"{scope_path}.spans")):
+                span_path = f"{scope_path}.spans[{inner}]"
+                event = _span_to_event(_as_dict(raw_span, span_path), resource_attrs, span_path)
                 if event is not None:
                     events.append(event)
     return events

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import math
 import os
 from typing import Any
 
@@ -12,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
 from app.dependencies import ingestion_tenant
-from app.ingestion.otel import otel_spans_to_events
+from app.ingestion.otel import OtelPayloadError, otel_spans_to_events
 from app.schemas.events import MAX_BATCH_EVENTS, EventBatch
 from app.services.attestation import AttestationError, verify_eval_attestation
 from app.storage.agents import refresh_agent_posture
@@ -41,6 +42,38 @@ _REQUIRED_ATTRIBUTES: dict[str, tuple[str, ...]] = {
 _OBJECT_ATTRIBUTES = ("metadata", "prompt", "response", "usage", "template", "change_notes", "description", "attestation")
 
 
+# usage counters the pipeline sums into storage. int() raises TypeError on a
+# list and OverflowError on 1e400, and neither is a ValueError, so both escaped
+# the handler and surfaced as a 500. numeric strings still pass: clients send
+# them and int() has always accepted them
+_NUMERIC_USAGE_FIELDS = ("input_tokens", "output_tokens")
+
+
+def _validate_usage(index: int, usage: dict[str, Any]) -> None:
+    for field in _NUMERIC_USAGE_FIELDS:
+        value = usage.get(field)
+        if value is None or isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)):
+            if isinstance(value, float) and not math.isfinite(value):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"events[{index}].attributes.usage.{field} must be a finite number",
+                )
+            continue
+        if isinstance(value, str):
+            try:
+                parsed = float(value)
+            except ValueError:
+                parsed = None
+            if parsed is not None and math.isfinite(parsed):
+                continue
+        raise HTTPException(
+            status_code=422,
+            detail=f"events[{index}].attributes.usage.{field} must be a number",
+        )
+
+
 def _validate_event_attributes(events: list[dict[str, Any]]) -> None:
     for index, event in enumerate(events):
         attributes = event.get("attributes")
@@ -53,6 +86,7 @@ def _validate_event_attributes(events: list[dict[str, Any]]) -> None:
                     status_code=422,
                     detail=f"events[{index}].attributes.{key} must be an object",
                 )
+        _validate_usage(index, attributes.get("usage") or {})
         required = _REQUIRED_ATTRIBUTES.get(event.get("type", ""))
         if not required:
             continue
@@ -124,7 +158,10 @@ async def ingest_otel_traces(
         raise HTTPException(status_code=400, detail="invalid JSON body") from error
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="OTLP payload must be a JSON object")
-    events = otel_spans_to_events(payload)
+    try:
+        events = otel_spans_to_events(payload)
+    except OtelPayloadError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     # the same per-request cap the native batch endpoint enforces via its schema;
     # otlp builds the event list itself, so it would otherwise be uncapped
     if len(events) > MAX_BATCH_EVENTS:
