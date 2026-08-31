@@ -317,6 +317,10 @@ export NORINTH_PLATFORM_DB=apps/platform/data/norinth.sqlite3
 uvicorn app.main:app --app-dir apps/platform --reload --port 8001
 ```
 
+To add or change a Python dependency, edit `requirements-dev.in` (or
+`apps/platform/requirements.txt` for runtime dependencies), then regenerate the
+hash-locked `requirements-dev.txt` with the pip-compile command in its header.
+
 Running from source with no administrator password set is development mode,
 which seeds a well-known `dev` ingestion key so the quickstart works without
 minting one. To fill the dashboard with synthetic sample data in that mode:
