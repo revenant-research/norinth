@@ -7,7 +7,7 @@ import json
 from hashlib import sha256
 from typing import Any
 
-from .raw_events import connect
+from .raw_events import as_int, connect
 
 
 def as_object(value: Any) -> dict[str, Any]:
@@ -321,8 +321,8 @@ def upsert_application(
             encode_json(values["models"]),
             1 if is_model_call else 0,
             1 if event.get("status") == "error" else 0,
-            int(usage.get("input_tokens") or 0),
-            int(usage.get("output_tokens") or 0),
+            as_int(usage.get("input_tokens")),
+            as_int(usage.get("output_tokens")),
             event["timestamp"],
             event["timestamp"],
         ),
@@ -384,8 +384,8 @@ def upsert_workflow(
             encode_json(values["models"]),
             1 if is_model_call else 0,
             1 if event.get("status") == "error" else 0,
-            int(usage.get("input_tokens") or 0),
-            int(usage.get("output_tokens") or 0),
+            as_int(usage.get("input_tokens")),
+            as_int(usage.get("output_tokens")),
             event["timestamp"],
             event["timestamp"],
         ),
@@ -425,8 +425,8 @@ def upsert_model(connection, event: dict[str, Any], attrs: dict[str, Any], metad
             encode_json(values["applications"]),
             1,
             1 if event.get("status") == "error" else 0,
-            int(usage.get("input_tokens") or 0),
-            int(usage.get("output_tokens") or 0),
+            as_int(usage.get("input_tokens")),
+            as_int(usage.get("output_tokens")),
             event["timestamp"],
             event["timestamp"],
         ),
@@ -532,7 +532,7 @@ def upsert_model_risks(connection, event: dict[str, Any], attrs: dict[str, Any],
             evidence="Failed model call observed",
             source="model.call",
         )
-    if int(usage.get("input_tokens") or 0) + int(usage.get("output_tokens") or 0) > 1000:
+    if as_int(usage.get("input_tokens")) + as_int(usage.get("output_tokens")) > 1000:
         upsert_risk(
             connection,
             event,

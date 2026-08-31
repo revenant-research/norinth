@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from pathlib import Path
 from typing import Any
@@ -183,6 +184,29 @@ def insert_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return inserted
 
 
+def as_int(value: Any) -> int:
+    """a usage counter from client data; anything not countable becomes 0
+
+    the ingest validator rejects bad usage values with a 422, so this is the
+    second line: int() raises TypeError on a list and OverflowError on 1e400,
+    and a value reaching storage from another path must not raise mid-fold when
+    the raw rows are already committed
+    """
+    if value is None or isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if math.isfinite(value) else 0
+    if isinstance(value, str):
+        try:
+            parsed = float(value)
+        except ValueError:
+            return 0
+        return int(parsed) if math.isfinite(parsed) else 0
+    return 0
+
+
 def event_to_row(event: dict[str, Any]) -> dict[str, Any]:
     attributes = event.get("attributes") or {}
     metadata = _as_object(attributes.get("metadata"))
@@ -210,8 +234,8 @@ def event_to_row(event: dict[str, Any]) -> dict[str, Any]:
         "provider": attributes.get("provider"),
         "model": attributes.get("model"),
         "operation": attributes.get("operation"),
-        "input_tokens": int(usage.get("input_tokens") or 0),
-        "output_tokens": int(usage.get("output_tokens") or 0),
+        "input_tokens": as_int(usage.get("input_tokens")),
+        "output_tokens": as_int(usage.get("output_tokens")),
         "raw_event": serialize_raw_event(event),
     }
 
