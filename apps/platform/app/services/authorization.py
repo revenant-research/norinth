@@ -163,6 +163,36 @@ def require_exception(actor: ActorContext, target: dict[str, Any]) -> None:
     require_permission(actor, PERM_RISK_ACCEPT, target)
 
 
+def actor_satisfies_stage_role(actor: ActorContext, required_role: str, target: dict[str, Any]) -> bool:
+    """whether the actor's roles carry the authority a policy stage requires
+
+    a stage's role requirement is its authority: an assignment of the named
+    role satisfies it, and so does any role granting at least the named role's
+    permissions. that keeps the seeded single-stage default (governance_reviewer)
+    open to every role that could decide reviews before the policy engine,
+    while a risk_owner stage still refuses a bare reviewer. only assignments
+    whose scope matches the stage's subject count
+    """
+    required = set(list_role_permissions(required_role))
+    if not required:
+        return False
+    for assignment in list_actor_role_assignments(actor.user_ref):
+        if not role_scope_matches(assignment, target):
+            continue
+        if assignment["role"] == required_role:
+            return True
+        if required <= set(list_role_permissions(assignment["role"])):
+            return True
+    return False
+
+
+def require_stage_role(actor: ActorContext, required_role: str, target: dict[str, Any]) -> None:
+    if not actor_satisfies_stage_role(actor, required_role, target):
+        raise AuthorizationError(
+            f"This stage requires the authority of the '{required_role}' role, which {actor.user_ref} does not hold in this scope"
+        )
+
+
 def effective_permissions(actor: ActorContext) -> list[str]:
     """all tenant permissions a user holds across any scope, for ui gating
 

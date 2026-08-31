@@ -198,10 +198,13 @@ def init_workflow() -> None:
         seed_review_queue_policies(connection)
 
 
-# default routing so reviews reach a named person; org admins can change these
+# default routing so reviews reach a named person; org admins can change these.
+# recertification tasks route to governance_admin because the recertify
+# transition itself needs lifecycle.manage, which that role holds
 DEFAULT_REVIEW_QUEUE_POLICIES: list[dict[str, Any]] = [
     {"policy_id": "default-intake", "task_type": "intake_review", "assigned_role": "governance_reviewer", "due_days": 5, "escalation_days": 3},
     {"policy_id": "default-material-change", "task_type": "material_change_review", "assigned_role": "governance_admin", "due_days": 3, "escalation_days": 2},
+    {"policy_id": "default-recertification", "task_type": "recertification_review", "assigned_role": "governance_admin", "due_days": 14, "escalation_days": 7},
 ]
 
 
@@ -325,6 +328,25 @@ def list_queue_policies(connection, tenant_id: str | None = None) -> list[dict[s
     return list(merged.values())
 
 
+def _stage_route_role(connection, task: dict[str, Any]) -> str | None:
+    """the role a tenant-authored policy routes this task to right now
+
+    a task governed by a tenant policy routes to its lowest open stage's role,
+    so multi-stage work reaches the people whose turn it is. tasks governed by
+    the seeded platform default (policy_tenant '') keep review_queue_policies
+    routing exactly as before the policy engine existed
+    """
+    row = connection.execute(
+        """
+        SELECT required_role FROM approval_stages
+        WHERE subject_type = 'review_task' AND subject_id = ? AND status = 'open' AND policy_tenant != ''
+        ORDER BY stage_index LIMIT 1
+        """,
+        (task["task_id"],),
+    ).fetchone()
+    return None if row is None else row["required_role"]
+
+
 def refresh_review_queue(connection, queue_cache: dict[str, list[dict[str, Any]]], tenant_filter: set | None = None) -> None:
     for task in connection.execute("SELECT * FROM review_tasks WHERE status = 'open'").fetchall():
         task_record = dict(task)
@@ -337,10 +359,11 @@ def refresh_review_queue(connection, queue_cache: dict[str, list[dict[str, Any]]
         if policy is None:
             mark_review_task_queue_state(connection, task_record, None, None, None, "unassigned")
             continue
-        assignee = find_assignee(connection, task_record, policy["assigned_role"])
+        assigned_role = _stage_route_role(connection, task_record) or policy["assigned_role"]
+        assignee = find_assignee(connection, task_record, assigned_role)
         due_at = _shift_days(task_record["created_at"], int(policy["due_days"]))
         escalation_status = queue_status(connection, due_at, int(policy["escalation_days"]), assignee)
-        mark_review_task_queue_state(connection, task_record, policy["assigned_role"], assignee, due_at, escalation_status)
+        mark_review_task_queue_state(connection, task_record, assigned_role, assignee, due_at, escalation_status)
 
 
 def find_assignee(connection, task: dict[str, Any], assigned_role: str) -> str | None:
@@ -864,6 +887,12 @@ def record_decision(target_type: str, target_id: str, decision: str, rationale: 
             ),
         )
         apply_decision_status(connection, target_type, target_id, decision)
+        # keep the policy engine's stage checklist consistent with the decision,
+        # in the same transaction; a replayed decision returns above and never
+        # re-applies (imported lazily: policy_engine imports from this module)
+        from .policy_engine import sync_decision_to_stages
+
+        sync_decision_to_stages(connection, target_type, target_id, decision, actor_ref, decision_id)
         return dict(connection.execute("SELECT * FROM governance_decisions WHERE decision_id = ?", (decision_id,)).fetchone())
 
 
@@ -875,6 +904,9 @@ def load_decision_target(target_type: str, target_id: str) -> dict[str, Any]:
         "control_assessment": ("control_assessments", "assessment_id"),
         "deployment_gate": ("deployment_approval_gates", "gate_id"),
         "incident": ("governance_incidents", "incident_id"),
+        # stage rows carry denormalized scope columns, so the decision row is
+        # scoped like any other; transitions happen in the stage hook, guarded
+        "approval_stage": ("approval_stages", "stage_id"),
     }
     if target_type not in table_by_target:
         raise ValueError("unsupported decision target type")
@@ -884,6 +916,32 @@ def load_decision_target(target_type: str, target_id: str) -> dict[str, Any]:
     if row is None:
         raise RecordNotFound("decision target not found")
     return dict(row)
+
+
+def _notify_intake_decided(connection, intake_id: str, task_id: str, status: str) -> None:
+    """tell the submitter their system's review reached its final decision"""
+    from app.services.notifications import emit, public_base_url
+
+    record = connection.execute(
+        "SELECT tenant_id, application_name, use_case, submitted_by FROM ai_use_cases WHERE intake_id = ?",
+        (intake_id,),
+    ).fetchone()
+    if record is None or not record["submitted_by"]:
+        return
+    outcome = "approved" if status == "approved" else "rejected"
+    emit(
+        connection,
+        tenant_id=record["tenant_id"],
+        event_type=f"review.{outcome}",
+        subject=f"System {outcome}: {record['application_name']} / {record['use_case']}",
+        text=(
+            f"The review of {record['application_name']} ({record['use_case']}) is finished: {outcome}. "
+            "Open the review to see each decision and who made it."
+        ),
+        data={"intake_id": intake_id, "task_id": task_id, "status": status},
+        to_users=[record["submitted_by"]],
+        link=f"{public_base_url()}/#review/{task_id}",
+    )
 
 
 def apply_decision_status(connection, target_type: str, target_id: str, decision: str) -> None:
@@ -906,9 +964,14 @@ def apply_decision_status(connection, target_type: str, target_id: str, decision
         # reject -> rejected; other decisions leave it submitted
         task = connection.execute("SELECT task_type, change_id FROM review_tasks WHERE task_id = ?", (target_id,)).fetchone()
         if task is not None and task["task_type"] == "intake_review" and status in {"approved", "rejected"}:
-            connection.execute(
-                "UPDATE ai_use_cases SET status = ?, updated_at = datetime('now') WHERE intake_id = ?", (status, task["change_id"])
+            moved = connection.execute(
+                "UPDATE ai_use_cases SET status = ?, updated_at = datetime('now') WHERE intake_id = ? AND status != ?",
+                (status, task["change_id"], status),
             )
+            # close the loop with the submitter: whether the review was one
+            # stage or five, they hear the final outcome exactly once
+            if getattr(moved, "rowcount", 1) > 0:
+                _notify_intake_decided(connection, task["change_id"], target_id, status)
     if target_type == "risk_finding":
         connection.execute("UPDATE risk_findings SET status = ?, evaluated_at = datetime('now') WHERE finding_id = ?", (status, target_id))
     if target_type == "change_event":

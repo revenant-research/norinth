@@ -6,7 +6,43 @@ Semantic Versioning.
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+
+- **Governance policy engine.** Each organization can declare its governance
+  rules as a versioned document: how many approval stages each risk tier
+  needs and which roles decide them, sequence or parallel ordering, per-tier
+  and vendor recertification clocks, per-environment release-gate evidence
+  (attested-evals requirement), extra typed intake fields, and a vendor
+  registry reviewed through the same stage machinery. The trust rules stay
+  fixed: the submitter never decides, no person decides two stages of one
+  subject, decisions stay terminal and append-only, and gates only tighten.
+  Every stage record and gate snapshot pins the policy version that governed
+  it, activations are hash-chained in the audit log with a diff summary, and
+  the audit packet gains a `governance_policy` section plus the stage and
+  vendor records. In-flight reviews keep the policy they started under. The
+  seeded platform default reproduces the previous fixed workflow exactly, so
+  an install that never authors a policy is unchanged.
+- **Notifications follow the path.** Reviewers are notified when their stage
+  opens and when the queue routes a review to them, reminded when it is
+  overdue, administrators are alerted on escalation, the submitter hears the
+  final decision exactly once however many stages decided it, and vendor
+  approvals announce their own expiry. All through the existing outbox:
+  email plus signed webhooks, recipients resolved from role assignments.
+- **Vendor governance proven by telemetry** (`RISK-VND-001`): a model
+  provider observed in production with no approved vendor entry — or a model
+  outside a vendor's approved list — raises a finding on every application
+  using it; lapsed vendor approvals flip to `recertify_due` on the
+  maintenance clock and stop covering their providers.
+- **Policy builder UI** under Setup: each approval path is edited directly as
+  its pipeline of steps (role, label, order, add and remove in place), read
+  back as a plain-language sentence, and wired to live state — systems per
+  tier, reviews in flight, and warnings when a path names a role nobody
+  holds. One primary action reviews the changes in plain terms and puts them
+  in force; history keeps every version with its hash, per-version change
+  summaries, and the raw document behind a disclosure for auditors. A new AI
+  vendors page joins observed provider usage to the registry, review pages
+  render multi-stage checklists with per-stage decisions, and the intake form
+  asks the policy's extra questions with the projected risk tier shown.
 
 ## [0.3.0] - 2026-08-30
 

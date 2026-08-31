@@ -107,7 +107,7 @@ def _require_tenant_for_config(actor: ActorContext) -> str:
 def enforce_segregation_of_duties(actor: ActorContext, target_type: str, target: dict) -> None:
     """maker-checker: a user can't approve work they originated"""
     maker: str | None = None
-    if target_type == "review_task" and target.get("task_type") == "intake_review":
+    if target_type == "review_task" and target.get("task_type") in {"intake_review", "recertification_review"}:
         maker = intake_submitter(target.get("change_id", ""))
     elif target_type == "deployment_gate":
         # deployer can't approve its own release
@@ -121,6 +121,44 @@ def enforce_segregation_of_duties(actor: ActorContext, target_type: str, target:
             status_code=403,
             detail="Segregation of duties: a user cannot record a decision on work they originated",
         )
+
+
+def enforce_stage_policy(actor: ActorContext, target_type: str, target: dict, decision: str) -> None:
+    """route staged approvals through the stage machinery
+
+    a review task whose governing policy declared several stages cannot be
+    approved or rejected in one direct decision: each stage is decided by a
+    different person via /api/approval-stages/{id}/decide. a single-stage task
+    keeps this route's pre-policy wire behavior, with the stage's role
+    authority checked here so the policy's chosen role is enforced
+    """
+    if target_type != "review_task" or decision not in {"approve", "reject"}:
+        return
+    from app.services.authorization import require_stage_role
+    from app.storage.policy_engine import stages_for_subject
+
+    stages = stages_for_subject("review_task", target.get("task_id", ""), 0)
+    if not stages:
+        return
+    undecided = [stage for stage in stages if stage["status"] in {"open", "pending"}]
+    if len(stages) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This review is governed by a multi-stage approval policy "
+                f"(policy {stages[0]['policy_tenant'] or 'default'}/v{stages[0]['policy_version']}). "
+                "Decide its open stage via /api/approval-stages/{stage_id}/decide instead."
+            ),
+        )
+    if undecided:
+        try:
+            require_stage_role(actor, stages[0]["required_role"], {
+                "tenant_id": target.get("tenant_id"),
+                "project": target.get("project"),
+                "environment": target.get("environment"),
+            })
+        except AuthorizationError as error:
+            raise_forbidden(error)
 
 
 @router.get("/health")
@@ -563,13 +601,15 @@ def create_decision(payload: DecisionRequest, actor: ActorContext = Depends(curr
             status_code=400,
             detail=f"decision must be one of {sorted(_ALLOWED_DECISIONS)}",
         )
-    # gates and incidents have dedicated guarded endpoints; don't let the generic route bypass them
-    if payload.target_type in {"deployment_gate", "incident"}:
+    # gates, incidents and approval stages have dedicated guarded endpoints;
+    # don't let the generic route bypass them
+    if payload.target_type in {"deployment_gate", "incident", "approval_stage"}:
         raise HTTPException(
             status_code=400,
             detail=(
                 "Use the dedicated endpoint for this target type: deployment gates via "
-                "/api/deployment-gates/{id}/approve|reject, incidents via /api/incidents/{id}/close"
+                "/api/deployment-gates/{id}/approve|reject, incidents via /api/incidents/{id}/close, "
+                "approval stages via /api/approval-stages/{id}/decide"
             ),
         )
     try:
@@ -583,6 +623,7 @@ def create_decision(payload: DecisionRequest, actor: ActorContext = Depends(curr
     except AuthorizationError as error:
         raise_forbidden(error)
     enforce_segregation_of_duties(actor, payload.target_type, target)
+    enforce_stage_policy(actor, payload.target_type, target, payload.decision)
     decision = record_decision(payload.target_type, payload.target_id, payload.decision, payload.rationale, actor.user_ref)
     record_audit(actor_ref=actor.user_ref, action="review.decide", tenant_id=target.get("tenant_id"), target_type=payload.target_type, target_id=payload.target_id, detail={"decision": payload.decision})
     # these targets are gate blockers; without this the gate keeps reporting the

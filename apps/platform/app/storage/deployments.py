@@ -206,15 +206,16 @@ def gate_required_reason(connection, evidence: dict[str, Any], tenant_id: str | 
         parts.append(f"{evidence['risk_count']} open risk findings")
     if evidence["missing_control_count"]:
         parts.append(f"{evidence['missing_control_count']} missing controls")
-    if evidence["material_change_count"]:
+    if evidence["material_change_count"] > int(evidence.get("max_open_material_changes") or 0):
         parts.append(f"{evidence['material_change_count']} material changes")
     if evidence["prompt_evidence_status"] != "linked":
         parts.append("missing linked prompt version")
     if evidence["passing_eval_count"] == 0:
+        require_attested = evidence.get("require_attested_evals")
+        if require_attested is None:
+            require_attested = tenant_requires_attestation(tenant_id, connection)
         parts.append(
-            "missing attested passing eval evidence"
-            if tenant_requires_attestation(tenant_id, connection)
-            else "missing passing eval evidence"
+            "missing attested passing eval evidence" if require_attested else "missing passing eval evidence"
         )
     return "; ".join(parts) if parts else "No blocking governance evidence detected"
 
@@ -262,9 +263,10 @@ def upsert_deployment_gate(connection, version: dict[str, Any]) -> None:
         INSERT INTO deployment_approval_gates (
             gate_id, deployment_id, version_id, tenant_id, project, environment, application_name, workflow_name,
             gate_status, required_reason, risk_count, missing_control_count, material_change_count,
-            prompt_version_id, prompt_evidence_status, passing_eval_count, actor_ref, rationale, submitted_at, decided_at, updated_at
+            prompt_version_id, prompt_evidence_status, passing_eval_count, policy_tenant, policy_version,
+            actor_ref, rationale, submitted_at, decided_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, datetime('now'), NULL, datetime('now'))
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, datetime('now'), NULL, datetime('now'))
         ON CONFLICT(gate_id) DO UPDATE SET
             gate_status=excluded.gate_status,
             required_reason=excluded.required_reason,
@@ -274,6 +276,8 @@ def upsert_deployment_gate(connection, version: dict[str, Any]) -> None:
             prompt_version_id=excluded.prompt_version_id,
             prompt_evidence_status=excluded.prompt_evidence_status,
             passing_eval_count=excluded.passing_eval_count,
+            policy_tenant=excluded.policy_tenant,
+            policy_version=excluded.policy_version,
             updated_at=datetime('now')
         """,
         (
@@ -293,6 +297,8 @@ def upsert_deployment_gate(connection, version: dict[str, Any]) -> None:
             evidence["prompt_version_id"],
             evidence["prompt_evidence_status"],
             evidence["passing_eval_count"],
+            evidence["policy_tenant"],
+            evidence["policy_version"],
         ),
     )
 
@@ -307,11 +313,21 @@ def gate_evidence_counts(connection, version: dict[str, Any]) -> dict[str, Any]:
         "prompt_version": version.get("prompt_version"),
         "artifact_ref": version.get("artifact_ref"),
     }
+    # the governance policy's entry for this environment decides what the gate
+    # demands; it can only tighten. attestation is required when the policy says
+    # so OR the tenant registered attestation keys (the pre-policy behavior,
+    # which a policy can never switch off)
+    from .policy_engine import resolve_gate_policy
+
+    requirements = resolve_gate_policy(connection, version.get("tenant_id"), version["environment"])
+    require_attested = bool(requirements["require_attested_evals"]) or tenant_requires_attestation(
+        version.get("tenant_id"), connection
+    )
     risk_count = count_scoped(connection, "risk_findings", "status IN ('open', 'mitigation_required')", params)
     missing_control_count = count_scoped(connection, "control_assessments", "status = 'missing'", params)
     material_change_count = count_scoped(connection, "change_events", "status = 'open'", params)
     prompt_version = find_prompt_version(connection, params)
-    passing_eval_count = count_passing_eval_evidence(connection, params)
+    passing_eval_count = count_passing_eval_evidence(connection, params, require_attested)
     return {
         "risk_count": risk_count,
         "missing_control_count": missing_control_count,
@@ -319,6 +335,10 @@ def gate_evidence_counts(connection, version: dict[str, Any]) -> dict[str, Any]:
         "prompt_version_id": prompt_version.get("prompt_version_id") if prompt_version else None,
         "prompt_evidence_status": "linked" if prompt_version else "missing",
         "passing_eval_count": passing_eval_count,
+        "require_attested_evals": require_attested,
+        "max_open_material_changes": int(requirements["max_open_material_changes"]),
+        "policy_tenant": requirements["policy_tenant"],
+        "policy_version": requirements["policy_version"],
     }
 
 
@@ -343,7 +363,7 @@ def find_prompt_version(connection, params: dict[str, Any]) -> dict[str, Any] | 
     return None if row is None else dict(row)
 
 
-def count_passing_eval_evidence(connection, params: dict[str, Any]) -> int:
+def count_passing_eval_evidence(connection, params: dict[str, Any], require_attested: bool | None = None) -> int:
     rows = connection.execute(
         """
         SELECT attributes
@@ -358,9 +378,11 @@ def count_passing_eval_evidence(connection, params: dict[str, Any]) -> int:
         """,
         params,
     ).fetchall()
-    # once a tenant has an attestation key, only evals whose signature verified
-    # at ingestion count; a self-reported passed: true no longer satisfies
-    require_attested = tenant_requires_attestation(params.get("tenant_id"), connection)
+    # once a tenant has an attestation key (or its governance policy demands
+    # attestation for this environment), only evals whose signature verified at
+    # ingestion count; a self-reported passed: true no longer satisfies
+    if require_attested is None:
+        require_attested = tenant_requires_attestation(params.get("tenant_id"), connection)
     version_artifact = params.get("artifact_ref")
     version_prompt = params.get("prompt_version")
     count = 0
@@ -424,25 +446,33 @@ def set_deployment_gate_status(gate_id: str, status: str, actor_ref: str, ration
             # recompute from current state: accepting a finding or waiving a
             # control does not touch the stored counts, only ingestion refreshes
             # them, so approving on the stored values would ignore the very
-            # remediation this gate asks for
+            # remediation this gate asks for. requirements come from the active
+            # governance policy for this environment (which can only tighten)
             evidence = live_gate_evidence(connection, gate)
             if evidence["prompt_evidence_status"] != "linked" or int(evidence["passing_eval_count"] or 0) == 0:
+                if evidence.get("require_attested_evals"):
+                    raise ValueError(
+                        "deployment gate requires a linked prompt version and attested passing eval evidence "
+                        "bound to this version (the governance policy requires attestation for this environment)"
+                    )
                 raise ValueError("deployment gate requires a linked prompt version and passing eval evidence bound to this version")
             if int(evidence["risk_count"] or 0) > 0:
                 raise ValueError("deployment gate cannot be approved while risk findings are open; mitigate or accept them first")
             if int(evidence["missing_control_count"] or 0) > 0:
                 raise ValueError("deployment gate cannot be approved while controls are missing evidence")
-            if int(evidence["material_change_count"] or 0) > 0:
+            if int(evidence["material_change_count"] or 0) > int(evidence.get("max_open_material_changes") or 0):
                 raise ValueError("deployment gate cannot be approved while material changes are unreviewed; review or accept them first")
         if not (rationale or "").strip():
             raise ValueError("a decision rationale is required")
         if evidence is not None:
-            # the decision is recorded against the evidence that was actually checked
+            # the decision is recorded against the evidence that was actually
+            # checked, including the policy version whose rules governed it
             connection.execute(
                 """
                 UPDATE deployment_approval_gates
                 SET risk_count = ?, missing_control_count = ?, material_change_count = ?,
                     prompt_version_id = ?, prompt_evidence_status = ?, passing_eval_count = ?,
+                    policy_tenant = ?, policy_version = ?,
                     required_reason = ?
                 WHERE gate_id = ?
                 """,
@@ -453,6 +483,8 @@ def set_deployment_gate_status(gate_id: str, status: str, actor_ref: str, ration
                     evidence["prompt_version_id"],
                     evidence["prompt_evidence_status"],
                     evidence["passing_eval_count"],
+                    evidence["policy_tenant"],
+                    evidence["policy_version"],
                     gate_required_reason(connection, evidence, gate.get("tenant_id")),
                     gate_id,
                 ),

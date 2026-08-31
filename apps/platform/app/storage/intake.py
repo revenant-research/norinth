@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .entities import entity_id
+from .entities import decode_json, encode_json, entity_id
 from .raw_events import connect
 
 # inputs to the risk tier; order matters, higher index is higher risk
@@ -82,9 +82,9 @@ def create_intake(record: dict[str, Any]) -> dict[str, Any]:
             INSERT INTO ai_use_cases (
                 intake_id, tenant_id, project, environment, application_name, use_case,
                 description, intended_purpose, data_sensitivity, autonomy_level,
-                affects_individuals, risk_tier, status, submitted_by, created_at, updated_at
+                affects_individuals, risk_tier, status, submitted_by, custom_fields, created_at, updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'submitted', ?, datetime('now'), datetime('now'))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'submitted', ?, ?, datetime('now'), datetime('now'))
             ON CONFLICT(intake_id) DO UPDATE SET
                 description=excluded.description,
                 intended_purpose=excluded.intended_purpose,
@@ -92,6 +92,7 @@ def create_intake(record: dict[str, Any]) -> dict[str, Any]:
                 autonomy_level=excluded.autonomy_level,
                 affects_individuals=excluded.affects_individuals,
                 risk_tier=excluded.risk_tier,
+                custom_fields=excluded.custom_fields,
                 updated_at=datetime('now')
             """,
             (
@@ -108,10 +109,17 @@ def create_intake(record: dict[str, Any]) -> dict[str, Any]:
                 1 if record.get("affects_individuals") else 0,
                 risk_tier,
                 record["submitted_by"],
+                encode_json(record["custom_fields"]) if record.get("custom_fields") else None,
             ),
         )
         _seed_intake_review_task(connection, intake_id, record, risk_tier)
-        return dict(connection.execute("SELECT * FROM ai_use_cases WHERE intake_id = ?", (intake_id,)).fetchone())
+        return _decode_intake(connection.execute("SELECT * FROM ai_use_cases WHERE intake_id = ?", (intake_id,)).fetchone())
+
+
+def _decode_intake(row: Any) -> dict[str, Any]:
+    record = dict(row)
+    record["custom_fields"] = decode_json(record.get("custom_fields"), {})
+    return record
 
 
 def _seed_intake_review_task(connection, intake_id: str, record: dict[str, Any], risk_tier: str) -> None:
@@ -150,6 +158,13 @@ def _seed_intake_review_task(connection, intake_id: str, record: dict[str, Any],
             rationale,
         ),
     )
+    # materialize the approval-stage checklist from the policy active right
+    # now; a resubmission of the same use case keeps its existing stages, so
+    # in-flight work stays pinned to the policy it started under (imported
+    # lazily: policy_engine imports RISK_TIERS from this module)
+    from .policy_engine import materialize_intake_stages
+
+    materialize_intake_stages(connection, task_id, record, risk_tier)
 
 
 def list_intake(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
@@ -167,13 +182,13 @@ def list_intake(*, tenant_id: str | None = None, project: str | None = None, env
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     with connect() as connection:
         rows = connection.execute(f"SELECT * FROM ai_use_cases {where} ORDER BY updated_at DESC", params).fetchall()
-    return [dict(row) for row in rows]
+    return [_decode_intake(row) for row in rows]
 
 
 def load_intake(intake_id: str) -> dict[str, Any] | None:
     with connect() as connection:
         row = connection.execute("SELECT * FROM ai_use_cases WHERE intake_id = ?", (intake_id,)).fetchone()
-    return None if row is None else dict(row)
+    return None if row is None else _decode_intake(row)
 
 
 def intake_submitter(intake_id: str) -> str | None:
@@ -192,4 +207,10 @@ def set_intake_status(intake_id: str, status: str) -> dict[str, Any]:
             "UPDATE ai_use_cases SET status = ?, updated_at = datetime('now') WHERE intake_id = ?",
             (status, intake_id),
         )
-        return dict(connection.execute("SELECT * FROM ai_use_cases WHERE intake_id = ?", (intake_id,)).fetchone())
+        if status in {"recertified", "retired"}:
+            # the recertification clock restarts (or stops); an open reminder
+            # task for the old certification is done
+            from .policy_engine import close_recertification_tasks
+
+            close_recertification_tasks(connection, intake_id)
+        return _decode_intake(connection.execute("SELECT * FROM ai_use_cases WHERE intake_id = ?", (intake_id,)).fetchone())
