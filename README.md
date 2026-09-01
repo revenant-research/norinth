@@ -130,23 +130,6 @@ require it. Sessions end after a period of inactivity.
 
 ![TOTP enrollment](docs/images/security-mfa.png)
 
-## Planned: the governance policy engine
-
-Today the approval workflow is fixed: one reviewer approves or rejects each
-submitted system. The next planned capability lets each organization define its
-own policy as a versioned document: how many approval stages each risk tier
-needs and which roles decide them, how often systems must be recertified, what
-evidence each environment's gates require, extra intake form fields, and a
-vendor registry checked against the providers seen in telemetry.
-
-The rules that make decisions trustworthy do not become configurable. The
-submitter still cannot approve, decisions are still final and audit-logged, and
-gates still require evidence. Every decision records the policy version that
-governed it, so the packet can show which rules were in force at the time.
-
-The design is in
-[`docs/design/governance-policy-engine.md`](docs/design/governance-policy-engine.md).
-It is not part of a release yet.
 
 ## How it works
 
