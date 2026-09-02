@@ -32,6 +32,7 @@ from app.dependencies import SESSION_COOKIE
 from app.ingestion.routes import router as ingestion_router
 from app.services.auth import resolve_session
 from app.services.bootstrap import seed_dev_ingestion_key_if_dev, seed_super_admin
+from app.services.fold_sweeper import start_worker as start_fold_sweeper
 from app.services.maintenance import start_worker as start_maintenance_worker
 from app.services.notifications import start_worker as start_notification_worker
 from app.storage.audit import ensure_audit_hmac_backfill
@@ -89,6 +90,7 @@ run_migrations()
 ensure_audit_hmac_backfill()
 start_notification_worker()
 start_maintenance_worker()
+start_fold_sweeper()
 
 
 def _outbox_pending() -> float:
@@ -101,12 +103,42 @@ def _outbox_pending() -> float:
     return float(row["n"])
 
 
+def _fold_pending() -> float:
+    """raw events stored but not yet folded into derived state
+
+    zero on a healthy install; a sustained non-zero value means the fold is
+    failing and evidence is lagging the raw record — the shape of failure this
+    platform must never hide. the partial index keeps the count cheap
+    """
+    from app.storage.raw_events import count_unfolded
+
+    return float(count_unfolded())
+
+
+def _fold_quarantined() -> float:
+    """pending rows that have exhausted the fold retry budget
+
+    these will not fold without intervention (a fix, then the sweeper picks them
+    up), so any non-zero value is an alert, not just a lag
+    """
+    from app.storage.fold import max_attempts
+    from app.storage.raw_events import count_quarantined
+
+    return float(count_quarantined(max_attempts()))
+
+
 # scrape-time gauge: the outbox is small by design (delivered rows age out),
 # so the count is cheap, and a growing value is the earliest sign deliveries
 # are failing
 from app.services.observability import gauge_callback  # noqa: E402
 
 gauge_callback("norinth_outbox_pending", "Notification outbox rows awaiting delivery", _outbox_pending)
+gauge_callback("norinth_fold_pending", "Raw events stored but not yet folded into derived state", _fold_pending)
+gauge_callback(
+    "norinth_fold_quarantined",
+    "Unfolded raw events that have exhausted the fold retry budget",
+    _fold_quarantined,
+)
 seed_super_admin()
 seed_dev_ingestion_key_if_dev()
 app.include_router(ingestion_router)

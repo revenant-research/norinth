@@ -16,18 +16,12 @@ from app.dependencies import ingestion_tenant
 from app.ingestion.otel import OtelPayloadError, otel_spans_to_events
 from app.schemas.events import MAX_BATCH_EVENTS, EventBatch
 from app.services.attestation import AttestationError, verify_eval_attestation
-from app.storage.agents import refresh_agent_posture
 from app.storage.attestation_keys import load_active_attestation_key, touch_attestation_key
 from app.storage.audit import record_audit
-from app.storage.deployments import find_gate_for_release, process_deployment_events, refresh_deployment_gates
-from app.storage.entities import process_events
-from app.storage.governance_policy import fold_batch_assessments
-from app.storage.incidents import process_incident_events
-from app.storage.lifecycle import fold_batch_fingerprints
-from app.storage.policy_engine import refresh_vendor_posture
-from app.storage.prompts import process_prompt_events
+from app.storage.deployments import find_gate_for_release
+from app.storage.fold import batch_scopes as batch_scopes  # re-exported: tests import it from this module
+from app.storage.fold import fold_pending
 from app.storage.raw_events import insert_events
-from app.storage.workflow import expire_due_exceptions, refresh_workflow_state
 
 router = APIRouter()
 
@@ -214,50 +208,23 @@ def _verify_eval_attestations(events: list[dict[str, Any]], tenant_id: str) -> N
         touch_attestation_key(key_id)
 
 
-def batch_scopes(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """scopes a batch touches; derived state recomputes only for these"""
-    seen: dict[tuple, dict[str, Any]] = {}
-    for event in events:
-        metadata = (event.get("attributes") or {}).get("metadata") or {}
-        application_name = metadata.get("application_name")
-        if not application_name:
-            continue
-        scope = {
-            "tenant_id": metadata.get("tenant_id"),
-            "project": event.get("project"),
-            "environment": event.get("environment"),
-            "application_name": application_name,
-        }
-        seen[tuple(scope.values())] = scope
-    return list(seen.values())
-
-
 def _ingest(events: list[dict[str, Any]], tenant_id: str) -> dict[str, Any]:
     # validate and bind before any write so a bad batch is a clean 422, not a partial insert
     _validate_event_attributes(events)
     _bind_events_to_tenant(events, tenant_id)
     _verify_eval_attestations(events, tenant_id)
-    # project only the newly inserted events; a retried batch inserts nothing, so
-    # it must not re-run the increment projections and double-count metrics
     inserted = insert_events(events)
-    if inserted:
-        process_events(inserted)
-        process_prompt_events(inserted)
-        process_deployment_events(inserted)
-        process_incident_events(inserted)
-        # expire lapsed exceptions (reopens their findings) before recompute
-        expire_due_exceptions()
-        # fold the batch into derived state at O(batch): the full refresh_*
-        # functions re-read (and with encryption on, decrypt) each touched
-        # app's entire history, a cost that grows with every successful day.
-        # they remain the rebuild path; the request path folds
-        scopes = batch_scopes(inserted)
-        fold_batch_fingerprints(inserted)
-        fold_batch_assessments(inserted)
-        refresh_agent_posture([tenant_id])
-        refresh_vendor_posture([tenant_id])
-        refresh_workflow_state(scopes)
-        refresh_deployment_gates(scopes)
+    # insert_events commits the raw rows as pending (folded_at NULL); fold_pending
+    # then projects everything still pending for this tenant into derived state —
+    # this batch, and anything an earlier batch stored but failed to fold. driving
+    # the fold from the durable ledger instead of the freshly-inserted set is the
+    # fix for the unrecoverable partial fold: a retried batch inserts nothing, but
+    # any row it left unfolded is still pending and gets folded now. a fold failure
+    # re-raises (the client learns the projection did not complete and its retry
+    # re-folds), the raw rows stay stored and pending, and the sweeper is the
+    # backstop for a client that never retries. counted_at keeps the one increment
+    # projection exactly-once, so re-folding never double counts.
+    fold_pending(tenant_id)
     return {"accepted": len(inserted)}
 
 

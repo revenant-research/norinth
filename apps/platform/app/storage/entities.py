@@ -200,18 +200,62 @@ RUNTIME_EVENT_TYPES = frozenset(
 )
 
 
-def process_events(events: list[dict[str, Any]]) -> None:
-    # entity upserts are read-modify-write on json set columns; under concurrent
-    # ingest two batches could each read the old set and the second write clobber
-    # the first, dropping a provider/model. run the batch in one IMMEDIATE
-    # transaction so a concurrent ingest waits for the write lock, then reads the
-    # committed state, making the merge safe
+# chunk id-list statements well under postgres's bound-parameter limit
+_COUNTED_ID_CHUNK = 500
+
+
+def _uncounted_ids(connection, ids: list[int]) -> set[int]:
+    """of the given sdk_events ids, those not yet counted into the inventory"""
+    uncounted: set[int] = set()
+    for start in range(0, len(ids), _COUNTED_ID_CHUNK):
+        chunk = ids[start : start + _COUNTED_ID_CHUNK]
+        placeholders = ", ".join("?" for _ in chunk)
+        rows = connection.execute(
+            f"SELECT id FROM sdk_events WHERE counted_at IS NULL AND id IN ({placeholders})",
+            tuple(chunk),
+        ).fetchall()
+        uncounted.update(row["id"] for row in rows)
+    return uncounted
+
+
+def _stamp_counted(connection, ids: list[int]) -> None:
+    for start in range(0, len(ids), _COUNTED_ID_CHUNK):
+        chunk = ids[start : start + _COUNTED_ID_CHUNK]
+        placeholders = ", ".join("?" for _ in chunk)
+        connection.execute(
+            f"UPDATE sdk_events SET counted_at = datetime('now') WHERE id IN ({placeholders})",
+            tuple(chunk),
+        )
+
+
+def process_events(pending: list[dict[str, Any]]) -> None:
+    """fold a claimed set of raw rows into the inventory, exactly once per row
+
+    `pending` is [{"id": sdk_events.id, "event": event}, ...]. this is the one
+    projection that increments (model_calls, tokens), so it must count each row
+    exactly once even when the surrounding fold is retried after a later step
+    failed. the count and the per-row counted_at stamp share one transaction:
+    a row already stamped is skipped, and the stamp commits with the increment,
+    so a re-fold cannot double count.
+
+    entity upserts are also read-modify-write on json set columns; under
+    concurrent ingest two batches could each read the old set and the second
+    clobber the first, dropping a provider/model. one IMMEDIATE transaction makes
+    both concerns safe: a concurrent fold waits for the write lock, then reads the
+    committed counted_at (skipping already-counted rows) and the committed sets.
+    """
+    if not pending:
+        return
     connection = connect()
     connection.isolation_level = None
     try:
         connection.execute("BEGIN IMMEDIATE")
-        for event in events:
-            process_event(connection, event)
+        uncounted = _uncounted_ids(connection, [row["id"] for row in pending])
+        for row in pending:
+            if row["id"] in uncounted:
+                process_event(connection, row["event"])
+        if uncounted:
+            _stamp_counted(connection, sorted(uncounted))
         connection.execute("COMMIT")
     except Exception:
         connection.execute("ROLLBACK")

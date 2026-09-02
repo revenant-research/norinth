@@ -184,6 +184,110 @@ def insert_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return inserted
 
 
+# --- fold ledger --------------------------------------------------------------
+#
+# insert_events commits the raw row with folded_at / counted_at NULL (pending).
+# the fold projects it into derived state, then mark_folded stamps folded_at.
+# a fold that fails leaves the row pending, so the next batch and the sweeper
+# re-fold it instead of losing it. see migration _0023_fold_ledger.
+
+# chunk id-list statements well under postgres's bound-parameter limit
+_FOLD_ID_CHUNK = 500
+
+
+def claim_unfolded(
+    tenant_id: str | None, *, limit: int, max_attempts: int | None = None
+) -> list[dict[str, Any]]:
+    """oldest pending rows for a tenant, as [{"id", "event"}], for folding
+
+    max_attempts excludes rows that have already failed that many folds so a
+    poison row cannot wedge live ingest; pass None (the sweeper) to include them
+    """
+    clauses = ["folded_at IS NULL", "tenant_id = :tenant_id"]
+    params: dict[str, Any] = {"tenant_id": tenant_id, "limit": limit}
+    if max_attempts is not None:
+        clauses.append("fold_attempts < :max_attempts")
+        params["max_attempts"] = max_attempts
+    where = " AND ".join(clauses)
+    with connect() as connection:
+        rows = connection.execute(
+            f"SELECT id, raw_event FROM sdk_events WHERE {where} ORDER BY id LIMIT :limit",
+            params,
+        ).fetchall()
+    return [{"id": row["id"], "event": deserialize_raw_event(row["raw_event"])} for row in rows]
+
+
+def mark_folded(ids: list[int]) -> None:
+    """stamp folded_at on rows whose fold completed; already-folded rows are left
+    as they are so a concurrent fold of the same rows is a no-op"""
+    if not ids:
+        return
+    with connect() as connection:
+        for start in range(0, len(ids), _FOLD_ID_CHUNK):
+            chunk = ids[start : start + _FOLD_ID_CHUNK]
+            placeholders = ", ".join("?" for _ in chunk)
+            connection.execute(
+                f"UPDATE sdk_events SET folded_at = datetime('now') "
+                f"WHERE folded_at IS NULL AND id IN ({placeholders})",
+                tuple(chunk),
+            )
+
+
+def record_fold_attempt(ids: list[int], error: str) -> None:
+    """count a failed fold against the given rows and record the last error
+
+    committed in its own connection so it survives the exception that is about to
+    be re-raised; the attempt count is what eventually quarantines a poison row
+    """
+    if not ids:
+        return
+    detail = (error or "")[:500]
+    with connect() as connection:
+        for start in range(0, len(ids), _FOLD_ID_CHUNK):
+            chunk = ids[start : start + _FOLD_ID_CHUNK]
+            placeholders = ", ".join("?" for _ in chunk)
+            connection.execute(
+                f"UPDATE sdk_events SET fold_attempts = fold_attempts + 1, fold_error = ? "
+                f"WHERE folded_at IS NULL AND id IN ({placeholders})",
+                (detail, *chunk),
+            )
+
+
+def tenants_with_unfolded() -> list[str]:
+    """tenants that have at least one pending row, for the sweeper to fold
+
+    NULL-tenant rows (only reachable by a direct storage insert, never by the
+    tenant-bound ingest path) are skipped: the fold projections are tenant-scoped
+    """
+    with connect() as connection:
+        rows = connection.execute(
+            "SELECT DISTINCT tenant_id FROM sdk_events WHERE folded_at IS NULL AND tenant_id IS NOT NULL"
+        ).fetchall()
+    return [row["tenant_id"] for row in rows]
+
+
+def count_unfolded(tenant_id: str | None = None) -> int:
+    clause = "WHERE folded_at IS NULL"
+    params: dict[str, Any] = {}
+    if tenant_id is not None:
+        clause += " AND tenant_id = :tenant_id"
+        params["tenant_id"] = tenant_id
+    with connect() as connection:
+        row = connection.execute(f"SELECT COUNT(*) AS count FROM sdk_events {clause}", params).fetchone()
+    return int(row["count"])
+
+
+def count_quarantined(max_attempts: int) -> int:
+    """pending rows that have exhausted the fold retry budget — the count an
+    operator alerts on, since these need a fix before they can fold"""
+    with connect() as connection:
+        row = connection.execute(
+            "SELECT COUNT(*) AS count FROM sdk_events WHERE folded_at IS NULL AND fold_attempts >= :max_attempts",
+            {"max_attempts": max_attempts},
+        ).fetchone()
+    return int(row["count"])
+
+
 def as_int(value: Any) -> int:
     """a usage counter from client data; anything not countable becomes 0
 

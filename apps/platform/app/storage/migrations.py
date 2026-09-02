@@ -467,6 +467,56 @@ def _0022_governance_policy_engine(connection) -> None:
         )
 
 
+def _0023_fold_ledger(connection) -> None:
+    """durable fold ledger on raw events so a mid-fold failure is recoverable
+
+    ingest commits the raw event, then folds it into derived state in a dozen
+    independent steps, each its own connection and commit. a failure between the
+    commit and the end of the fold left the event stored but never projected, and
+    because the insert is idempotent the client's retry inserted nothing and the
+    old `if inserted:` guard skipped the fold entirely — the evidence was then
+    permanently stored and permanently unfolded, with nothing reporting an error.
+
+    these columns turn the fold into a tracked unit of work:
+      folded_at   NULL until every projection for the row has run. the request
+                  path and the sweeper both fold whatever is still NULL, so a
+                  failed fold is retried instead of lost.
+      counted_at  NULL until the one non-idempotent projection (the inventory
+                  increment in entities.process_events) has counted the row. it
+                  is stamped inside that projection's own IMMEDIATE transaction,
+                  so the increment happens exactly once even when the surrounding
+                  fold is retried after a later step failed.
+      fold_attempts / fold_error  make a row that keeps failing to fold visible
+                  (a gauge counts them) and let the request path skip a poison row
+                  past a retry budget so live ingest is never wedged.
+
+    every row already in the table was folded by the pre-ledger code path, so
+    backfill it done — both timestamps set to its ingest time. an upgrade must
+    never re-fold history and double count the inventory. only rows inserted
+    after this migration start NULL and therefore pending.
+    """
+    if not _has_column(connection, "sdk_events", "folded_at"):
+        connection.execute("ALTER TABLE sdk_events ADD COLUMN folded_at TEXT")
+        connection.execute(
+            "UPDATE sdk_events SET folded_at = COALESCE(ingested_at, timestamp) WHERE folded_at IS NULL"
+        )
+    if not _has_column(connection, "sdk_events", "counted_at"):
+        connection.execute("ALTER TABLE sdk_events ADD COLUMN counted_at TEXT")
+        connection.execute(
+            "UPDATE sdk_events SET counted_at = COALESCE(ingested_at, timestamp) WHERE counted_at IS NULL"
+        )
+    if not _has_column(connection, "sdk_events", "fold_attempts"):
+        connection.execute("ALTER TABLE sdk_events ADD COLUMN fold_attempts INTEGER NOT NULL DEFAULT 0")
+    if not _has_column(connection, "sdk_events", "fold_error"):
+        connection.execute("ALTER TABLE sdk_events ADD COLUMN fold_error TEXT")
+    # partial index so claiming pending rows stays O(pending), not a full-table
+    # scan of all history; once the backlog drains the index is empty
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_sdk_events_fold_pending "
+        "ON sdk_events(tenant_id, id) WHERE folded_at IS NULL"
+    )
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
@@ -490,6 +540,7 @@ MIGRATIONS: list[Migration] = [
     Migration(20, "per-organization mfa requirement", _0020_org_require_mfa),
     Migration(21, "workflow and system indexes for the detail views", _0021_detail_view_indexes),
     Migration(22, "governance policy engine (policies, approval stages, vendor registry)", _0022_governance_policy_engine),
+    Migration(23, "durable fold ledger on raw events for recoverable ingest", _0023_fold_ledger),
 ]
 
 
