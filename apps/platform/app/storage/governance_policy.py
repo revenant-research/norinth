@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 from . import db
-from .entities import as_object, decode_json, encode_json, entity_id
+from .entities import as_int, as_object, decode_json, encode_json, entity_id
 from .errors import DomainError
 from .raw_events import connect, deserialize_raw_event
 from .scoping import count_scoped_rows, scoped_rows
@@ -27,6 +27,7 @@ SUPPORTED_RISK_SIGNALS = {
     "missing_agent_run",
     "operational_errors",
     "retired_system_telemetry",
+    "evidence_delivery_not_durable",
     # agentic signals, evaluated by storage/agents.py against the registry, not
     # by the generic event evaluator
     "unregistered_agent",
@@ -162,6 +163,15 @@ DEFAULT_RISK_RULES = [
         "rationale": "A system recorded as retired is still emitting production telemetry: either the "
         "retirement record is wrong or the system was never actually shut down. Decommissioning must be "
         "verifiable.",
+    },
+    {
+        "rule_id": "RISK-EVD-001",
+        "name": "Evidence delivery is not durable",
+        "signal": "evidence_delivery_not_durable",
+        "severity": "High",
+        "framework_refs": ["SOC 2 CC7.2", "NIST AI RMF GOVERN 1.5"],
+        "rationale": "The SDK reported that it has no spool for undelivered batches, or that it has already "
+        "dropped events. A batch the SDK drops is a gap in the audit record that nothing else can fill.",
     },
 ]
 
@@ -551,6 +561,34 @@ def assess_risk_rules(connection, app_context: dict[str, Any], rules: list[dict[
                         late,
                         f"{len(late)} event(s) observed after the system was retired at {retired_since}",
                     )
+        if signal == "evidence_delivery_not_durable":
+            undurable = _undurable_health_events(events)
+            if undurable:
+                upsert_rule_finding(connection, app_context, rule, undurable, _delivery_summary(undurable))
+
+
+def _undurable_health_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """sdk.health events reporting a dropped batch or no spool to hold one
+
+    an older SDK that does not report spool_configured is flagged only on an
+    actual drop, so upgrading the platform does not raise a finding against
+    every service until its SDK can say either way
+    """
+    flagged = []
+    for event in events:
+        if event.get("type") != "sdk.health":
+            continue
+        attrs = event.get("attributes") or {}
+        if as_int(attrs.get("dropped")) > 0 or attrs.get("spool_configured") is False:
+            flagged.append(event)
+    return flagged
+
+
+def _delivery_summary(events: list[dict[str, Any]]) -> str:
+    dropped = max((as_int((event.get("attributes") or {}).get("dropped")) for event in events), default=0)
+    if dropped:
+        return f"SDK reports {dropped} event(s) dropped without a spool to hold them"
+    return "SDK reports no spool for undelivered batches, so a delivery failure loses evidence"
 
 
 def _normalize_ts(value: str | None) -> str:
@@ -739,12 +777,16 @@ def _fold_controls(connection, app_context: dict[str, Any], controls: list[dict[
         _write_assessment(connection, app_context, control, "passing", merged, prior_count + len(evidence))
 
 
-def _assess_rules_from_columns(connection, app_context: dict[str, Any], rules: list[dict[str, Any]]) -> None:
+def _assess_rules_from_columns(
+    connection, app_context: dict[str, Any], rules: list[dict[str, Any]], batch: list[dict[str, Any]] | None = None
+) -> None:
     """risk-rule conditions from column aggregates instead of an event scan
 
     reproduces assess_risk_rules over full history: findings are create/update
     only (they resolve through human decisions, never automatically), and
-    every condition is expressible over the extracted columns
+    every condition is expressible over the extracted columns. the one
+    exception reads sdk.health attributes, which are not extracted, from the
+    batch that is already in memory in plaintext
     """
     counts, errors_total, providers, use_cases = _app_event_stats(connection, app_context)
     app_text = " ".join([app_context["application_name"], *use_cases]).lower()
@@ -806,6 +848,10 @@ def _assess_rules_from_columns(connection, app_context: dict[str, Any], rules: l
                         _recent_trace_ids(connection, app_context, after_timestamp=retired_since),
                         f"{late_count} event(s) observed after the system was retired at {retired_since}",
                     )
+        if signal == "evidence_delivery_not_durable":
+            undurable = _undurable_health_events(batch or [])
+            if undurable:
+                upsert_rule_finding(connection, app_context, rule, undurable, _delivery_summary(undurable))
 
 
 def fold_batch_assessments(events: list[dict[str, Any]]) -> None:
@@ -829,7 +875,7 @@ def fold_batch_assessments(events: list[dict[str, Any]]) -> None:
                 controls_by_tenant[tid] = list_control_library(connection, tid)
                 rules_by_tenant[tid] = list_risk_rules(connection, tid)
             _fold_controls(connection, app_context, controls_by_tenant[tid], batch)
-            _assess_rules_from_columns(connection, app_context, rules_by_tenant[tid])
+            _assess_rules_from_columns(connection, app_context, rules_by_tenant[tid], batch)
 
 
 def upsert_rule_finding(

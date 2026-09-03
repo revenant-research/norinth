@@ -160,3 +160,67 @@ def test_packet_reports_tenant_audit_count_not_platform_total(super_admin_client
     assert all(entry["tenant_id"] == "delta" for entry in trail["recent_entries"])
     org_a.close()
     org_b.close()
+
+
+def _sdk_health(tenant: str, span: str, **attributes) -> dict:
+    return {
+        "type": "sdk.health",
+        "schema_version": "2026-01",
+        "trace_id": f"trc_{span}",
+        "span_id": f"spn_{span}",
+        "timestamp": datetime.now(UTC).isoformat(),
+        "service": "svc",
+        "environment": "prod",
+        "project": "p1",
+        "name": "initialized",
+        "status": "success",
+        "attributes": {
+            "mode": "observe",
+            "fail_open": True,
+            "failed_sends": 0,
+            "dropped": 0,
+            **attributes,
+            "metadata": {"tenant_id": tenant, "application_name": f"{tenant}-app"},
+        },
+    }
+
+
+def test_sdk_without_a_spool_is_an_evidence_finding(super_admin_client):
+    """a batch the SDK drops is a gap in the audit record; the platform cannot
+    see the dropped events, but it can see the SDK admit it may drop them"""
+    org, headers = _org(super_admin_client, "delta")
+
+    # a spooling SDK is not a finding
+    ok = _sdk_health("delta", "h1", spool_configured=True, durable=False)
+    assert org.post("/v1/events/batch", json={"events": [ok]}, headers=headers).status_code == 200
+    risks = org.get("/api/risk-register").json()["risks"]
+    assert not any(r["rule_id"] == "RISK-EVD-001" for r in risks)
+
+    # an older SDK that cannot say either way is not a finding until it drops
+    legacy = _sdk_health("delta", "h2")
+    assert org.post("/v1/events/batch", json={"events": [legacy]}, headers=headers).status_code == 200
+    risks = org.get("/api/risk-register").json()["risks"]
+    assert not any(r["rule_id"] == "RISK-EVD-001" for r in risks)
+
+    # no spool: finding
+    bare = _sdk_health("delta", "h3", spool_configured=False, durable=False)
+    assert org.post("/v1/events/batch", json={"events": [bare]}, headers=headers).status_code == 200
+    risks = org.get("/api/risk-register").json()["risks"]
+    finding = next((r for r in risks if r["rule_id"] == "RISK-EVD-001"), None)
+    assert finding is not None, "an SDK with no spool produced no finding"
+    assert finding["status"] == "open"
+    assert finding["severity"] == "High"
+    assert finding["application_name"] == "delta-app"
+    assert "no spool" in finding["evidence_summary"]
+    org.close()
+
+
+def test_sdk_that_dropped_events_is_an_evidence_finding(super_admin_client):
+    org, headers = _org(super_admin_client, "eps")
+    dropped = _sdk_health("eps", "h1", dropped=7)
+    assert org.post("/v1/events/batch", json={"events": [dropped]}, headers=headers).status_code == 200
+    risks = org.get("/api/risk-register").json()["risks"]
+    finding = next((r for r in risks if r["rule_id"] == "RISK-EVD-001"), None)
+    assert finding is not None, "an SDK reporting dropped events produced no finding"
+    assert "7 event(s) dropped" in finding["evidence_summary"]
+    org.close()

@@ -49,15 +49,18 @@ class NorinthConfig:
     # written to disk and retried next flush instead of dropped
     max_send_retries: int = 3
     retry_backoff_seconds: float = 0.5
+    # None picks a private per-service directory (see spool.py); "off" disables
+    # spooling; anything else is used as given. with capture_content on there is
+    # no default, so raw content never lands on disk unasked
     spool_dir: str | None = None
     spool_max_bytes: int = 32 * 1024 * 1024
     # evidence-grade delivery. the defaults above are tuned for observability in a
-    # request path: async, fail-open, bounded queue, drop rather than block the
-    # host app. that trade is wrong when the events are the compliance record, and
-    # the failure is silent -- you find out at audit. durable=True refuses to
-    # construct a client without a spool, so the deployment fails at startup
-    # instead. it does not make delivery synchronous; it makes the durability
-    # decision explicit and checked
+    # request path: async, fail-open, bounded queue, never block the host app. a
+    # batch that fails every retry is spooled when there is somewhere to put it
+    # and dropped otherwise, and a drop is silent -- you find out at audit.
+    # durable=True refuses to construct a client without a spool, so such a
+    # deployment fails at startup instead. it does not make delivery
+    # synchronous; it makes the durability decision explicit and checked
     durable: bool = False
 
     @property

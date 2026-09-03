@@ -50,19 +50,20 @@ automatically. Higher-level governance events (`prompt`, `deployment`,
 `incident`, `guardrail`, `eval_result`, `agent_run`, `retrieval`, `tool_call`)
 can be emitted explicitly through the SDK API.
 
-Delivery is fail-open by default: the SDK never blocks your application, and a
-batch that cannot be delivered after retries is dropped. That is the right
-trade for observability and the wrong one when these events are your compliance
-record. If they are, set two more variables before you go to production:
+Delivery is fail-open and durable by default: the SDK never blocks your
+application, and a batch that cannot be delivered after retries waits in a
+private spool directory on local disk and is resent on a later flush. Nothing
+needs configuring for that. If these events are your compliance record, add
+one more variable before you go to production:
 
 ```bash
-export NORINTH_SPOOL_DIR=/var/lib/norinth/spool   # undelivered batches wait here and are resent
-export NORINTH_DURABLE=true                       # refuse to start without a spool
+export NORINTH_DURABLE=true    # refuse to start if there is nowhere to spool
 ```
 
-The SDK logs one warning at startup while no spool is configured, so a
-deployment that forgot is visible in its own logs from the first boot. See
-[Safety defaults](#safety-defaults) for the details.
+Two cases turn the default spool off, and the SDK logs one warning at startup
+whenever it has no spool: content capture is on (raw prompts are never written
+to a location you did not choose; set `NORINTH_SPOOL_DIR` explicitly), or no
+candidate directory is writable. See [Safety defaults](#safety-defaults).
 
 ## Command line: `norinth`
 
@@ -148,18 +149,32 @@ themselves; the platform strips it and sets it only after verification.
   (old and new fingerprints stop linking) — pin `NORINTH_SIGNING_SECRET` if
   fingerprint continuity across services or key rotation matters to you.
 - **Fail-open with durability.** If the platform is unreachable or transport
-  fails, your code keeps running. Transient failures are retried with backoff;
-  set `NORINTH_SPOOL_DIR` to persist un-delivered batches to disk and redeliver
-  them on recovery instead of dropping evidence.
+  fails, your code keeps running. Transient failures are retried with backoff,
+  and a batch that still cannot be delivered is written to a spool directory
+  and resent on a later flush, including after a restart.
 
-  Be clear-eyed about the default: async delivery with a bounded in-memory queue
-  (`max_queue_size`, default 1000) *will* drop events if the queue fills or
-  delivery keeps failing and no spool is configured. That trade is right for
-  observability in a request path and wrong when the events are your compliance
-  record. If you are relying on this telemetry as evidence, set
-  `NORINTH_DURABLE=true` alongside `NORINTH_SPOOL_DIR`: the client then refuses
-  to start without a spool, so the deployment fails at boot rather than at audit.
-  Drop counts are reported on the `sdk.health` event.
+  The spool is on by default. The SDK picks a private directory (mode `0700`)
+  under `$XDG_STATE_HOME/norinth/spool`, then `~/.local/state/norinth/spool`,
+  then the system temp directory, keyed by a hash of the endpoint, key and
+  service so two services on one host never resend each other's batches. It
+  is bounded (`spool_max_bytes`, default 32 MiB) and safe to share between the
+  workers of a prefork server: a batch is claimed by rename before it is sent,
+  and a claim left by a dead worker is released after five minutes. Set
+  `NORINTH_SPOOL_DIR=/path` to choose the directory, or `NORINTH_SPOOL_DIR=off`
+  to disable spooling. With `NORINTH_CAPTURE_CONTENT=true` there is no default
+  spool, because the batches then hold raw prompts and responses; set
+  `NORINTH_SPOOL_DIR` to a directory you control.
+
+  Be clear-eyed about what can still be lost: the in-memory queue is bounded
+  (`max_queue_size`, default 1000) and drops when full, a full spool drops, and
+  a batch the platform rejects permanently is dropped rather than retried
+  forever. The SDK logs one warning at startup whenever it has no spool. If
+  you are relying on this telemetry as evidence, set `NORINTH_DURABLE=true`:
+  the client then refuses to start without a spool, so the deployment fails at
+  boot rather than at audit. Every `sdk.health` event reports `durable`,
+  `spool_configured` and the `dropped` and `spooled` counters, and the
+  platform raises a risk finding against an application whose SDK reports no
+  spool or a dropped batch.
 - **Content capture is opt-in.** Set `NORINTH_CAPTURE_CONTENT=true` only in a
   controlled environment where raw prompt/response capture is intended. Even
   then, only JSON-native content is captured (never a repr of a client or config

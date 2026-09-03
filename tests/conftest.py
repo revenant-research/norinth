@@ -58,6 +58,13 @@ def _reset_postgres_schema() -> None:
         connection.execute("CREATE SCHEMA public")
 
 
+@pytest.fixture(autouse=True)
+def _isolated_sdk_spool(tmp_path, monkeypatch):
+    """the sdk spools undelivered batches under XDG_STATE_HOME by default; keep
+    test batches out of the developer's real state directory"""
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "xdg-state"))
+
+
 @pytest.fixture
 def fresh_db(tmp_path, monkeypatch):
     """point the platform at a fresh initialized db"""
