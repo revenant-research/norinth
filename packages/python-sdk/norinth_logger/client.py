@@ -23,6 +23,7 @@ from .privacy import (
     summarize_value,
 )
 from .schemas import NorinthEvent, new_id
+from .spool import resolve_spool_dir, spool_off_reason
 from .transport import EventTransport
 
 # an incident title is a label, not a narrative; cap it so a pasted record
@@ -32,14 +33,17 @@ _MAX_TITLE_LEN = 200
 
 class NorinthClient:
     def __init__(self, config: NorinthConfig) -> None:
-        if config.durable and not config.spool_dir:
+        spool_dir = resolve_spool_dir(config)
+        if config.durable and not spool_dir:
+            # strict mode: a deployment that treats these events as evidence
+            # fails here, at boot, instead of at audit
             raise ValueError(
-                "durable delivery requires spool_dir: without a disk spool the transport "
-                "drops events when the queue fills or delivery keeps failing, and the loss "
-                "is only visible in the SDK's own counters"
+                f"durable delivery requires a spool and {spool_off_reason(config)}. Without a spool "
+                "the transport drops events when delivery keeps failing, and the loss is only "
+                "visible in the SDK's own counters"
             )
         self.config = config
-        self.transport = EventTransport(config)
+        self.transport = EventTransport(config, spool_dir=spool_dir)
         self.emit_sdk_health("initialized")
 
     def record(self, event: NorinthEvent) -> None:
@@ -118,7 +122,7 @@ class NorinthClient:
                     # report the durability posture so the platform can tell a
                     # service that may drop evidence from one that spools it
                     "durable": self.config.durable,
-                    "spool_configured": bool(self.config.spool_dir),
+                    "spool_configured": bool(self.transport.spool_dir),
                 },
             )
         )

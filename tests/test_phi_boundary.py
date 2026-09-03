@@ -145,15 +145,23 @@ def test_incident_title_is_redacted_and_capped():
 # --- delivery durability ----------------------------------------------------------
 
 
-def test_durable_delivery_refuses_to_start_without_a_spool(tmp_path):
-    """a deployment that means to keep every event should fail at startup, not at audit"""
+def test_durable_delivery_refuses_to_start_without_a_spool(tmp_path, monkeypatch):
     import pytest
+    from norinth_logger.client import NorinthClient
 
-    with pytest.raises(ValueError, match="spool_dir"):
+    # strict mode fails at boot when there is nowhere to spool: switched off,
+    # content capture without a chosen directory, or no writable location
+    with pytest.raises(ValueError, match="switched off"):
+        NorinthClient(NorinthConfig(api_key="test", durable=True, spool_dir="off"))
+    with pytest.raises(ValueError, match="content capture"):
+        NorinthClient(NorinthConfig(api_key="test", durable=True, capture_content=True))
+    monkeypatch.setattr("norinth_logger.spool.default_spool_candidates", lambda config: [])
+    with pytest.raises(ValueError, match="no writable spool directory"):
         NorinthClient(NorinthConfig(api_key="test", durable=True))
 
     client = NorinthClient(NorinthConfig(api_key="test", durable=True, spool_dir=str(tmp_path)))
-    assert client.config.spool_dir == str(tmp_path)
+    assert client.transport.spool_dir == str(tmp_path)
+
 
 
 # --- end to end -------------------------------------------------------------------

@@ -23,14 +23,29 @@ Semantic Versioning.
 
 ### Changed
 
-- **The SDK says at startup when it may drop evidence.** Durable delivery is
-  off by default: a batch that fails every retry is dropped, and until now the
-  only signal was a warning at the moment of the drop, in the host
-  application's logs. The SDK now logs one warning when it starts without a
-  spool, naming `NORINTH_SPOOL_DIR` and `NORINTH_DURABLE`, and every
+- **The SDK spools undelivered batches by default.** A batch that fails every
+  retry used to be dropped unless the operator had found `NORINTH_SPOOL_DIR`.
+  It now waits in a private per-service directory (under `$XDG_STATE_HOME`,
+  `~/.local/state`, or the temp directory, mode `0700`, keyed by a hash of the
+  endpoint, key and service) and is resent on a later flush, including after a
+  restart. `NORINTH_SPOOL_DIR=off` disables spooling; with content capture on
+  there is no default spool, so raw prompts never land on disk in a location
+  the operator did not choose. Draining is safe across the workers of a
+  prefork server (claim by rename, stale claims released), and a batch the
+  platform rejects permanently is dropped instead of blocking the spool.
+  `NORINTH_DURABLE=true` keeps its meaning as strict mode: refuse to start
+  with nowhere to spool. The fail-open guarantee is unchanged.
+- **The SDK says at startup when it may drop evidence.** Whenever it starts
+  without a spool it logs one warning with the reason and the fix, and every
   `sdk.health` event reports `durable`, `spool_configured` and a `spooled`
-  counter so the posture is visible on the platform. Both quickstarts now
-  mention the flags. The default is unchanged.
+  counter so the posture is visible on the platform.
+
+### Added
+
+- **Risk finding for undurable evidence delivery.** `RISK-EVD-001` (Evidence
+  delivery is not durable, High) opens against an application whose SDK
+  reports no spool for undelivered batches or a dropped batch. An SDK that
+  predates the posture fields raises it only on an actual drop.
 
 ### Added
 

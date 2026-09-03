@@ -116,13 +116,15 @@ SDK-side variables (in your applications): `NORINTH_API_KEY`, `NORINTH_ENDPOINT`
 `NORINTH_CAPTURE_CONTENT` (off by default; prompts, completions and `metadata`
 values are hashed), `NORINTH_METADATA_ALLOWLIST` (extra metadata keys to keep in
 the clear), `NORINTH_CAPTURE_INCIDENT_DETAILS` (off by default; incident
-descriptions are hashed), `NORINTH_SPOOL_DIR` and `NORINTH_DURABLE` (refuse to
-start without a spool, for deployments treating telemetry as evidence). Both
-are off by default, and the SDK logs one warning at startup while no spool is
-configured. Each `sdk.health` event carries `durable`, `spool_configured` and
-the `dropped` and `spooled` counters, so a service that may be losing evidence
-is visible on the platform under Telemetry.
-See `packages/python-sdk/README.md`.
+descriptions are hashed), `NORINTH_SPOOL_DIR` (where undelivered batches wait; a
+private per-service directory under `$XDG_STATE_HOME`, `~/.local/state` or the
+temp directory by default, `off` to disable) and `NORINTH_DURABLE` (refuse to
+start without a spool, for deployments treating telemetry as evidence). The
+SDK logs one warning at startup whenever it has no spool. Each `sdk.health`
+event carries `durable`, `spool_configured` and the `dropped` and `spooled`
+counters, and the platform raises the risk finding `RISK-EVD-001` (Evidence
+delivery is not durable) against an application whose SDK reports no spool or
+a dropped batch. See `packages/python-sdk/README.md`.
 
 Raw event bodies are encrypted at rest whenever `NORINTH_SECRET_KEY` /
 `NORINTH_SECRET_KEYS` is configured. Set `NORINTH_ENCRYPT_RAW_EVENTS=0` to opt

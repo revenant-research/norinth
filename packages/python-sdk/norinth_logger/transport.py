@@ -19,10 +19,17 @@ from urllib import request
 from urllib.error import HTTPError
 
 from .config import NorinthConfig
+from .spool import resolve_spool_dir, spool_off_reason
 
 # statuses worth retrying: server overloaded or timed out, not malformed. other
 # 4xx will be rejected again no matter what, so not retried/spooled
 _RETRIABLE_STATUS = {408, 429, 500, 502, 503, 504}
+
+# a spooled batch is claimed by renaming it before it is read, so two workers
+# of one prefork server never send the same file. a claim older than this is
+# a worker that died mid-send, and the batch goes back to the queue
+_CLAIM_SUFFIX = ".sending"
+_STALE_CLAIM_SECONDS = 300
 
 logger = logging.getLogger("norinth_logger")
 # a library must not configure the root logger; nullhandler avoids "no handlers"
@@ -48,23 +55,27 @@ class TransportStats:
 class EventTransport:
     """fail-open background-batching transport; never crash/block the host, and the worker must not die silently"""
 
-    def __init__(self, config: NorinthConfig) -> None:
+    def __init__(self, config: NorinthConfig, spool_dir: str | None = None) -> None:
         self.config = config
         self.stats = TransportStats()
+        # where undelivered batches wait, resolved from the config unless the
+        # caller already did; None means they are dropped
+        self.spool_dir: str | None = spool_dir or resolve_spool_dir(config)
         self._queue: queue.Queue[dict] = queue.Queue(maxsize=config.max_queue_size)
         self._stop = threading.Event()
         self._worker: threading.Thread | None = None
         self._lock = threading.Lock()
-        if not config.spool_dir:
-            # the default drops a batch that fails every retry, and the only
-            # signal is a warning in the host app's logs at the moment it
-            # happens. say so once at startup, with the fix, so an operator who
-            # treats these events as evidence finds out at boot instead of at
-            # audit
+        if self.spool_dir:
+            logger.info("Norinth spooling undelivered batches to %s", self.spool_dir)
+        else:
+            # without a spool a batch that fails every retry is dropped, and the
+            # only signal is a warning at the moment it happens. say so once at
+            # startup, with the reason and the fix, so an operator who treats
+            # these events as evidence finds out at boot instead of at audit
             logger.warning(
-                "Norinth durable delivery is off: a batch that fails every retry is dropped. "
-                "Set NORINTH_SPOOL_DIR to keep undelivered batches on disk, and "
-                "NORINTH_DURABLE=true to refuse to start without a spool."
+                "Norinth durable delivery is off: a batch that fails every retry is dropped. %s. "
+                "Set NORINTH_DURABLE=true to refuse to start without a spool.",
+                spool_off_reason(config),
             )
         if config.async_transport:
             self._start_worker()
@@ -233,7 +244,7 @@ class EventTransport:
     # -- spool --------------------------------------------------------------
 
     def _spool(self, payload: bytes, count: int) -> bool:
-        spool_dir = self.config.spool_dir
+        spool_dir = self.spool_dir
         if not spool_dir:
             return False
         try:
@@ -255,7 +266,7 @@ class EventTransport:
     @staticmethod
     def _spool_size(spool_dir: str) -> int:
         total = 0
-        for path in glob.glob(os.path.join(spool_dir, "*.json")):
+        for path in glob.glob(os.path.join(spool_dir, "*.json*")):
             try:
                 total += os.path.getsize(path)
             except OSError:
@@ -263,25 +274,62 @@ class EventTransport:
         return total
 
     def _drain_spool(self) -> None:
-        spool_dir = self.config.spool_dir
+        spool_dir = self.spool_dir
         if not spool_dir or not os.path.isdir(spool_dir):
             return
+        self._reclaim_stale_claims(spool_dir)
         for path in sorted(glob.glob(os.path.join(spool_dir, "*.json"))):
+            claimed = path + _CLAIM_SUFFIX
             try:
-                with open(path, "rb") as handle:
+                # rename is atomic: whoever wins the rename owns the batch
+                os.replace(path, claimed)
+                with open(claimed, "rb") as handle:
                     payload = handle.read()
             except OSError:
                 continue
+            count = self._event_count(payload)
             try:
                 self._post_once(payload)
-            except Exception:
-                # still failing; leave on disk for a later flush
-                return
-            self.stats.sent += self._event_count(payload)
+            except Exception as exc:  # noqa: BLE001 - transport must never raise into the host
+                self.stats.failed_sends += 1
+                if self._is_retriable(exc):
+                    # still failing; put it back and try the rest next flush
+                    self._release_claim(claimed, path)
+                    return
+                # a batch the server will reject forever must not block the
+                # queue behind it, so it is dropped the way a live batch is
+                self.stats.dropped += count
+                logger.warning(
+                    "Norinth ingestion rejected a spooled batch permanently; dropping %d event(s): %s", count, exc
+                )
+                self._remove(claimed)
+                continue
+            self.stats.sent += count
+            self._remove(claimed)
+
+    @staticmethod
+    def _release_claim(claimed: str, path: str) -> None:
+        try:
+            os.replace(claimed, path)
+        except OSError:
+            pass
+
+    @staticmethod
+    def _remove(path: str) -> None:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+    @staticmethod
+    def _reclaim_stale_claims(spool_dir: str) -> None:
+        cutoff = time.time() - _STALE_CLAIM_SECONDS
+        for claimed in glob.glob(os.path.join(spool_dir, f"*.json{_CLAIM_SUFFIX}")):
             try:
-                os.remove(path)
+                if os.path.getmtime(claimed) < cutoff:
+                    os.replace(claimed, claimed[: -len(_CLAIM_SUFFIX)])
             except OSError:
-                pass
+                continue
 
     @staticmethod
     def _event_count(payload: bytes) -> int:

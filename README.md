@@ -230,13 +230,13 @@ Norinth instance. Wrapping the client is the whole integration.
 If you do not have an OpenAI key, the example still works: the SDK sends its
 own health event on startup, so a system appears without the model call.
 
-You will also see one warning from the SDK at startup: durable delivery is off.
-The SDK never blocks your application, so by default a batch it cannot deliver
-after retries is dropped. That is fine for a first try. Before you rely on
-these events as evidence, set `NORINTH_SPOOL_DIR` so undelivered batches wait
-on disk, and `NORINTH_DURABLE=true` so the SDK refuses to start without a
-spool. The [SDK README](packages/python-sdk/README.md#safety-defaults) explains
-the trade.
+The SDK never blocks your application. A batch it cannot deliver after retries
+waits in a private spool directory on disk and is resent later, so a platform
+that is briefly unreachable does not cost you evidence. Before you rely on
+these events in production, set `NORINTH_DURABLE=true` so the SDK refuses to
+start if it has nowhere to spool. The
+[SDK README](packages/python-sdk/README.md#safety-defaults) explains the
+trade and how to place or disable the spool.
 
 ### 4. Look around
 
