@@ -55,6 +55,17 @@ class EventTransport:
         self._stop = threading.Event()
         self._worker: threading.Thread | None = None
         self._lock = threading.Lock()
+        if not config.spool_dir:
+            # the default drops a batch that fails every retry, and the only
+            # signal is a warning in the host app's logs at the moment it
+            # happens. say so once at startup, with the fix, so an operator who
+            # treats these events as evidence finds out at boot instead of at
+            # audit
+            logger.warning(
+                "Norinth durable delivery is off: a batch that fails every retry is dropped. "
+                "Set NORINTH_SPOOL_DIR to keep undelivered batches on disk, and "
+                "NORINTH_DURABLE=true to refuse to start without a spool."
+            )
         if config.async_transport:
             self._start_worker()
             atexit.register(self._atexit_flush)

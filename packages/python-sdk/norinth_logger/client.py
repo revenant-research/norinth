@@ -114,6 +114,11 @@ class NorinthClient:
                     "sent": stats.sent,
                     "dropped": stats.dropped,
                     "failed_sends": stats.failed_sends,
+                    "spooled": stats.spooled,
+                    # report the durability posture so the platform can tell a
+                    # service that may drop evidence from one that spools it
+                    "durable": self.config.durable,
+                    "spool_configured": bool(self.config.spool_dir),
                 },
             )
         )

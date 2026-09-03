@@ -117,7 +117,11 @@ SDK-side variables (in your applications): `NORINTH_API_KEY`, `NORINTH_ENDPOINT`
 values are hashed), `NORINTH_METADATA_ALLOWLIST` (extra metadata keys to keep in
 the clear), `NORINTH_CAPTURE_INCIDENT_DETAILS` (off by default; incident
 descriptions are hashed), `NORINTH_SPOOL_DIR` and `NORINTH_DURABLE` (refuse to
-start without a spool, for deployments treating telemetry as evidence).
+start without a spool, for deployments treating telemetry as evidence). Both
+are off by default, and the SDK logs one warning at startup while no spool is
+configured. Each `sdk.health` event carries `durable`, `spool_configured` and
+the `dropped` and `spooled` counters, so a service that may be losing evidence
+is visible on the platform under Telemetry.
 See `packages/python-sdk/README.md`.
 
 Raw event bodies are encrypted at rest whenever `NORINTH_SECRET_KEY` /

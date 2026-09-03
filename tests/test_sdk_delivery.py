@@ -135,3 +135,56 @@ def test_permanent_4xx_is_dropped_not_spooled(tmp_path):
     assert transport.stats.spooled == 0
     assert transport.stats.retried == 0
     assert not list((tmp_path / "spool").glob("*.json"))
+
+
+# the durability decision is loud at startup
+
+
+def _quiet_config(**overrides):
+    values = dict(api_key="test", endpoint="http://127.0.0.1:9", async_transport=False)
+    values.update(overrides)
+    return NorinthConfig(**values)
+
+
+def test_transport_without_spool_warns_once_at_startup(caplog):
+    with caplog.at_level("WARNING", logger="norinth_logger"):
+        EventTransport(_quiet_config())
+    warnings = [r for r in caplog.records if "durable delivery is off" in r.getMessage()]
+    assert len(warnings) == 1
+    # the line has to say how to change it, not just that it is off
+    assert "NORINTH_SPOOL_DIR" in warnings[0].getMessage()
+    assert "NORINTH_DURABLE" in warnings[0].getMessage()
+
+
+def test_transport_with_spool_does_not_warn(tmp_path, caplog):
+    with caplog.at_level("WARNING", logger="norinth_logger"):
+        EventTransport(_quiet_config(spool_dir=str(tmp_path / "spool")))
+    assert not [r for r in caplog.records if "durable delivery is off" in r.getMessage()]
+
+
+def test_sdk_health_reports_durability_posture(tmp_path):
+    from norinth_logger.client import NorinthClient
+
+    class _Capture(EventTransport):
+        def __init__(self, config):
+            super().__init__(config)
+            self.events = []
+
+        def enqueue(self, event):
+            self.events.append(event)
+
+    def build(**overrides):
+        client = NorinthClient.__new__(NorinthClient)
+        client.config = _quiet_config(**overrides)
+        client.transport = _Capture(client.config)
+        client.emit_sdk_health("initialized")
+        return client.transport.events[-1]["attributes"]
+
+    default = build()
+    assert default["durable"] is False
+    assert default["spool_configured"] is False
+    assert default["spooled"] == 0
+
+    durable = build(durable=True, spool_dir=str(tmp_path / "spool"))
+    assert durable["durable"] is True
+    assert durable["spool_configured"] is True

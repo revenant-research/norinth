@@ -75,7 +75,7 @@ Governance context travels in `attributes.metadata`. Recognized keys:
 
 | `type` | Emitted by | Key `attributes` |
 |---|---|---|
-| `sdk.health` | SDK lifecycle | `mode`, `fail_open`, `async_transport`, `endpoint`, transport counters |
+| `sdk.health` | SDK lifecycle | `mode`, `fail_open`, `async_transport`, `durable`, `spool_configured`, `endpoint`, transport counters |
 | `trace.completed` | request/trace wrapper | `metadata`, `error` |
 | `model.call` | provider auto-instrumentation | `provider`, `model`, `operation`, `prompt`, `response`, `usage`, `error` |
 | `retrieval.call` | `retrieval()` | `retriever`, `query`, `documents`, `document_count` |
