@@ -50,6 +50,20 @@ automatically. Higher-level governance events (`prompt`, `deployment`,
 `incident`, `guardrail`, `eval_result`, `agent_run`, `retrieval`, `tool_call`)
 can be emitted explicitly through the SDK API.
 
+Delivery is fail-open by default: the SDK never blocks your application, and a
+batch that cannot be delivered after retries is dropped. That is the right
+trade for observability and the wrong one when these events are your compliance
+record. If they are, set two more variables before you go to production:
+
+```bash
+export NORINTH_SPOOL_DIR=/var/lib/norinth/spool   # undelivered batches wait here and are resent
+export NORINTH_DURABLE=true                       # refuse to start without a spool
+```
+
+The SDK logs one warning at startup while no spool is configured, so a
+deployment that forgot is visible in its own logs from the first boot. See
+[Safety defaults](#safety-defaults) for the details.
+
 ## Command line: `norinth`
 
 ```bash

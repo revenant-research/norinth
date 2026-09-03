@@ -21,6 +21,17 @@ Semantic Versioning.
 - Dependabot alerts, Dependabot security updates, and secret scanning push
   protection are enabled on the repository.
 
+### Changed
+
+- **The SDK says at startup when it may drop evidence.** Durable delivery is
+  off by default: a batch that fails every retry is dropped, and until now the
+  only signal was a warning at the moment of the drop, in the host
+  application's logs. The SDK now logs one warning when it starts without a
+  spool, naming `NORINTH_SPOOL_DIR` and `NORINTH_DURABLE`, and every
+  `sdk.health` event reports `durable`, `spool_configured` and a `spooled`
+  counter so the posture is visible on the platform. Both quickstarts now
+  mention the flags. The default is unchanged.
+
 ### Added
 
 - OpenSSF Scorecard runs weekly and on push to `main`, publishing supply-chain
