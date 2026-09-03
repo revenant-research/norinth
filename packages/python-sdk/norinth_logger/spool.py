@@ -14,6 +14,7 @@ it off (NORINTH_SPOOL_DIR=off), or make a missing spool a startup failure
 from __future__ import annotations
 
 import hashlib
+import hmac
 import os
 import tempfile
 
@@ -59,7 +60,9 @@ def default_spool_candidates(config: NorinthConfig) -> list[tuple[str, str]]:
     host, or one service re-pointed at another instance, never drain each
     other's batches under the wrong key. the key is hashed, never written
     """
-    ident = hashlib.sha256(f"{config.endpoint}\n{config.api_key}\n{config.service}".encode()).hexdigest()[:16]
+    msg = f"{config.endpoint}\n{config.service}".encode()
+    key = (config.api_key or "").encode()
+    ident = hmac.new(key, msg, hashlib.sha256).hexdigest()[:16]
     candidates: list[tuple[str, str]] = []
     state_home = os.environ.get("XDG_STATE_HOME")
     if state_home:
