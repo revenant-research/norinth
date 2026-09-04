@@ -168,7 +168,11 @@ jobs:
           echo "shipped packages:"; wc -l < shipped-requirements.txt
           python -m pip install --require-hashes -r requirements-audit.txt
           pip install --require-hashes -r requirements-ci-tools.lock.txt
-          pip-audit -r shipped-requirements.txt
+          # The freeze is already the full, exactly pinned dependency set, so
+          # skip pip-audit's scratch venv: building it runs an unpinned
+          # `pip install --upgrade pip wheel setuptools` against PyPI, which
+          # can fail on its own and audits nothing the freeze does not cover.
+          pip-audit --disable-pip --no-deps -r shipped-requirements.txt
       - name: Lint installer scripts (shellcheck)
         run: shellcheck scripts/install.sh scripts/backup.sh scripts/restore.sh
       - name: Installer end-to-end (compose + generated secrets + health)

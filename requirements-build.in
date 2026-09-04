@@ -1,4 +1,0 @@
-# The PEP 517 build frontend used to build the SDK in the release workflow.
-# Regenerate the hash-locked requirements-build.txt with:
-#   pip-compile --generate-hashes --output-file=requirements-build.txt requirements-build.in
-build
