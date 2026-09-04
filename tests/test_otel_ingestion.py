@@ -155,3 +155,38 @@ def test_otel_endpoint_caps_the_number_of_spans_per_request(client):
         headers={"Authorization": "Bearer dev"},
     )
     assert over.status_code == 413, over.text
+
+
+def test_otel_mapper_skips_attributes_whose_key_is_not_a_string():
+    """found by fuzzing: a list as an attribute key raised TypeError on assignment, a 500 to the collector"""
+    from app.ingestion.otel import otel_spans_to_events
+
+    payload = _otlp_chat_span()
+    span = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    span["attributes"].append({"key": ["not", "a", "string"], "value": {"stringValue": "x"}})
+    payload["resourceSpans"][0]["resource"]["attributes"].append({"key": {"nested": 1}, "value": {"stringValue": "x"}})
+
+    events = otel_spans_to_events(payload)
+    assert len(events) == 1
+    assert events[0]["type"] == "model.call"
+
+
+def test_otel_mapper_treats_structured_operation_name_as_not_genai():
+    """found by fuzzing: a dict in stringValue raised TypeError on the operation lookup"""
+    from app.ingestion.otel import otel_spans_to_events
+
+    payload = _otlp_chat_span()
+    span = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    span["attributes"][0] = {"key": "gen_ai.operation.name", "value": {"stringValue": {"not": "a string"}}}
+
+    assert otel_spans_to_events(payload) == []
+
+
+def test_otel_mapper_falls_back_when_timestamp_is_outside_the_datetime_range():
+    from app.ingestion.otel import otel_spans_to_events
+
+    for nanos in (10**40, -(10**30), "1e400", float("inf"), float("nan")):
+        payload = _otlp_chat_span()
+        payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["endTimeUnixNano"] = nanos
+        (event,) = otel_spans_to_events(payload)
+        assert isinstance(event["timestamp"], str), nanos

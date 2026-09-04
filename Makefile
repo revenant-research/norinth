@@ -1,4 +1,4 @@
-.PHONY: help install dev-install lint fmt type test test-cov build-frontend run docker-build docker-up clean lock lock-ci
+.PHONY: help install dev-install lint fmt type test test-cov fuzz build-frontend run docker-build docker-up clean lock lock-ci lock-fuzz
 
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -16,6 +16,10 @@ lock-ci: ## Regenerate the CI locks for dev deps and CI tools (needs pip-tools, 
 		--output-file=requirements-dev.txt requirements-dev.in
 	pip-compile --generate-hashes --no-strip-extras --allow-unsafe \
 		--output-file=requirements-ci-tools.lock.txt requirements-ci-tools.txt
+
+lock-fuzz: ## Regenerate the fuzzing lock (needs pip-tools on Linux x86_64, python 3.12+: atheris ships wheels for nothing else)
+	pip-compile --generate-hashes --no-strip-extras \
+		--output-file=requirements-fuzz.lock.txt requirements-fuzz.txt
 
 dev-install: ## Install dev + runtime dependencies and pre-commit hooks
 	pip install -r requirements-dev.txt
@@ -40,6 +44,11 @@ test-postgres: ## Run the test suite against PostgreSQL (needs NORINTH_TEST_DATA
 
 test-frontend: ## Run frontend unit tests (vitest)
 	cd apps/platform/frontend && npm test
+
+fuzz: ## Run both fuzz harnesses for 60s each (needs atheris: pip install --require-hashes -r requirements-fuzz.lock.txt)
+	mkdir -p .fuzz-corpus/otel .fuzz-corpus/privacy
+	python tests/fuzz/fuzz_otel_ingest.py -max_total_time=$${FUZZ_SECONDS:-60} .fuzz-corpus/otel tests/fuzz/corpus/otel
+	python tests/fuzz/fuzz_sdk_privacy.py -max_total_time=$${FUZZ_SECONDS:-60} .fuzz-corpus/privacy
 
 test-cov: ## Run tests with coverage
 	pytest --cov=app --cov=norinth_logger --cov-report=term-missing

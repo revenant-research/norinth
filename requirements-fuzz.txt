@@ -1,0 +1,5 @@
+# The fuzz job in CI (and `make fuzz`) installs atheris outside the dev
+# environment: it ships Linux x86_64 wheels for Python 3.12+ only, so it cannot
+# join requirements-dev.txt, which is resolved for Python 3.11. Locked with
+# hashes in requirements-fuzz.lock.txt.
+atheris>=3.1,<4

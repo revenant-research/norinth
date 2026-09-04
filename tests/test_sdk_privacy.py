@@ -75,3 +75,11 @@ def test_summarize_value_never_emits_content_without_optin():
     summary = summarize_value("patient note: confidential", capture_content=False, hash_key="k")
     assert "content" not in summary
     assert summary["hash"].startswith("sha256:")
+
+
+def test_identifier_shaped_rule_labels_are_still_redacted():
+    """found by fuzzing: the rule-id charset fits an email or an ssn, which then passed in the clear"""
+    from norinth_logger.privacy import sanitize_rule_labels
+
+    labels = sanitize_rule_labels(["pii.ssn", "alice.doe@example.com", "123-45-6789"], capture_content=False)
+    assert labels == ["pii.ssn", "[redacted-email]", "[redacted-ssn]"]

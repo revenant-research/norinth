@@ -47,6 +47,21 @@ cosign verify ghcr.io/revenant-research/norinth:<version> \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
+The files attached to each GitHub Release (installer, compose file, SBOM,
+SDK wheel and source distribution) come with `SHA256SUMS`, a Sigstore
+signature of that file, and SLSA build provenance for every file. Check a
+download before you run it:
+
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
+gh attestation verify install.sh --repo revenant-research/norinth
+```
+
+`gh attestation verify` fetches the attestation from GitHub; pass
+`--bundle norinth-<version>.sigstore.json` to verify against the copy attached
+to the release instead. `norinth-<version>.intoto.jsonl` is the same
+attestation as a bare in-toto envelope for tools that read that format.
+
 ### Requirements
 
 - Docker 24+ with the compose plugin (or any OCI runtime).

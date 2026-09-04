@@ -71,7 +71,9 @@ def _attributes_to_dict(attributes: list[Any] | None) -> dict[str, Any]:
             continue
         key = item.get("key")
         value = item.get("value")
-        if key is not None and isinstance(value, dict):
+        # an OTLP attribute key is a string. a list or object in its place is
+        # not a usable key and must be skipped, not raised on assignment
+        if isinstance(key, str) and isinstance(value, dict):
             result[key] = _attr_value(value)
     return result
 
@@ -80,12 +82,16 @@ def _nanos_to_iso(nanos: Any) -> str:
     try:
         seconds = int(nanos) / 1_000_000_000
         return datetime.fromtimestamp(seconds, tz=UTC).isoformat()
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError, OSError):
+        # not a number, an infinity, or a value outside the range a datetime
+        # (or the platform's time_t) can hold: fall back to receipt time
         return datetime.now(UTC).isoformat()
 
 
 def _event_type(operation: str | None, attrs: dict[str, Any]) -> str | None:
-    if operation and operation in _OPERATION_TO_EVENT:
+    # an AnyValue's stringValue is whatever the sender put there; only a string
+    # can name an operation, and an unhashable value must not raise on lookup
+    if isinstance(operation, str) and operation in _OPERATION_TO_EVENT:
         return _OPERATION_TO_EVENT[operation]
     # a data-source id means retrieval even without an operation
     if attrs.get("gen_ai.data_source.id"):

@@ -277,9 +277,11 @@ def sanitize_rule_labels(
 
     with capture off only identifier-shaped entries pass in the clear — a
     guardrail library that surfaces the matched excerpt ("matched: Jane Q...")
-    would otherwise carry content out under label treatment. with capture on
-    entries pass redacted and capped like an incident title. a structured entry
-    was never an id and becomes its digest either way
+    would otherwise carry content out under label treatment. the id charset
+    also fits an email address or a social security number, so an
+    identifier-shaped entry still runs through the redaction patterns. with
+    capture on entries pass redacted and capped like an incident title. a
+    structured entry was never an id and becomes its digest either way
     """
     labels: list[str] = []
     for rule in rules or []:
@@ -289,7 +291,7 @@ def sanitize_rule_labels(
         elif capture_content:
             labels.append(redact_text(label))
         elif _RULE_ID.match(label):
-            labels.append(label)
+            labels.append(redact_text(label))
         else:
             labels.append(stable_hash(label, hash_key))
     return labels
