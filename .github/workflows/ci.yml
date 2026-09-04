@@ -221,3 +221,34 @@ jobs:
           curl -fsS -o /dev/null "http://127.0.0.1:8001$asset"
           docker logs norinth | tail -5
           docker rm -f norinth
+
+  fuzz:
+    name: Fuzz (atheris, bounded)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          # atheris ships Linux wheels for 3.12+ only; see requirements-fuzz.txt
+          python-version: "3.12"
+      - name: Install atheris (hash-pinned)
+        run: pip install --require-hashes -r requirements-fuzz.lock.txt
+      - name: OTLP ingestion mapper (any JSON maps or raises OtelPayloadError)
+        run: |
+          mkdir -p .fuzz-corpus/otel
+          python tests/fuzz/fuzz_otel_ingest.py -max_total_time=45 -rss_limit_mb=1024 .fuzz-corpus/otel tests/fuzz/corpus/otel
+      - name: SDK content boundary (planted secrets never leave the process)
+        run: |
+          mkdir -p .fuzz-corpus/privacy
+          python tests/fuzz/fuzz_sdk_privacy.py -max_total_time=45 -rss_limit_mb=1024 .fuzz-corpus/privacy
+      - name: Keep the crashing input
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: fuzz-crash
+          path: |
+            crash-*
+            timeout-*
+            oom-*
+          if-no-files-found: ignore
+          retention-days: 14

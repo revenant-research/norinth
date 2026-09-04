@@ -53,3 +53,9 @@ ai-manifest.json
 # Installer working dirs / database dumps
 .norinth-install/
 backups/
+
+# fuzzing: inputs discovered by local runs (seeds live in tests/fuzz/corpus)
+.fuzz-corpus/
+crash-*
+timeout-*
+oom-*

@@ -40,8 +40,34 @@ Semantic Versioning.
   `sdk.health` event reports `durable`, `spool_configured` and a `spooled`
   counter so the posture is visible on the platform.
 
+### Fixed
+
+- **A malformed OTLP attribute no longer turns into a 500.** An attribute
+  whose `key` was a list or object, an operation name that was not a string,
+  or a timestamp outside the range a datetime can hold each raised inside the
+  span mapper and reached the collector as a server error. They are now
+  skipped, treated as a non-gen_ai span, or replaced with the receipt time.
+  Found by the new fuzz harness.
+
+### Security
+
+- **Identifier-shaped guardrail rule labels are redacted.** With content
+  capture off, a matched rule was passed in the clear when it looked like a
+  rule id, and that character set also fits an email address or a social
+  security number. Rule labels now run through the same redaction patterns
+  as every other label. Found by the new fuzz harness.
+
 ### Added
 
+- **Fuzz harnesses for the two untrusted-input boundaries.** `tests/fuzz/`
+  fuzzes the OTLP span mapper and the SDK content boundary with atheris. CI
+  runs each for a bounded time on every pull request; a crash, or a planted
+  secret leaving the process, fails the job and keeps the input.
+- **SLSA build provenance for release files.** Every file attached to a
+  GitHub Release is covered by a GitHub artifact attestation, attached to the
+  release as a Sigstore bundle and an in-toto envelope and verifiable with
+  `gh attestation verify`. `SHA256SUMS` now names files as they are attached,
+  so `sha256sum -c` works in a download directory.
 - **Risk finding for undurable evidence delivery.** `RISK-EVD-001` (Evidence
   delivery is not durable, High) opens against an application whose SDK
   reports no spool for undelivered batches or a dropped batch. An SDK that

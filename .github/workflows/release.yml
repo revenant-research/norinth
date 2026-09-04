@@ -6,8 +6,9 @@ name: Release
 #     (multi-arch, cosign keyless signature, SBOM attestation, Trivy scanned)
 #   * Helm chart       oci://ghcr.io/revenant-research/charts/norinth
 #   * Python SDK       norinth-logger on PyPI (trusted publishing)
-#   * GitHub Release   with the CHANGELOG section, SBOM, checksums, and a
-#     Sigstore signature of the checksums attached
+#   * GitHub Release   with the CHANGELOG section, SBOM, checksums, a Sigstore
+#     signature of the checksums, and SLSA build provenance for every file
+#     attached (a Sigstore bundle plus the bare in-toto envelope)
 #
 # Pushes to main publish the image as :edge so installers can track the tip.
 
@@ -217,8 +218,9 @@ jobs:
     needs: [image, chart, sdk]
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
-      contents: write  # create the GitHub Release
-      id-token: write  # keyless signing of the checksums file
+      contents: write      # create the GitHub Release
+      id-token: write      # keyless signing of the checksums file and the provenance
+      attestations: write  # store the release-file provenance with GitHub
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -244,8 +246,41 @@ jobs:
           printf '\n\n**Image:** `%s@%s`\n**Verify:** `cosign verify %s@%s --certificate-identity-regexp "%s" --certificate-oidc-issuer https://token.actions.githubusercontent.com`\n' \
             "${IMAGE}" "${{ needs.image.outputs.digest }}" "${IMAGE}" "${{ needs.image.outputs.digest }}" "$IDENTITY" >> notes.md
           echo "IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+      # The checksums name each file exactly as it is attached to the release,
+      # so `sha256sum -c SHA256SUMS` works in a download directory and the
+      # provenance subjects match the assets by name.
+      - name: Stage the release files under their published names
+        run: |
+          mkdir release-assets
+          cp sbom.spdx.json scripts/install.sh docker-compose.yml sdk-dist/* release-assets/
       - name: Checksums
-        run: sha256sum sbom.spdx.json scripts/install.sh docker-compose.yml sdk-dist/* > SHA256SUMS
+        run: (cd release-assets && sha256sum *) > SHA256SUMS
+      - name: Build provenance for the release files (SLSA v1, signed with Sigstore)
+        id: provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-checksums: SHA256SUMS
+      - name: Attach the provenance as a Sigstore bundle and an in-toto envelope
+        env:
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cp "$BUNDLE" "norinth-${VERSION}.sigstore.json"
+          # the DSSE envelope inside the bundle is the in-toto attestation itself;
+          # the bundle additionally carries the certificate and log entry that
+          # verify it
+          python3 - "$VERSION" <<'PY'
+          import json
+          import sys
+
+          version = sys.argv[1]
+          with open(f"norinth-{version}.sigstore.json", encoding="utf-8") as handle:
+              bundle = json.load(handle)
+          with open(f"norinth-{version}.intoto.jsonl", "w", encoding="utf-8") as out:
+              out.write(json.dumps(bundle["dsseEnvelope"], separators=(",", ":")) + "\n")
+          PY
+          printf '**Provenance:** `gh attestation verify <file> --repo %s` (or `--bundle norinth-%s.sigstore.json` offline)\n' \
+            "${{ github.repository }}" "$VERSION" >> notes.md
       - name: Install cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: Sign the checksums file (keyless, Sigstore)
@@ -258,10 +293,9 @@ jobs:
         with:
           body_path: notes.md
           files: |
-            sbom.spdx.json
+            release-assets/*
             SHA256SUMS
             SHA256SUMS.sig
             SHA256SUMS.pem
-            scripts/install.sh
-            docker-compose.yml
-            sdk-dist/*
+            norinth-*.sigstore.json
+            norinth-*.intoto.jsonl

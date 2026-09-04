@@ -20,6 +20,7 @@ The SDK and Platform meet only at the wire protocol
 python -m venv .venv && source .venv/bin/activate
 make dev-install      # installs runtime + dev deps + pre-commit
 make test             # run the test suite
+make fuzz             # bounded fuzz run of the two harnesses (Linux; see tests/fuzz/README.md)
 make lint             # ruff
 make run              # run the platform on :8001
 ```
@@ -31,6 +32,11 @@ make run              # run the platform on :8001
 - **Every behavior change ships with a test.** Security fixes add a regression
   test that fails on `main` and passes on the branch.
 - **CI must be green**: ruff lint, SPDX license headers, `pytest` (SQLite and PostgreSQL), and the frontend `vitest` + `tsc` build are required checks.
+- **Parsers of untrusted input get a fuzz harness.** `tests/fuzz/` holds
+  atheris harnesses for the OTLP mapper and the SDK content boundary; CI runs
+  each for a bounded time on every pull request and fails on a crash or a
+  planted secret leaving the process. A new parser of collector, SDK, or
+  browser input gets a harness beside them.
 - **Every source file carries an SPDX header.** New `.py`, `.ts`, and `.tsx`
   files under `apps/`, `packages/`, and `scripts/` start with the Apache-2.0
   SPDX header and the Revenant Research copyright line. This keeps ownership
