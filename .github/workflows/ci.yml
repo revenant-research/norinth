@@ -25,7 +25,6 @@ jobs:
       - name: Install dependencies (hash-pinned)
         run: |
           pip install --require-hashes -r requirements-dev.txt
-          pip install --require-hashes -r requirements-dev.lock.txt
           pip install --no-deps -e packages/python-sdk
       - name: Lint (ruff)
         run: ruff check apps/platform/app packages/python-sdk/norinth_logger tests scripts
@@ -62,7 +61,6 @@ jobs:
       - name: Install dependencies (hash-pinned)
         run: |
           pip install --require-hashes -r requirements-dev.txt
-          pip install --require-hashes -r requirements-dev.lock.txt
           pip install --no-deps -e packages/python-sdk
       - name: Test against PostgreSQL
         env:
@@ -106,10 +104,8 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-      - name: Install platform dependencies
-        run: pip install --require-hashes -r requirements-dev.txt
       - name: Install platform dependencies (hash-pinned)
-        run: pip install --require-hashes -r requirements-dev.lock.txt
+        run: pip install --require-hashes -r requirements-dev.txt
       - name: Without a bundle the root route is an explicit 503, never a stale UI
         run: pytest tests/test_dashboard_bundle.py -q -k "not_built"
       - name: Download dashboard bundle
@@ -166,7 +162,6 @@ jobs:
           # produce findings for packages that are never deployed
           docker run --rm --entrypoint python norinth-platform:ci -m pip freeze > shipped-requirements.txt
           echo "shipped packages:"; wc -l < shipped-requirements.txt
-          python -m pip install --require-hashes -r requirements-audit.txt
           pip install --require-hashes -r requirements-ci-tools.lock.txt
           # The freeze is already the full, exactly pinned dependency set, so
           # skip pip-audit's scratch venv: building it runs an unpinned

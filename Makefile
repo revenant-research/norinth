@@ -14,10 +14,6 @@ lock: ## Regenerate the dependency lock from requirements.txt (needs pip-tools, 
 lock-ci: ## Regenerate the CI locks for dev deps and CI tools (needs pip-tools, python 3.11 to match CI)
 	pip-compile --generate-hashes --no-strip-extras \
 		--output-file=requirements-dev.txt requirements-dev.in
-	pip-compile --allow-unsafe --generate-hashes \
-		--output-file=requirements-audit.txt requirements-audit.in
-	pip-compile --generate-hashes --no-strip-extras \
-		--output-file=requirements-dev.lock.txt requirements-dev.txt
 	pip-compile --generate-hashes --no-strip-extras --allow-unsafe \
 		--output-file=requirements-ci-tools.lock.txt requirements-ci-tools.txt
 

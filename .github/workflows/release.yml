@@ -42,7 +42,6 @@ jobs:
       - name: Install Python deps (hash-pinned)
         run: |
           pip install --require-hashes -r requirements-dev.txt
-          pip install --require-hashes -r requirements-dev.lock.txt
           pip install --no-deps -e packages/python-sdk
       - name: Lint (ruff)
         run: ruff check apps/platform/app packages/python-sdk/norinth_logger tests scripts
