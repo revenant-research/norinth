@@ -1497,13 +1497,3 @@ websockets==17.1 \
     --hash=sha256:fd8f47dbf2e8adb15c847215f83436de3fdb120b51fdae0fbbdf69fd97a3ad80 \
     --hash=sha256:ff3e2ba7a9f0a110b0555452e9b5a03a34e11662544e01beea15f144b48ba7b7
     # via uvicorn
-# Development & CI tooling (pinned to majors for reproducibility).
-# CI installs the hash-pinned requirements-dev.lock.txt generated from this
-# file. Run `make lock-ci` after changing it.
--r apps/platform/requirements.txt
-pytest>=9.1.1,<10
-pytest-asyncio>=1.4.0
-ruff>=0.16.4,<1.0
-mypy>=2.3.1,<2.5
-httpx>=0.28.1
-pytest-cov>=7.1.0,<8
