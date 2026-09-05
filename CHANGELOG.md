@@ -8,6 +8,11 @@ Semantic Versioning.
 
 ### Security
 
+- Audit startup now verifies history without re-signing missing HMACs and stops
+  on integrity failure. Previously, a database writer could modify history,
+  remove its HMACs and recompute the public hash chain, then have startup sign
+  the forged rows. Missing signatures now remain rejected across restarts. (#175)
+
 - **Every GitHub Action is pinned to a full commit SHA.** Workflows previously
   referenced mutable tags, so whoever owned an action could change what ran
   inside the release job that signs images and publishes the SDK. Dependabot

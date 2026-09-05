@@ -5,8 +5,8 @@
 
 each entry carries a hash chaining it to the previous
 (row_hash = SHA-256(prev_hash || canonical(entry))), so any insertion, deletion,
-reordering, or field change breaks the chain and is caught by
-verify_audit_chain()
+reordering, or field change within the surviving chain breaks it and is caught
+by verify_audit_chain(). Tail truncation requires an independent checkpoint
 """
 
 from __future__ import annotations
@@ -259,13 +259,8 @@ def verify_audit_chain(*, tenant_id: str | None = None) -> dict[str, Any]:
             return {"ok": False, "entries": len(rows), "broken_at": row["id"], "reason": f"unknown hash version {version}"}
         if row["prev_hash"] != expected_prev or row["row_hash"] != recomputed:
             return {"ok": False, "entries": len(rows), "broken_at": row["id"], "reason": "hash chain"}
-        # once the install holds a key, every row must carry an hmac that verifies
-        # under the key that anchored it. this used to run only when the row
-        # itself carried one, and that column lives in the table an attacker with
-        # write access is already editing: nulling it and recomputing the unkeyed
-        # sha-256 chain passed verification. rows predating the keyring are
-        # anchored by ensure_audit_hmac_backfill at startup, so a null here means
-        # the anchor was removed, not that it was never applied
+        # A configured key requires a valid signature on every row. Never
+        # repair missing signatures: a database writer can strip them.
         if ring:
             if row["row_hmac"] is None:
                 return {"ok": False, "entries": len(rows), "broken_at": row["id"], "reason": "hmac missing"}
@@ -276,32 +271,15 @@ def verify_audit_chain(*, tenant_id: str | None = None) -> dict[str, Any]:
     return {"ok": True, "entries": len(rows), "broken_at": None}
 
 
-def ensure_audit_hmac_backfill() -> int:
-    """anchor any row that has no hmac under the primary key, returning the count
-
-    called at startup. a row written before a key was configured legitimately has
-    no hmac, and verification cannot tell that apart from an attacker stripping
-    the column. anchoring them on the first boot that has a key removes the
-    ambiguity, so verification can then demand an hmac on every row.
-
-    this asserts the history as it stands rather than proving it: before a key
-    existed there was nothing to prove it with. rows keep their existing hash, so
-    the chain is unchanged and only the anchor is added
-    """
-    primary = _audit_primary_id()
-    if primary is None:
-        return 0
-    key = _audit_keyring()[primary]
-    with connect() as connection:
-        rows = connection.execute(
-            "SELECT id, row_hash FROM audit_logs WHERE row_hmac IS NULL ORDER BY id"
-        ).fetchall()
-        for row in rows:
-            connection.execute(
-                "UPDATE audit_logs SET row_hmac = ?, hmac_key_id = ? WHERE id = ?",
-                (_hmac(key, row["row_hash"]), primary, row["id"]),
-            )
-    return len(rows)
+def validate_audit_at_startup() -> None:
+    """Verify without repairing history, before any background workers start."""
+    _audit_primary_id()  # validate write-key configuration even on an empty log
+    result = verify_audit_chain()
+    if not result["ok"]:
+        raise RuntimeError(
+            f"Audit integrity check failed at entry {result['broken_at']}: {result['reason']}. "
+            "Audit history was not repaired. Investigate tampering or missing verification keys."
+        )
 
 
 def _audit_filters(tenant_id: str | None, actor_ref: str | None, action: str | None) -> tuple[str, dict[str, Any]]:
