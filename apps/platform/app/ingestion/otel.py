@@ -54,7 +54,7 @@ def _attr_value(value: dict[str, Any]) -> Any:
             raw = value[key]
             try:
                 return int(raw) if key == "intValue" else float(raw)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 return raw
     return value.get("stringValue")
 

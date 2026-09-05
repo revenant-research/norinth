@@ -8,6 +8,9 @@ Semantic Versioning.
 
 ### Security
 
+- OTLP numeric attributes that overflow integer/float conversion now use the
+  existing malformed-value fallback instead of raising an uncaught exception.
+
 - Audit startup now verifies history without re-signing missing HMACs and stops
   on integrity failure. Previously, a database writer could modify history,
   remove its HMACs and recompute the public hash chain, then have startup sign
