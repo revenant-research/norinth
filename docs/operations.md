@@ -259,6 +259,14 @@ applied on boot and recorded in `schema_migrations`; Console → Overview shows
 the applied versions. Migrations are forward-only: take a backup first.
 Releases follow semantic versioning; the changelog lists breaking changes.
 
+### Audit integrity at startup
+
+Startup verifies audit history before starting background workers. A failed
+check stops startup and preserves the rows for investigation; missing HMACs are
+never regenerated. Configure signing keys before collecting audit history and
+retain old verification keys during rotation. An empty database needs no setup
+beyond key configuration. Investigate failed checks rather than re-signing rows.
+
 ## 8. Sizing and performance
 
 Scale **replicas first, workers second**: `NORINTH_WEB_CONCURRENCY` sets

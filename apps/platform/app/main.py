@@ -35,7 +35,7 @@ from app.services.bootstrap import seed_dev_ingestion_key_if_dev, seed_super_adm
 from app.services.fold_sweeper import start_worker as start_fold_sweeper
 from app.services.maintenance import start_worker as start_maintenance_worker
 from app.services.notifications import start_worker as start_notification_worker
-from app.storage.audit import ensure_audit_hmac_backfill
+from app.storage.audit import validate_audit_at_startup
 from app.storage.errors import DomainError, RecordNotFound
 from app.storage.migrations import run_migrations
 from app.storage.workflow import load_platform_user
@@ -87,7 +87,7 @@ def _validate_secret_key_at_startup() -> None:
 
 _validate_secret_key_at_startup()
 run_migrations()
-ensure_audit_hmac_backfill()
+validate_audit_at_startup()
 start_notification_worker()
 start_maintenance_worker()
 start_fold_sweeper()

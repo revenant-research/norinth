@@ -190,3 +190,19 @@ def test_otel_mapper_falls_back_when_timestamp_is_outside_the_datetime_range():
         payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["endTimeUnixNano"] = nanos
         (event,) = otel_spans_to_events(payload)
         assert isinstance(event["timestamp"], str), nanos
+
+
+def test_otel_mapper_preserves_numeric_attributes_that_overflow_conversion():
+    """Fuzzing found intValue infinity escaping as OverflowError instead of falling back."""
+    import json
+
+    from app.ingestion.otel import otel_spans_to_events
+
+    for kind, raw in (("intValue", float("inf")), ("intValue", float("-inf")),
+                      ("intValue", float("nan")), ("doubleValue", 10**400)):
+        payload = _otlp_chat_span()
+        span = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+        span["attributes"].append({"key": "gen_ai.usage.input_tokens", "value": {kind: raw}})
+        (event,) = otel_spans_to_events(payload)
+        assert event["attributes"]["usage"]["input_tokens"] is raw
+        json.dumps(event)
