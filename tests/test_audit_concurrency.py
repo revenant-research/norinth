@@ -9,8 +9,10 @@ import threading
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "apps" / "platform"))
 
 
-def test_concurrent_audit_writes_do_not_fork(fresh_db):
+def test_concurrent_audit_writes_do_not_fork(fresh_db, tmp_path, monkeypatch):
     from app.storage.audit import record_audit, verify_audit_chain
+
+    monkeypatch.setenv("NORINTH_AUDIT_CHECKPOINT_PATH", str(tmp_path / "heads.jsonl"))
 
     errors: list[Exception] = []
 
@@ -31,6 +33,7 @@ def test_concurrent_audit_writes_do_not_fork(fresh_db):
     result = verify_audit_chain()
     assert result["ok"] is True, result
     assert result["entries"] >= 200
+    assert result["completeness_ok"] is True
 
     # no two rows share a prev_hash, a fork would
     from app.storage.raw_events import connect

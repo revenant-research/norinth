@@ -17,9 +17,11 @@ from app.storage.attestation_keys import (
     create_attestation_key,
     list_attestation_keys,
     revoke_attestation_key,
+    tenant_requires_attestation,
 )
 from app.storage.audit import record_audit
 from app.storage.errors import DomainError
+from app.storage.raw_events import connect
 
 router = APIRouter()
 
@@ -44,9 +46,25 @@ def list_keys(actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _require_tenant(actor)
     _authorize(actor, tenant_id)
     keys = list_attestation_keys(tenant_id)
+    from app.storage.policy_engine import active_policy, resolve_gate_policy
+
+    with connect() as connection:
+        key_opt_in = tenant_requires_attestation(tenant_id, connection)
+        policy = active_policy(connection, tenant_id)
+        environments = policy["body"].get("gates", {}).get("environments", {}) or {}
+        names = set(environments) | {"*"}
+        policy_required = {
+            name: bool(resolve_gate_policy(connection, tenant_id, name)["require_attested_evals"])
+            for name in names
+        }
+    active_count = sum(key["status"] == "active" for key in keys)
     return {
         "attestation_keys": keys,
-        "attestation_required": any(key["status"] == "active" for key in keys),
+        "attestation_required": key_opt_in or any(policy_required.values()),
+        "key_opt_in": key_opt_in,
+        "policy_required_environments": policy_required,
+        "active_key_count": active_count,
+        "key_status": "no_active_key" if active_count == 0 and (key_opt_in or any(policy_required.values())) else "ready",
     }
 
 

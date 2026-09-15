@@ -28,9 +28,9 @@ describe("FrameworkCoverageCards", () => {
     render(<FrameworkCoverageCards rows={coverage as any} />);
     expect(screen.getAllByTestId("framework-card")).toHaveLength(3);
     expect(screen.getByRole("progressbar", { name: "25% coverage" })).toHaveAttribute("aria-valuenow", "25");
-    expect(screen.getByText("All mapped requirements have evidence.")).toBeInTheDocument();
+    expect(screen.getByText("All mapped requirements have recent passing evidence.")).toBeInTheDocument();
 
-    const toggle = screen.getByRole("button", { name: "Show 3 outstanding requirements" });
+    const toggle = screen.getByRole("button", { name: "Show 3 requirements without passing evidence" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     await user.click(toggle);
     expect(screen.getByRole("list", { name: "Outstanding requirements for EU AI Act" })).toBeInTheDocument();
@@ -47,7 +47,7 @@ describe("ComplianceView", () => {
           generated_at: "2026-08-23T12:00:00+00:00",
           risk_findings: [{}, {}],
           control_assessments: [{}, {}, {}],
-          audit_trail: { integrity: { ok: true } },
+          audit_trail: { integrity: { ok: true, chain_ok: true, completeness_ok: false, checkpoint_status: "unavailable" } },
         } as any;
       }
       throw new Error(path);
@@ -74,6 +74,7 @@ describe("ComplianceView", () => {
     await waitFor(() => expect(screen.getByTestId("packet-summary")).toBeInTheDocument());
     expect(objectUrl).toHaveBeenCalled();
     expect(clicked[0]).toMatch(/^norinth-audit-packet-acme-/);
-    expect(screen.getAllByText("verified").length).toBeGreaterThanOrEqual(2); // metric card + packet summary
+    expect(screen.getByText("chain valid")).toBeInTheDocument();
+    expect(screen.getByText("Not established (unavailable)")).toBeInTheDocument();
   });
 });

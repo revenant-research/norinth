@@ -68,6 +68,88 @@ def test_deleting_a_row_breaks_the_chain(super_admin_client):
     assert result["broken_at"] is not None
 
 
+def test_signed_checkpoint_detects_tail_and_empty_log(client, tmp_path, monkeypatch):
+    from app.storage.audit import record_audit, verify_audit_chain
+    from app.storage.raw_events import connect
+
+    monkeypatch.setenv("NORINTH_AUDIT_CHECKPOINT_PATH", str(tmp_path / "independent" / "heads.jsonl"))
+    record_audit(actor_ref="a", action="first")
+    record_audit(actor_ref="a", action="second")
+    intact = verify_audit_chain()
+    assert intact["ok"] is True
+    assert intact["completeness_ok"] is True
+    with connect() as connection:
+        connection.execute("DELETE FROM audit_logs WHERE id = (SELECT MAX(id) FROM audit_logs)")
+    truncated = verify_audit_chain()
+    assert truncated["chain_ok"] is True
+    assert truncated["ok"] is False
+    assert truncated["reason"] == "checkpoint mismatch"
+    with connect() as connection:
+        connection.execute("DELETE FROM audit_logs")
+    assert verify_audit_chain()["ok"] is False
+
+
+def test_missing_checkpoint_does_not_claim_completeness(client):
+    from app.storage.audit import record_audit, verify_audit_chain
+
+    record_audit(actor_ref="a", action="one")
+    result = verify_audit_chain()
+    assert result["ok"] is True
+    assert result["chain_ok"] is True
+    assert result["completeness_ok"] is None
+    assert result["checkpoint_status"] == "unavailable"
+
+
+def test_signed_but_stale_checkpoint_does_not_claim_completeness(client, tmp_path, monkeypatch):
+    import hashlib
+    import hmac
+    import json
+    from datetime import UTC, datetime, timedelta
+
+    from app.storage.audit import _audit_keyring, record_audit, verify_audit_chain
+    from app.storage.audit_checkpoint import _payload
+
+    journal = tmp_path / "heads.jsonl"
+    monkeypatch.setenv("NORINTH_AUDIT_CHECKPOINT_PATH", str(journal))
+    record_audit(actor_ref="a", action="old")
+    entry = json.loads(journal.read_text())
+    entry.pop("seal")
+    entry["created_at"] = (datetime.now(UTC) - timedelta(days=2)).isoformat()
+    entry["seal"] = hmac.new(_audit_keyring()[entry["key_id"]], _payload(entry), hashlib.sha256).hexdigest()
+    journal.write_text(json.dumps(entry) + "\n")
+    result = verify_audit_chain()
+    assert result["chain_ok"] is True
+    assert result["checkpoint_status"] == "stale"
+    assert result["completeness_ok"] is False
+
+
+def test_authorized_restore_starts_linked_epoch_without_erasing_history(client, tmp_path, monkeypatch):
+    import pytest
+    from app.storage.audit import _audit_keyring, reconcile_audit_after_restore, record_audit, verify_audit_chain
+    from app.storage.audit_checkpoint import read_checkpoints
+    from app.storage.raw_events import connect
+
+    monkeypatch.setenv("NORINTH_AUDIT_CHECKPOINT_PATH", str(tmp_path / "heads.jsonl"))
+    record_audit(actor_ref="a", action="before.backup")
+    seal = verify_audit_chain()["checkpoint"]["seal"]
+    record_audit(actor_ref="a", action="after.backup")
+    latest_seal = verify_audit_chain()["checkpoint"]["seal"]
+    with connect() as connection:
+        connection.execute("DELETE FROM audit_logs WHERE action = 'after.backup'")
+    assert verify_audit_chain()["ok"] is False
+    with pytest.raises(RuntimeError, match="Expected checkpoint seal"):
+        reconcile_audit_after_restore(reason="restored backup", expected_seal=seal)
+    result = reconcile_audit_after_restore(reason="restored backup", expected_seal=latest_seal)
+    assert result["ok"] is True
+    assert result["checkpoint_status"] == "partial_history"
+    assert result["completeness_ok"] is False
+    journal, error = read_checkpoints(_audit_keyring())
+    assert error is None
+    assert len(journal) == 3
+    assert journal[-1]["kind"] == "reconcile"
+    assert journal[-1]["previous_seal"] == latest_seal
+
+
 def test_audit_hmac_key_rotation(client, monkeypatch):
     """rotating the audit hmac key keeps old rows verifiable and anchors new rows
     to the new key; dropping the old key from the ring breaks its rows"""

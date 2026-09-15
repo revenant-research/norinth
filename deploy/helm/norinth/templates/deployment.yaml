@@ -54,6 +54,10 @@ spec:
               value: {{ .Values.config.webConcurrency | quote }}
             - name: NORINTH_SESSION_IDLE_MINUTES
               value: {{ .Values.config.sessionIdleMinutes | quote }}
+            {{- if .Values.auditCheckpoint.existingClaim }}
+            - name: NORINTH_AUDIT_CHECKPOINT_PATH
+              value: {{ .Values.auditCheckpoint.path | quote }}
+            {{- end }}
             {{- if .Values.config.smtp.host }}
             - name: NORINTH_SMTP_HOST
               value: {{ .Values.config.smtp.host | quote }}
@@ -96,11 +100,20 @@ spec:
               mountPath: /app/data
             - name: tmp
               mountPath: /tmp
+            {{- if .Values.auditCheckpoint.existingClaim }}
+            - name: audit-checkpoints
+              mountPath: {{ dir .Values.auditCheckpoint.path | quote }}
+            {{- end }}
       volumes:
         - name: data
           emptyDir: {}
         - name: tmp
           emptyDir: {}
+        {{- if .Values.auditCheckpoint.existingClaim }}
+        - name: audit-checkpoints
+          persistentVolumeClaim:
+            claimName: {{ .Values.auditCheckpoint.existingClaim | quote }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector: {{- toYaml . | nindent 8 }}
       {{- end }}

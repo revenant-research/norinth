@@ -30,6 +30,12 @@ sql_bytes=$(gunzip -c "$DUMP" | wc -c | tr -d ' ')
 read -r -p "This replaces the current Norinth database with $DUMP. Type 'restore' to confirm: " a
 [ "$a" = restore ] || { echo "Aborted."; exit 1; }
 
+checkpoint_seal=$(compose exec -T norinth python -c 'from app.storage.audit import verify_audit_chain; r=verify_audit_chain(); print(r.get("checkpoint", {}).get("seal", ""))')
+if [ -n "$checkpoint_seal" ]; then
+  echo "Retained pre-restore audit checkpoint seal: $checkpoint_seal"
+  echo "Save this seal with the restore record; reconciliation requires it."
+fi
+
 compose stop norinth
 compose exec -T postgres psql -U norinth -d postgres -c "DROP DATABASE IF EXISTS norinth;" -c "CREATE DATABASE norinth OWNER norinth;"
 
@@ -43,5 +49,10 @@ if ! gunzip -c "$DUMP" | compose exec -T postgres psql -U norinth -d norinth -q 
   exit 1
 fi
 
-compose start norinth
-echo "Restored. Norinth restarted; migrations (if any) ran on boot."
+if [ -n "$checkpoint_seal" ]; then
+  echo "Database restored. Norinth remains stopped so the retained audit checkpoint journal can be reconciled."
+  echo "Verify the restored audit chain, run scripts/reconcile_audit_checkpoint.py in the Norinth container with the pre-restore final seal and backup reason, then run: docker compose up -d norinth"
+else
+  compose start norinth
+  echo "Database restored and Norinth restarted. No retained checkpoint was available, so audit-log completeness cannot be established."
+fi

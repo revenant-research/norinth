@@ -37,10 +37,11 @@ RUN pip install --no-cache-dir --require-hashes -r requirements.lock.txt
 
 # Application code, then the freshly built dashboard bundle on top
 COPY apps/platform/app /app/app
+COPY scripts/reconcile_audit_checkpoint.py /app/scripts/reconcile_audit_checkpoint.py
 COPY --from=frontend /src/app/dashboard/static /app/app/dashboard/static
 
 # Data directory for the SQLite database, owned by the runtime user
-RUN mkdir -p /app/data && chown -R norinth:norinth /app
+RUN mkdir -p /app/data /var/lib/norinth-audit-checkpoints && chown -R norinth:norinth /app /var/lib/norinth-audit-checkpoints
 
 USER norinth
 

@@ -121,7 +121,9 @@ describe("AttestationKeySettings", () => {
     const user = userEvent.setup();
     let keys: any[] = [];
     vi.spyOn(api, "getJson").mockImplementation(
-      async () => ({ attestation_keys: keys, attestation_required: keys.some((k) => k.status === "active") }) as any,
+      async () => ({ attestation_keys: keys, attestation_required: keys.length > 0, key_opt_in: keys.length > 0,
+        policy_required_environments: {}, active_key_count: keys.filter((k) => k.status === "active").length,
+        key_status: keys.length > 0 && keys.every((k) => k.status !== "active") ? "no_active_key" : "ready" }) as any,
     );
     const post = vi.spyOn(api, "postJson").mockImplementation(async (path: string, body: any) => {
       if (path === "/api/attestation-keys") {
@@ -156,11 +158,12 @@ describe("AttestationKeySettings", () => {
 
     await waitFor(() => expect(screen.getAllByTestId("attestation-key-row")).toHaveLength(1));
     expect(screen.getByText("sha256:deadbeef")).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("Attestation is enforced");
+    expect(screen.getByRole("status")).toHaveTextContent("Key registration permanently requires attested passing evals");
 
     await user.click(screen.getByRole("button", { name: "Revoke" }));
     await waitFor(() => expect(post).toHaveBeenCalledWith("/api/attestation-keys/nak_abc123/revoke", {}));
     await waitFor(() => expect(screen.getByText("revoked")).toBeInTheDocument());
-    expect(screen.getByRole("status")).toHaveTextContent("No key registered yet");
+    expect(screen.getByRole("status")).toHaveTextContent("Key registration permanently requires attested passing evals");
+    expect(screen.getByRole("alert")).toHaveTextContent("no active key can verify new evals");
   });
 });

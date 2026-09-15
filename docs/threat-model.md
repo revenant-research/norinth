@@ -7,8 +7,9 @@ not aspirations.
 
 ## 1. System summary
 
-One stateless web service (FastAPI + compiled React dashboard) and one
-PostgreSQL database, run entirely inside your environment. There is no
+One web service (FastAPI + compiled React dashboard), one PostgreSQL database,
+and an independent signed audit-head journal, run entirely inside your
+environment. There is no
 hosted component, no vendor account, no telemetry to Revenant Research, no
 outbound calls except to identity providers you configure (OIDC discovery /
 JWKS, SAML) and Google Fonts for the dashboard's typeface.
@@ -16,9 +17,11 @@ JWKS, SAML) and Google Fonts for the dashboard's typeface.
 ```
  your applications ──SDK / OTel──▶  /v1/events/batch  ─┐
  your CI pipeline  ──signed evals─▶ /v1/otel/traces     │   Norinth
- your people       ──browser/SSO──▶ /  /api/*            ├──▶ (stateless) ──▶ PostgreSQL (yours)
+ your people       ──browser/SSO──▶ /  /api/*            ├──▶ web service ──▶ PostgreSQL (yours)
  your IdP          ──SCIM────────▶ /scim/v2/*           │
  your auditor      ◀──audit packet── /api/compliance/* ─┘
+                                               │
+                                               └──▶ signed audit-head journal (separate storage)
 ```
 
 ## 2. Data inventory

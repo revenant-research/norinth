@@ -1,4 +1,5 @@
-# Norinth Helm values. The platform is stateless; all state is in PostgreSQL
+# Norinth Helm values. Database state is in PostgreSQL; audit checkpoints can
+# be retained on a separate, shared volume for audit-log completeness checks.
 
 image:
   repository: ghcr.io/revenant-research/norinth
@@ -7,6 +8,15 @@ image:
   pullSecrets: []
 
 replicaCount: 2
+
+# --- Independent audit checkpoints --------------------------------------------
+# Supply a pre-existing ReadWriteMany claim shared by all replicas. Protect
+# its journal with versioned or immutable backups under separate access control.
+# Without a claim, audit chain integrity remains verifiable, but completeness
+# against a deleted suffix is reported as unavailable.
+auditCheckpoint:
+  existingClaim: ""
+  path: /var/lib/norinth-audit-checkpoints/heads.jsonl
 
 # --- Database -----------------------------------------------------------------
 # Bring your own PostgreSQL (recommended). Provide the URL directly, or via an

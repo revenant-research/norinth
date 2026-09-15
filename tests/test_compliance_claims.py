@@ -82,8 +82,46 @@ def test_owasp_agentic_family_appears_in_coverage(super_admin_client):
     owasp = next((entry for name, entry in families.items() if "OWASP" in name), None)
     assert owasp is not None, f"OWASP family missing from coverage: {sorted(families)}"
     assert owasp["total_requirements"] >= 5  # ASI01/02/03/09/10 at minimum
-    # nothing observed yet, so every monitored requirement is clean
-    assert owasp["satisfied"] == owasp["total_requirements"]
+    # A configured detector with no observation is not positive assurance.
+    assert owasp["satisfied"] == 0
+    assert owasp["unknown"] == owasp["total_requirements"]
+    assert owasp["coverage_pct"] == 0
+    org.close()
+
+
+def test_unrelated_model_telemetry_does_not_satisfy_agentic_requirements(super_admin_client):
+    org, headers = _org(super_admin_client, "unrelated")
+    now = datetime.now(UTC).isoformat()
+    assert org.post("/v1/events/batch", json={"events": [_model_call("unrelated", "s1", now)]}, headers=headers).status_code == 200
+    owasp = next(entry for name, entry in _coverage(org).items() if "OWASP" in name)
+    assert owasp["satisfied"] == 0
+    assert owasp["unknown"] == owasp["total_requirements"]
+    org.close()
+
+
+def test_registered_agent_observation_is_scoped_and_expires(super_admin_client):
+    org, headers = _org(super_admin_client, "observed")
+    assert org.post("/api/agent-registry", json={"agent_name": "helper", "owner_ref": "a@observed.test", "autonomy_level": 1, "allowed_tools": []}).status_code == 200
+
+    def run(span: str, timestamp: str) -> dict:
+        return {
+            "type": "agent.run", "schema_version": "2026-01", "trace_id": f"trc_{span}", "span_id": f"spn_{span}",
+            "timestamp": timestamp, "service": "svc", "environment": "prod", "project": "p1",
+            "attributes": {"agent_name": "helper", "step_count": 0, "outcome": "ok",
+                           "metadata": {"tenant_id": "observed", "application_name": "helper-app", "workflow_name": "wf"}},
+        }
+
+    stale = (datetime.now(UTC) - timedelta(days=120)).isoformat()
+    assert org.post("/v1/events/batch", json={"events": [run("old", stale)]}, headers=headers).status_code == 200
+    ref = "OWASP Agentic ASI10"
+    assert ref in next(entry for entry in _coverage(org).values() if "OWASP" in entry["framework"])["unknown_requirements"]
+
+    current = datetime.now(UTC).isoformat()
+    assert org.post("/v1/events/batch", json={"events": [run("new", current)]}, headers=headers).status_code == 200
+    owasp = next(entry for entry in _coverage(org).values() if "OWASP" in entry["framework"])
+    assert ref in owasp["satisfied_requirements"]
+    scoped = org.get("/api/compliance/framework-coverage", params={"project": "p2"}).json()["framework_coverage"]
+    assert ref in next(entry for entry in scoped if "OWASP" in entry["framework"])["unknown_requirements"]
     org.close()
 
 
@@ -152,7 +190,9 @@ def test_packet_reports_tenant_audit_count_not_platform_total(super_admin_client
 
     packet = org_a.get("/api/compliance/audit-packet").json()
     trail = packet["audit_trail"]
-    assert trail["integrity"] == {"ok": True}
+    assert trail["integrity"]["ok"] is True
+    assert trail["integrity"]["chain_ok"] is True
+    assert trail["integrity"]["completeness_ok"] is None
     assert "entries" not in trail["integrity"], "global chain length leaked into a tenant packet"
     from app.storage.audit import count_audit_logs
 

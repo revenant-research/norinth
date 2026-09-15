@@ -667,7 +667,63 @@ _FRAMEWORK_FAMILIES: list[tuple[str, str]] = [
     ("SOC 2", "SOC 2"),
 ]
 
-_SATISFIED_STATUSES = {"passing", "waived"}
+_OBSERVATION_DAYS = 90
+_RULE_EVENT_TYPES = {
+    "provider_dependency": ("model.call",),
+    "missing_guardrail": ("guardrail.decision",),
+    "missing_eval": ("eval.result",),
+    "missing_agent_run": ("agent.run",),
+    "operational_errors": ("model.call", "agent.run"),
+    "retired_system_telemetry": (),  # active usage cannot prove a retired system is dormant
+    "evidence_delivery_not_durable": ("sdk.health",),
+    "unregistered_agent": ("agent.run",),
+    "unauthorized_tool": ("tool.call",),
+    "agent_trifecta": ("agent.run", "tool.call"),
+    "autonomy_without_oversight": ("agent.run",),
+    "unreviewed_vendor": (),  # vendor review needs its own assessment
+}
+
+
+def _recent_rule_observations(scope: ScopeFilter) -> dict[tuple[str, str, str], set[str]]:
+    """Recent signal types grouped by the observed application and scope."""
+    from datetime import UTC, datetime, timedelta
+
+    from app.storage.raw_events import connect
+
+    if not scope.tenant_id:
+        return {}
+    cutoff = datetime.now(UTC) - timedelta(days=_OBSERVATION_DAYS)
+    clauses = ["tenant_id = :tenant_id"]
+    params: dict[str, Any] = {"tenant_id": scope.tenant_id, "cutoff_day": cutoff.date().isoformat()}
+    if scope.project:
+        clauses.append("project = :project")
+        params["project"] = scope.project
+    if scope.environment:
+        clauses.append("environment = :environment")
+        params["environment"] = scope.environment
+    with connect() as connection:
+        rows = connection.execute(
+            f"SELECT project, environment, application_name, event_type, MAX(timestamp) AS timestamp "
+            f"FROM sdk_events WHERE {' AND '.join(clauses)} AND timestamp >= :cutoff_day "
+            "AND application_name IS NOT NULL AND application_name != '' "
+            "GROUP BY project, environment, application_name, event_type",
+            params,
+        ).fetchall()
+    fresh_types: dict[tuple[str, str, str], set[str]] = {}
+    for row in rows:
+        try:
+            observed = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00"))
+        except (ValueError, AttributeError):
+            continue
+        if observed.tzinfo is None:
+            observed = observed.replace(tzinfo=UTC)
+        if cutoff <= observed <= datetime.now(UTC):
+            key = (row["project"], row["environment"], row["application_name"])
+            fresh_types.setdefault(key, set()).add(row["event_type"])
+    return {
+        key: {signal for signal, event_types in _RULE_EVENT_TYPES.items() if event_types and set(event_types) & event_types_seen}
+        for key, event_types_seen in fresh_types.items()
+    }
 
 
 def _framework_family(ref: str) -> str:
@@ -678,76 +734,87 @@ def _framework_family(ref: str) -> str:
 
 
 def build_framework_coverage(scope: ScopeFilter) -> dict[str, Any]:
-    """roll control assessments and risk-rule monitoring up into coverage
+    """Coverage of mapped requirements with unknown kept in the denominator."""
+    from datetime import UTC, datetime, timedelta
 
-    denominator is every requirement mapped anywhere: the control library AND
-    the risk rules — the OWASP agentic top 10 lives on detection rules, not
-    controls, and building coverage from controls alone silently dropped a
-    framework the compliance page advertises. a control-mapped requirement is
-    satisfied by a passing or waived assessment; a rule-mapped requirement is
-    satisfied while its rule has no open finding citing it (monitored and
-    clean). an open finding citing a requirement is a gap regardless of what
-    an assessment says — a passing control does not outrank a live violation.
-    ``basis`` states this is coverage of mapped requirements, not the full
-    regulation
-    """
+    cutoff = datetime.now(UTC) - timedelta(days=_OBSERVATION_DAYS)
     # denominator: every framework requirement the control library defines
-    by_family: dict[str, dict[str, bool]] = {}
+    by_family: dict[str, dict[str, str]] = {}
     for control in list_controls_catalog(scope.tenant_id):
         for ref in control.get("framework_refs", []):
             family = _framework_family(ref)
-            by_family.setdefault(family, {}).setdefault(ref, False)
+            by_family.setdefault(family, {}).setdefault(ref, "unknown")
 
     # ...and every requirement a detection rule maps (monitored coverage)
-    monitored_refs: set[str] = set()
+    monitored_refs: dict[str, set[str]] = {}
     for rule in list_configured_risk_rules(scope.tenant_id):
         for ref in rule.get("framework_refs", []):
-            monitored_refs.add(ref)
-            by_family.setdefault(_framework_family(ref), {}).setdefault(ref, False)
+            monitored_refs.setdefault(ref, set()).add(rule["signal"])
+            by_family.setdefault(_framework_family(ref), {}).setdefault(ref, "unknown")
 
     # numerator: requirements whose citing control has a satisfying assessment
     for assessment in list_control_assessments(**scope.model_dump()):
-        satisfied = assessment.get("status") in _SATISFIED_STATUSES
-        if not satisfied:
+        if assessment.get("status") not in {"passing", "waived"}:
+            continue
+        try:
+            assessed = datetime.fromisoformat(assessment["evaluated_at"].replace("Z", "+00:00"))
+            if assessed.tzinfo is None:
+                assessed = assessed.replace(tzinfo=UTC)
+        except (ValueError, KeyError, AttributeError):
+            continue
+        if not cutoff <= assessed <= datetime.now(UTC):
             continue
         for ref in assessment.get("framework_refs", []):
             family = _framework_family(ref)
             requirements = by_family.setdefault(family, {})
-            requirements[ref] = True
+            requirements[ref] = "waived" if assessment["status"] == "waived" else "satisfied"
 
-    # a monitored requirement counts while it is clean...
+    # A quiet rule is unknown until relevant telemetry has exercised its signal.
+    observed_signals_by_app = _recent_rule_observations(scope)
+    for ref, signals in monitored_refs.items():
+        family = _framework_family(ref)
+        if any(signals <= observed_signals for observed_signals in observed_signals_by_app.values()) and by_family[family][ref] == "unknown":
+            by_family[family][ref] = "satisfied"
+    # An open violation outranks any passing assessment or quiet rule.
     open_refs: set[str] = set()
     for finding in list_risk_findings(**scope.model_dump()):
         if finding.get("status") == "open":
             open_refs.update(finding.get("framework_refs", []))
-    for ref in monitored_refs - open_refs:
-        by_family[_framework_family(ref)][ref] = True
-    # ...and an open violation is a gap no matter who else cites the ref
     for ref in open_refs:
         family = _framework_family(ref)
         if ref in by_family.get(family, {}):
-            by_family[family][ref] = False
+            by_family[family][ref] = "violated"
 
     coverage: list[dict[str, Any]] = []
     for family, requirements in by_family.items():
         total = len(requirements)
-        satisfied_count = sum(1 for ok in requirements.values() if ok)
+        satisfied_count = sum(state == "satisfied" for state in requirements.values())
+        waived_count = sum(state == "waived" for state in requirements.values())
+        unknown_count = sum(state == "unknown" for state in requirements.values())
+        violated_count = sum(state == "violated" for state in requirements.values())
         coverage.append(
             {
                 "framework": family,
                 "total_requirements": total,
                 "satisfied": satisfied_count,
+                "waived": waived_count,
+                "unknown": unknown_count,
+                "violated": violated_count,
                 "coverage_pct": round(100 * satisfied_count / total) if total else 0,
-                "gaps": sorted(ref for ref, ok in requirements.items() if not ok),
-                "satisfied_requirements": sorted(ref for ref, ok in requirements.items() if ok),
+                "gaps": sorted(ref for ref, state in requirements.items() if state != "satisfied"),
+                "unknown_requirements": sorted(ref for ref, state in requirements.items() if state == "unknown"),
+                "waived_requirements": sorted(ref for ref, state in requirements.items() if state == "waived"),
+                "violated_requirements": sorted(ref for ref, state in requirements.items() if state == "violated"),
+                "satisfied_requirements": sorted(ref for ref, state in requirements.items() if state == "satisfied"),
             }
         )
     return {
         "framework_coverage": sorted(coverage, key=lambda item: item["framework"]),
         "basis": (
             "Coverage of the requirements Norinth maps for each framework — control-library "
-            "requirements satisfied by passing/waived assessments, and detection-rule requirements "
-            "satisfied while no finding citing them is open. Not coverage of the full regulation."
+            "requirements satisfied by recent passing assessments or recent relevant, in-scope "
+            "rule observations with no open finding. Waivers, unknowns and open violations are "
+            "reported separately. Observations expire after 90 days. Not coverage of the full regulation."
         ),
     }
 

@@ -6,8 +6,8 @@
 an eval.result is client-authored: whoever holds an ingestion key can send
 passed: true. attestation binds passing evals to a CI identity: the org
 registers an Ed25519 public key its CI uses to sign eval results, verified at
-ingestion. once a tenant has an active key, unattested evals no longer satisfy
-its gates. only public keys are stored
+ingestion. registration durably opts the tenant in; revocation does not relax
+the evidence requirement. only public keys are stored
 """
 
 from __future__ import annotations
@@ -42,6 +42,24 @@ def ensure_attestation_tables(connection) -> None:
     )
 
 
+def ensure_attestation_requirement(connection) -> None:
+    """Create and backfill the durable tenant opt-in on old and new databases."""
+    connection.execute(
+        """CREATE TABLE IF NOT EXISTS attestation_requirements (
+            tenant_id TEXT PRIMARY KEY,
+            enabled_at TEXT NOT NULL,
+            enabled_by TEXT
+        )"""
+    )
+    # Prior versions used active-key count as the implicit opt-in. All tenants
+    # that ever registered a key, including those with only revoked keys, must
+    # retain that requirement after migration.
+    connection.execute(
+        """INSERT OR IGNORE INTO attestation_requirements (tenant_id, enabled_at, enabled_by)
+        SELECT tenant_id, MIN(created_at), NULL FROM attestation_keys GROUP BY tenant_id"""
+    )
+
+
 def create_attestation_key(
     tenant_id: str, name: str, public_key_pem: str, created_by: str | None
 ) -> dict[str, Any]:
@@ -53,6 +71,11 @@ def create_attestation_key(
             VALUES (?, ?, ?, 'ed25519', ?, 'active', ?, datetime('now'))
             """,
             (key_id, tenant_id, name, public_key_pem, created_by),
+        )
+        connection.execute(
+            """INSERT OR IGNORE INTO attestation_requirements (tenant_id, enabled_at, enabled_by)
+            VALUES (?, datetime('now'), ?)""",
+            (tenant_id, created_by),
         )
         row = connection.execute("SELECT * FROM attestation_keys WHERE key_id = ?", (key_id,)).fetchone()
     return _public(dict(row))
@@ -82,7 +105,7 @@ def tenant_requires_attestation(tenant_id: str | None, connection=None) -> bool:
     accepts an open connection so gate recompute stays in one transaction"""
     if not tenant_id:
         return False
-    query = "SELECT COUNT(*) AS count FROM attestation_keys WHERE tenant_id = ? AND status = 'active'"
+    query = "SELECT COUNT(*) AS count FROM attestation_requirements WHERE tenant_id = ?"
     if connection is not None:
         row = connection.execute(query, (tenant_id,)).fetchone()
     else:

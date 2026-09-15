@@ -17,9 +17,15 @@ export type FrameworkCoverage = {
   framework: string;
   total_requirements: number;
   satisfied: number;
+  waived?: number;
+  unknown?: number;
+  violated?: number;
   coverage_pct: number;
   gaps: string[];
   satisfied_requirements: string[];
+  unknown_requirements?: string[];
+  waived_requirements?: string[];
+  violated_requirements?: string[];
 };
 
 export function coverageTone(pct: number): "good" | "mid" | "low" {
@@ -51,27 +57,28 @@ export function FrameworkCoverageCards({ rows }: { rows: FrameworkCoverage[] }) 
               <span className="record-title">{row.framework}</span>
               <Badge value={`${row.coverage_pct}%`} />
               <span className="muted">
-                {row.satisfied} of {row.total_requirements} requirements satisfied
+                {row.satisfied} of {row.total_requirements} requirements evidenced as passing
               </span>
             </div>
             <CoverageBar pct={row.coverage_pct} />
+            <p className="muted">{row.unknown || 0} unobserved · {row.violated || 0} open violations · {row.waived || 0} waived</p>
             {row.gaps.length ? (
               <>
                 <button type="button" className="linklike" aria-expanded={expanded} onClick={() => setOpen(expanded ? null : row.framework)}>
-                  {expanded ? "Hide" : "Show"} {row.gaps.length} outstanding requirement{row.gaps.length === 1 ? "" : "s"}
+                  {expanded ? "Hide" : "Show"} {row.gaps.length} requirement{row.gaps.length === 1 ? "" : "s"} without passing evidence
                 </button>
                 {expanded ? (
                   <ul className="gap-list" aria-label={`Outstanding requirements for ${row.framework}`}>
                     {row.gaps.map((gap) => (
                       <li key={gap}>
-                        <code>{gap}</code>
+                        <code>{gap}</code> {row.violated_requirements?.includes(gap) ? "— open violation" : row.waived_requirements?.includes(gap) ? "— approved waiver" : "— unobserved or stale"}
                       </li>
                     ))}
                   </ul>
                 ) : null}
               </>
             ) : (
-              <p className="ok">All mapped requirements have evidence.</p>
+              <p className="ok">All mapped requirements have recent passing evidence.</p>
             )}
           </article>
         );
@@ -95,7 +102,7 @@ export function downloadJson(filename: string, data: unknown): void {
 export function ComplianceView({ scope, tenantId }: { scope: Scope; tenantId: string }) {
   const coverage = useResource(() => getJson<{ framework_coverage: FrameworkCoverage[] }>("/api/compliance/framework-coverage", scope));
   const [downloading, setDownloading] = useState(false);
-  const [lastPacket, setLastPacket] = useState<{ generated_at: string; integrity_ok: boolean; risk_findings: number; control_assessments: number } | null>(null);
+  const [lastPacket, setLastPacket] = useState<{ generated_at: string; chain_ok: boolean; completeness_ok: boolean | null; checkpoint_status: string; risk_findings: number; control_assessments: number } | null>(null);
 
   const rows = coverage.value?.framework_coverage || [];
   const overall = rows.length ? Math.round(rows.reduce((sum, row) => sum + row.coverage_pct, 0) / rows.length) : 0;
@@ -109,7 +116,9 @@ export function ComplianceView({ scope, tenantId }: { scope: Scope; tenantId: st
       downloadJson(`norinth-audit-packet-${tenantId}-${stamp}.json`, packet);
       setLastPacket({
         generated_at: packet.generated_at,
-        integrity_ok: !!packet.audit_trail?.integrity?.ok,
+        chain_ok: !!packet.audit_trail?.integrity?.chain_ok,
+        completeness_ok: packet.audit_trail?.integrity?.completeness_ok ?? null,
+        checkpoint_status: String(packet.audit_trail?.integrity?.checkpoint_status || "unavailable"),
         risk_findings: (packet.risk_findings || []).length,
         control_assessments: (packet.control_assessments || []).length,
       });
@@ -128,10 +137,10 @@ export function ComplianceView({ scope, tenantId }: { scope: Scope; tenantId: st
         <MetricCard label="Frameworks" value={rows.length} note="Cited by the control library" />
         <MetricCard label="Average coverage" value={rows.length ? `${overall}%` : "–"} note="Requirements with evidence" />
         <MetricCard label="Outstanding" value={totalGaps} note="Requirements without evidence" />
-        <MetricCard label="Audit trail" value={lastPacket ? (lastPacket.integrity_ok ? "verified" : "BROKEN") : "–"} note={lastPacket ? `Checked at export ${lastPacket.generated_at}` : "Verified when you export a packet"} />
+        <MetricCard label="Audit trail" value={lastPacket ? (lastPacket.completeness_ok ? "complete" : lastPacket.chain_ok ? "chain valid" : "BROKEN") : "–"} note={lastPacket ? `Checkpoint ${lastPacket.checkpoint_status}; checked ${lastPacket.generated_at}` : "Checked when you export a packet"} />
       </div>
 
-      <Section title="Framework coverage" description="For every regulation or standard the control library cites: how many mapped requirements are satisfied by passing or waived evidence, and which are still outstanding.">
+      <Section title="Framework coverage" description="For each mapped framework, recent in-scope passing evidence counts toward coverage. Unknown requirements, open violations, and approved waivers remain visible separately.">
         <FrameworkCoverageCards rows={rows} />
       </Section>
 
@@ -145,10 +154,12 @@ export function ComplianceView({ scope, tenantId }: { scope: Scope; tenantId: st
           <dl className="kv" data-testid="packet-summary">
             <dt>Generated</dt>
             <dd>{lastPacket.generated_at}</dd>
-            <dt>Audit-trail integrity</dt>
+            <dt>Audit chain</dt>
             <dd>
-              <Badge value={lastPacket.integrity_ok ? "verified" : "broken"} />
+              <Badge value={lastPacket.chain_ok ? "valid" : "broken"} />
             </dd>
+            <dt>Checkpoint completeness</dt>
+            <dd>{lastPacket.completeness_ok ? "Current and matching" : `Not established (${lastPacket.checkpoint_status})`}</dd>
             <dt>Control assessments</dt>
             <dd>{lastPacket.control_assessments}</dd>
             <dt>Risk findings</dt>

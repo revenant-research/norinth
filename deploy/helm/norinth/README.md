@@ -11,7 +11,11 @@ helm install norinth oci://ghcr.io/revenant-research/charts/norinth \
 
 Production: put the database URL and secrets in your own Secret (Vault, ESO,
 SealedSecrets) and reference it with `database.existingSecret` /
-`secrets.existingSecret`. The pod is stateless; scale `replicaCount` freely.
+`secrets.existingSecret`. To verify that no audit-log suffix was removed, set
+`auditCheckpoint.existingClaim` to a retained ReadWriteMany claim shared by all
+replicas. Protect its journal with independent versioned or immutable backups.
+Without the claim, audit chain integrity remains checkable but completeness
+is unavailable. See `docs/audit-checkpoints.md` for restore procedures.
 See `values.yaml` for every option and `docs/operations.md` for configuration.
 
 Verify the image before you trust it:
