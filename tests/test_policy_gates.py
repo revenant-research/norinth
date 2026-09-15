@@ -146,6 +146,10 @@ def test_policy_can_require_attestation_per_environment(org):
     environment with '*' as the fallback"""
     client, headers = org
     version = _activate(client, _gates_policy("prod", True))
+    key_status = client.get("/api/attestation-keys").json()
+    assert key_status["key_opt_in"] is False
+    assert key_status["policy_required_environments"]["prod"] is True
+    assert key_status["key_status"] == "no_active_key"
     resp = client.post("/v1/events/batch", json={"events": [_prompt(), _deployment(), _eval("plain")]}, headers=headers)
     assert resp.status_code == 200, resp.text
     gate = _gate(client)

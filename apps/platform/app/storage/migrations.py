@@ -517,6 +517,13 @@ def _0023_fold_ledger(connection) -> None:
     )
 
 
+def _0024_attestation_requirement(connection) -> None:
+    """Keep the signing requirement after all tenant keys are revoked."""
+    from app.storage.attestation_keys import ensure_attestation_requirement
+
+    ensure_attestation_requirement(connection)
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
@@ -541,6 +548,7 @@ MIGRATIONS: list[Migration] = [
     Migration(21, "workflow and system indexes for the detail views", _0021_detail_view_indexes),
     Migration(22, "governance policy engine (policies, approval stages, vendor registry)", _0022_governance_policy_engine),
     Migration(23, "durable fold ledger on raw events for recoverable ingest", _0023_fold_ledger),
+    Migration(24, "durable tenant attestation requirement", _0024_attestation_requirement),
 ]
 
 

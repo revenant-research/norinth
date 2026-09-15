@@ -288,6 +288,51 @@ def test_gate_counts_only_attested_evals_once_a_key_is_registered(org):
     assert gate["passing_eval_count"] == 1
 
 
+def test_last_key_revocation_keeps_unsigned_evals_ineligible(org):
+    client, headers = org
+    assert client.post("/v1/events/batch", json={"events": [_prompt(), _deployment(), _eval("plain")]}, headers=headers).status_code == 200
+    _, first_public = _keypair()
+    _, second_public = _keypair()
+    first = client.post("/api/attestation-keys", json={"name": "first", "public_key_pem": first_public}).json()["attestation_key"]["key_id"]
+    second = client.post("/api/attestation-keys", json={"name": "rotation", "public_key_pem": second_public}).json()["attestation_key"]["key_id"]
+    assert client.post(f"/api/attestation-keys/{first}/revoke").status_code == 200
+    assert client.get("/api/attestation-keys").json()["active_key_count"] == 1
+    assert client.post(f"/api/attestation-keys/{second}/revoke").status_code == 200
+    status = client.get("/api/attestation-keys").json()
+    assert status["attestation_required"] is True
+    assert status["key_opt_in"] is True
+    assert status["key_status"] == "no_active_key"
+
+    from app.storage.attestation_keys import tenant_requires_attestation
+    from app.storage.deployments import gate_evidence_counts
+    from app.storage.raw_events import connect
+
+    with connect() as connection:
+        assert tenant_requires_attestation("acme", connection)
+        assert not tenant_requires_attestation("other", connection)
+        version = dict(connection.execute("SELECT * FROM deployment_versions WHERE tenant_id = 'acme' LIMIT 1").fetchone())
+        evidence = gate_evidence_counts(connection, version)
+    assert evidence["require_attested_evals"] is True
+    assert evidence["passing_eval_count"] == 0
+
+
+def test_migration_preserves_opt_in_with_only_revoked_keys(org):
+    client, _ = org
+    _, public_pem = _keypair()
+    key_id = client.post("/api/attestation-keys", json={"name": "old", "public_key_pem": public_pem}).json()["attestation_key"]["key_id"]
+    assert client.post(f"/api/attestation-keys/{key_id}/revoke").status_code == 200
+    from app.storage.attestation_keys import tenant_requires_attestation
+    from app.storage.migrations import run_migrations
+    from app.storage.raw_events import connect
+
+    with connect() as connection:
+        connection.execute("DROP TABLE attestation_requirements")
+        connection.execute("DELETE FROM schema_migrations WHERE version = 24")
+    assert run_migrations() == [24]
+    with connect() as connection:
+        assert tenant_requires_attestation("acme", connection) is True
+
+
 # --- key management RBAC ----------------------------------------------------------
 
 

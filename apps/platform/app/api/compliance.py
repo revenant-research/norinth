@@ -95,6 +95,7 @@ def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilte
         target_id=scope.tenant_id or "platform",
         detail={"project": scope.project, "environment": scope.environment},
     )
+    audit_verification = verify_audit_chain()
     return {
         "packet_version": "2026-01",
         "generated_at": now(),
@@ -137,7 +138,11 @@ def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilte
             # nothing was removed), but the platform-wide row count is another
             # tenant's activity level and stays out of a per-tenant packet
             "integrity": {
-                "ok": verify_audit_chain().get("ok"),
+                "ok": audit_verification.get("ok"),
+                "chain_ok": audit_verification.get("chain_ok", audit_verification.get("ok")),
+                "completeness_ok": audit_verification.get("completeness_ok"),
+                "checkpoint_status": audit_verification.get("checkpoint_status", "unavailable"),
+                "checkpoint_created_at": audit_verification.get("checkpoint", {}).get("created_at"),
             },
         },
     }

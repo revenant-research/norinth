@@ -1,7 +1,8 @@
 # Operating Norinth
 
-Norinth is a single stateless web service (FastAPI + the compiled dashboard)
-in front of a PostgreSQL database. That is the whole system. This guide covers
+Norinth is a web service (FastAPI + the compiled dashboard) in front of a
+PostgreSQL database. A separate audit checkpoint journal retains signed heads
+for completeness checks. This guide covers
 installing it, running it in production, configuring it, backing it up, and
 upgrading it.
 
@@ -35,10 +36,12 @@ helm install norinth oci://ghcr.io/revenant-research/charts/norinth \
   --set ingress.enabled=true --set ingress.hosts[0].host=norinth.example.com
 ```
 
-The chart (`deploy/helm/norinth`) renders a stateless Deployment, Service,
+The chart (`deploy/helm/norinth`) renders a Deployment, Service,
 Ingress, PodDisruptionBudget and Secrets; use `database.existingSecret` /
 `secrets.existingSecret` to source secrets from Vault, External Secrets or
-SealedSecrets. Images are signed (cosign keyless) with an SBOM attestation;
+SealedSecrets. Set `auditCheckpoint.existingClaim` to a shared ReadWriteMany
+claim for independent audit-head retention (see `docs/audit-checkpoints.md`).
+Images are signed (cosign keyless) with an SBOM attestation;
 verify before you trust:
 
 ```bash
@@ -238,14 +241,19 @@ restricted to your corporate network.
 ## 6. Backup and restore
 
 ```bash
-scripts/backup.sh                                   # -> backups/norinth-<utc>.sql.gz
-scripts/restore.sh backups/norinth-<utc>.sql.gz     # replaces the database, restarts Norinth
+scripts/backup.sh                                   # -> SQL dump and checkpoint journal copy
+scripts/restore.sh backups/norinth-<utc>.sql.gz     # replaces the database
 ```
 
-Everything Norinth knows is in PostgreSQL (events, entities, decisions, the
-hash-chained audit log, encrypted integration secrets). Back up `.env` too:
-without `NORINTH_SECRET_KEY` the stored integration secrets cannot be decrypted.
-With a managed PostgreSQL, use its point-in-time recovery instead.
+Application records are in PostgreSQL (events, entities, decisions, the
+hash-chained audit log, encrypted integration secrets). The audit checkpoint
+journal is separate; retain its backup independently on versioned or immutable
+storage. Back up `.env` too: without `NORINTH_SECRET_KEY` the stored integration
+secrets cannot be decrypted or old audit signatures verified. With a managed
+PostgreSQL, use its point-in-time recovery. When a retained checkpoint exists,
+the restore command leaves Norinth stopped until an operator explicitly
+reconciles the restored chain with the pre-restore seal; follow
+`docs/audit-checkpoints.md` before restarting the service.
 
 ## 7. Upgrade
 

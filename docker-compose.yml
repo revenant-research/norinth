@@ -24,6 +24,7 @@ services:
     environment:
       NORINTH_DATABASE_URL: postgresql://norinth:${POSTGRES_PASSWORD}@postgres:5432/norinth
       NORINTH_SECRET_KEY: ${NORINTH_SECRET_KEY}
+      NORINTH_AUDIT_CHECKPOINT_PATH: /var/lib/norinth-audit-checkpoints/heads.jsonl
       NORINTH_SUPER_ADMIN_EMAIL: ${NORINTH_SUPER_ADMIN_EMAIL:-admin@norinth.local}
       NORINTH_SUPER_ADMIN_PASSWORD: ${NORINTH_SUPER_ADMIN_PASSWORD}
       NORINTH_PUBLIC_BASE_URL: ${NORINTH_PUBLIC_BASE_URL:-http://localhost:8001}
@@ -38,6 +39,8 @@ services:
       NORINTH_SMTP_PASSWORD: ${NORINTH_SMTP_PASSWORD:-}
       NORINTH_SMTP_FROM: ${NORINTH_SMTP_FROM:-}
       NORINTH_SMTP_STARTTLS: ${NORINTH_SMTP_STARTTLS:-1}
+    volumes:
+      - norinth-audit-checkpoints:/var/lib/norinth-audit-checkpoints
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/health/ready', timeout=3).status==200 else 1)"]
@@ -65,3 +68,4 @@ services:
 
 volumes:
   norinth-pgdata:
+  norinth-audit-checkpoints:

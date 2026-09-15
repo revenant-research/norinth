@@ -459,12 +459,13 @@ type AttestationKey = {
 // so a self-reported `passed: true` can't satisfy a gate
 export function AttestationKeySettings() {
   const { value, error, reload } = useResource(() =>
-    getJson<{ attestation_keys: AttestationKey[]; attestation_required: boolean }>("/api/attestation-keys"),
+    getJson<{ attestation_keys: AttestationKey[]; attestation_required: boolean; key_opt_in?: boolean; policy_required_environments?: Record<string, boolean>; active_key_count?: number; key_status?: string }>("/api/attestation-keys"),
   );
   const [name, setName] = useState("");
   const [pem, setPem] = useState("");
   const rows = value?.attestation_keys || [];
   const required = Boolean(value?.attestation_required);
+  const policyEnvironments = Object.entries(value?.policy_required_environments || {}).filter(([, enforced]) => enforced).map(([name]) => name === "*" ? "all environments (*)" : name);
 
   async function register(event: React.FormEvent) {
     event.preventDefault();
@@ -482,7 +483,7 @@ export function AttestationKeySettings() {
   async function revoke(row: AttestationKey) {
     const ok = await confirm({
       title: `Revoke "${row.name}"?`,
-      body: "Eval results signed with this key will be rejected at ingestion from now on. Evidence already verified keeps its attested status.",
+      body: "Eval results signed with this key will be rejected at ingestion from now on. Evidence already verified keeps its attested status. Signed evidence will remain required even if this is the last active key.",
       confirmLabel: "Revoke",
       tone: "danger",
     });
@@ -504,9 +505,12 @@ export function AttestationKeySettings() {
       {error ? <p className="feedback error" role="alert">{error}</p> : null}
       <p className="hint" role="status">
         {required
-          ? "Attestation is enforced: release gates in this organization only count attested passing evals."
+          ? value?.key_opt_in
+            ? `Key registration permanently requires attested passing evals in every environment. ${policyEnvironments.length ? `Policy also requires signatures for ${policyEnvironments.join(", ")}.` : ""}`
+            : `Governance policy requires attested passing evals for ${policyEnvironments.join(", ")}. Registering a key extends the requirement to every environment.`
           : "No key registered yet: any passing eval currently satisfies a release gate. Register a key to require signed evidence."}
       </p>
+      {value?.key_status === "no_active_key" ? <p className="feedback error" role="alert">Signed evidence is required, but no active key can verify new evals. Register a replacement public key before sending new signed evidence.</p> : null}
       <p className="hint">
         Generate a key pair with <code>python -m norinth_logger.attest keygen</code>, keep the private key in your CI secret store, and sign results with{" "}
         <code>norinth_logger.attest.sign_eval_result(...)</code> before sending them. Ed25519 only.

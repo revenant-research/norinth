@@ -33,3 +33,16 @@ fi
 mv "$tmp" "$out"
 trap - EXIT
 echo "Backup written to $out ($(du -h "$out" | cut -f1), $sql_bytes bytes of SQL)"
+
+# Keep a copy of the independently stored checkpoint journal beside the dump
+# for disaster recovery. Never restore this copy over a newer retained journal:
+# that would roll back the evidence used to detect a database truncation.
+checkpoint_out="${out%.sql.gz}.audit-checkpoints.jsonl"
+checkpoint_tmp="$checkpoint_out.partial"
+if compose exec -T norinth cat /var/lib/norinth-audit-checkpoints/heads.jsonl > "$checkpoint_tmp" 2>/dev/null && [ -s "$checkpoint_tmp" ]; then
+  mv "$checkpoint_tmp" "$checkpoint_out"
+  echo "Checkpoint journal copied to $checkpoint_out; retain it on immutable/versioned storage."
+else
+  rm -f "$checkpoint_tmp"
+  echo "Checkpoint journal unavailable; SQL backup alone cannot establish audit-log completeness." >&2
+fi

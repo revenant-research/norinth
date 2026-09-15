@@ -25,7 +25,7 @@ const GLOSSARY: Array<{ term: string; body: string }> = [
   { term: "Release gate", body: "Created for every deployment version. Approved only by a named reviewer, with a linked prompt version and a passing evaluation. Never approved automatically." },
   { term: "Attested evidence", body: "An evaluation result signed by your CI pipeline's key. Once a key is registered, unsigned evals no longer satisfy release gates." },
   { term: "Separation of duties", body: "Administration and decision authority are held by different people. Nobody approves their own work, grants their own roles, or approves their own release." },
-  { term: "Audit packet", body: "A single export an auditor can read: inventory, AI-BOM, framework coverage and evidence, decisions with rationale, exceptions, gates, incidents, and a verified audit trail." },
+  { term: "Audit packet", body: "A single export an auditor can read: inventory, AI-BOM, framework coverage and evidence, decisions with rationale, exceptions, gates, incidents, and separate audit-chain and checkpoint-completeness verdicts." },
 ];
 
 const INTEGRATIONS: Array<{ name: string; body: string }> = [

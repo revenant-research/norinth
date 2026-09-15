@@ -129,8 +129,11 @@ jobs:
             --set database.url=postgresql://u:p@h:5432/norinth \
             --set secrets.secretKey=$(openssl rand -base64 32) \
             --set secrets.superAdminPassword=test-password-123 \
-            --set ingress.enabled=true > rendered.yaml
+            --set ingress.enabled=true \
+            --set auditCheckpoint.existingClaim=norinth-audit-checkpoints > rendered.yaml
           grep -c '^kind:' rendered.yaml
+          grep -q 'claimName: "norinth-audit-checkpoints"' rendered.yaml
+          grep -q 'NORINTH_AUDIT_CHECKPOINT_PATH' rendered.yaml
       - name: Refuses to render without secrets
         run: |
           if helm template test deploy/helm/norinth >/dev/null 2>&1; then echo "chart rendered without secrets"; exit 1; fi
@@ -186,6 +189,7 @@ jobs:
         run: |
           cd .norinth-install
           # the scripts under test are the ones the installer shipped, not the repo copies
+          docker compose exec -T norinth python -c 'from app.storage.audit import record_audit; record_audit(actor_ref="ci", action="ci.backup_restore")'
           ./scripts/backup.sh
           dump=$(ls -1 backups/norinth-*.sql.gz | head -1)
           # a dump that restores to nothing is still valid gzip, so check for SQL
@@ -200,7 +204,12 @@ jobs:
           curl -fsS http://127.0.0.1:8002/health >/dev/null || { echo "refused restore still disturbed the database"; exit 1; }
           # anything written after the backup is gone once the backup is restored
           docker compose exec -T postgres psql -U norinth -d norinth -c "CREATE TABLE ci_marker (id int);"
+          seal=$(docker compose exec -T norinth python -c 'from app.storage.audit import verify_audit_chain; print(verify_audit_chain().get("checkpoint", {}).get("seal", ""))')
+          test -n "$seal" || { echo "audit checkpoint seal was unavailable"; exit 1; }
           printf 'restore\n' | ./scripts/restore.sh "$dump"
+          # The retained checkpoint must be reconciled explicitly before startup.
+          docker compose run --rm norinth python scripts/reconcile_audit_checkpoint.py --reason "CI restore $dump" --expected-seal "$seal"
+          docker compose up -d norinth
           for i in $(seq 1 60); do curl -fsS http://127.0.0.1:8002/health >/dev/null 2>&1 && break; sleep 1; done
           curl -fsS http://127.0.0.1:8002/health
           marker=$(docker compose exec -T postgres psql -U norinth -d norinth -tAc "SELECT to_regclass('public.ci_marker');")

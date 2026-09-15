@@ -22,6 +22,13 @@ from typing import Any
 from app.services.observability import histogram_observe
 
 from . import db
+from .audit_checkpoint import (
+    append_checkpoint,
+    checkpoint_lock,
+    latest_checkpoint,
+    read_checkpoints,
+    reconcile_checkpoint,
+)
 from .entities import encode_json
 from .raw_events import connect
 
@@ -178,33 +185,47 @@ def record_audit(
     """
     detail_json = encode_json(detail) if detail is not None else None
     write_started = time.perf_counter()
-    connection = connect()
-    connection.isolation_level = None  # manage the transaction explicitly
-    try:
-        connection.execute("BEGIN IMMEDIATE")
-        db.serialize_writer(connection)  # single-writer ordering on postgres too
-        last = connection.execute("SELECT row_hash FROM audit_logs ORDER BY id DESC LIMIT 1").fetchone()
-        prev_hash = last["row_hash"] if last and last["row_hash"] else GENESIS_HASH
-        created_at = connection.execute("SELECT datetime('now') AS now").fetchone()["now"]
-        row_hash = _compute_row_hash(
-            CURRENT_HASH_VERSION, prev_hash, created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json
-        )
-        if row_hash is None:
-            # the current version must always have a registered hasher; writing a
-            # null hash would break the chain silently, so fail loudly instead
-            raise RuntimeError(f"no audit hasher registered for version {CURRENT_HASH_VERSION}")
-        row_hmac, hmac_key_id = _compute_row_hmac(row_hash)
-        connection.execute(
-            """
-            INSERT INTO audit_logs
-                (created_at, actor_ref, tenant_id, action, target_type, target_id, detail, prev_hash, row_hash, row_hmac, hmac_key_id, hash_version)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json, prev_hash, row_hash, row_hmac, hmac_key_id, CURRENT_HASH_VERSION),
-        )
-        connection.execute("COMMIT")
-    finally:
-        connection.close()
+    with checkpoint_lock():
+        connection = connect()
+        connection.isolation_level = None  # manage the transaction explicitly
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            db.serialize_writer(connection)  # single-writer ordering on postgres too
+            last = connection.execute("SELECT row_hash FROM audit_logs ORDER BY id DESC LIMIT 1").fetchone()
+            prev_hash = last["row_hash"] if last and last["row_hash"] else GENESIS_HASH
+            previous_count = int(connection.execute("SELECT COUNT(*) AS count FROM audit_logs").fetchone()["count"])
+            checkpoint = latest_checkpoint(_audit_keyring())
+            if checkpoint:
+                if checkpoint["count"] > previous_count:
+                    raise RuntimeError("Audit database is shorter than the retained checkpoint")
+                if checkpoint["count"]:
+                    anchored = connection.execute(
+                        "SELECT row_hash FROM audit_logs ORDER BY id LIMIT 1 OFFSET ?",
+                        (checkpoint["count"] - 1,),
+                    ).fetchone()
+                    if anchored is None or anchored["row_hash"] != checkpoint["head_hash"]:
+                        raise RuntimeError("Audit database contradicts the retained checkpoint")
+            created_at = connection.execute("SELECT datetime('now') AS now").fetchone()["now"]
+            row_hash = _compute_row_hash(
+                CURRENT_HASH_VERSION, prev_hash, created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json
+            )
+            if row_hash is None:
+                raise RuntimeError(f"no audit hasher registered for version {CURRENT_HASH_VERSION}")
+            row_hmac, hmac_key_id = _compute_row_hmac(row_hash)
+            connection.execute(
+                """
+                INSERT INTO audit_logs
+                    (created_at, actor_ref, tenant_id, action, target_type, target_id, detail, prev_hash, row_hash, row_hmac, hmac_key_id, hash_version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json, prev_hash, row_hash, row_hmac, hmac_key_id, CURRENT_HASH_VERSION),
+            )
+            count = previous_count + 1
+            connection.execute("COMMIT")
+        finally:
+            connection.close()
+        if hmac_key_id is not None:
+            append_checkpoint(count, row_hash, hmac_key_id, _audit_keyring()[hmac_key_id], _audit_keyring())
     # the audit record also streams to stdout: a siem should see security
     # events (logins, lockouts, resets, exports) without polling the database.
     # the chain in the database stays the tamper-evident record; this is a copy
@@ -225,7 +246,14 @@ def record_audit(
     )
 
 
-def verify_audit_chain(*, tenant_id: str | None = None) -> dict[str, Any]:
+def verify_audit_chain(*, tenant_id: str | None = None, check_checkpoint: bool = True) -> dict[str, Any]:
+    # Read the database and journal under the same cross-process lock so a
+    # concurrent append cannot create a transient false truncation verdict.
+    with checkpoint_lock():
+        return _verify_audit_chain_unlocked(tenant_id=tenant_id, check_checkpoint=check_checkpoint)
+
+
+def _verify_audit_chain_unlocked(*, tenant_id: str | None = None, check_checkpoint: bool = True) -> dict[str, Any]:
     """recompute the hash chain and report integrity
 
     returns {ok, entries, broken_at}; broken_at is the first entry whose hash or
@@ -268,7 +296,40 @@ def verify_audit_chain(*, tenant_id: str | None = None) -> dict[str, Any]:
             if key is None or not hmac.compare_digest(row["row_hmac"], _hmac(key, row["row_hash"])):
                 return {"ok": False, "entries": len(rows), "broken_at": row["id"], "reason": "hmac"}
         expected_prev = row["row_hash"]
-    return {"ok": True, "entries": len(rows), "broken_at": None}
+    if not check_checkpoint:
+        return {"ok": True, "entries": len(rows), "broken_at": None, "chain_ok": True}
+    checkpoints, checkpoint_error = read_checkpoints(ring)
+    if checkpoint_error not in (None, "unavailable", "verification_key_unavailable"):
+        return {"ok": False, "entries": len(rows), "broken_at": None, "reason": checkpoint_error,
+                "chain_ok": True, "completeness_ok": False, "checkpoint_status": "invalid"}
+    if not checkpoints:
+        return {"ok": True, "entries": len(rows), "broken_at": None, "chain_ok": True,
+                "completeness_ok": None, "checkpoint_status": checkpoint_error or "unavailable",
+                "unanchored_entries": len(rows)}
+    latest = checkpoints[-1]
+    if len(rows) < latest["count"] or (len(rows) == latest["count"] and expected_prev != latest["head_hash"]):
+        return {"ok": False, "entries": len(rows), "broken_at": None, "reason": "checkpoint mismatch",
+                "chain_ok": True, "completeness_ok": False, "checkpoint_status": "mismatch",
+                "checkpoint": latest}
+    # A newer database may contain an interval not yet independently anchored,
+    # such as after an outage or a commit preceding a checkpoint write.
+    unanchored = len(rows) - latest["count"]
+    if unanchored and rows[latest["count"] - 1]["row_hash"] != latest["head_hash"]:
+        return {"ok": False, "entries": len(rows), "broken_at": None, "reason": "checkpoint mismatch",
+                "chain_ok": True, "completeness_ok": False, "checkpoint_status": "mismatch",
+                "checkpoint": latest}
+    from datetime import UTC, datetime, timedelta
+
+    age = datetime.now(UTC) - datetime.fromisoformat(latest["created_at"])
+    fresh = age <= timedelta(hours=24)
+    prior_unanchored = latest["anchored_from"] - 1
+    reconciled = any(entry.get("kind") == "reconcile" for entry in checkpoints)
+    current = fresh and unanchored == 0 and prior_unanchored == 0 and not reconciled
+    return {"ok": True, "entries": len(rows), "broken_at": None, "chain_ok": True,
+            "completeness_ok": current,
+            "checkpoint_status": "partial_history" if prior_unanchored or reconciled else "current" if current else "stale",
+            "checkpoint": latest, "unanchored_entries": unanchored,
+            "unanchored_before_checkpoint": prior_unanchored}
 
 
 def validate_audit_at_startup() -> None:
@@ -280,6 +341,22 @@ def validate_audit_at_startup() -> None:
             f"Audit integrity check failed at entry {result['broken_at']}: {result['reason']}. "
             "Audit history was not repaired. Investigate tampering or missing verification keys."
         )
+
+
+def reconcile_audit_after_restore(*, reason: str, expected_seal: str) -> dict[str, Any]:
+    """Operator-only restore reconciliation; never called by startup or API."""
+    with checkpoint_lock():
+        chain = _verify_audit_chain_unlocked(check_checkpoint=False)
+        if not chain["ok"]:
+            raise RuntimeError(f"Restored audit chain is invalid: {chain['reason']}")
+        primary = _audit_primary_id()
+        if primary is None:
+            raise RuntimeError("Audit HMAC key is required for checkpoint reconciliation")
+        with connect() as connection:
+            head = connection.execute("SELECT row_hash FROM audit_logs ORDER BY id DESC LIMIT 1").fetchone()
+        reconcile_checkpoint(chain["entries"], head["row_hash"] if head else GENESIS_HASH,
+                             reason, expected_seal, primary, _audit_keyring()[primary], _audit_keyring())
+        return _verify_audit_chain_unlocked()
 
 
 def _audit_filters(tenant_id: str | None, actor_ref: str | None, action: str | None) -> tuple[str, dict[str, Any]]:

@@ -119,8 +119,11 @@ in the clear. Capturing raw content is a separate, explicit setting.
 
 Every decision, export, failed login, lockout, and read of record-level data is
 written to an append-only audit log. Each entry is hashed together with the
-previous one, so any change to the history is detectable, and there is an
-endpoint that verifies the whole chain.
+previous one. The verifier checks surviving rows and, when configured, compares
+the head with a signed checkpoint stored separately from the database. It
+reports checkpoint availability and freshness so a valid chain is not confused
+with proof that no tail was removed. See [audit checkpoints](docs/audit-checkpoints.md)
+for retention, backup, and restore requirements.
 
 Every account, including the platform administrator, can enroll in TOTP
 multi-factor authentication with any authenticator app, and an organization can

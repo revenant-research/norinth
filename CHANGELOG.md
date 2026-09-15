@@ -8,6 +8,17 @@ Semantic Versioning.
 
 ### Security
 
+- **Audit verification checks a separate signed head journal.** A database
+  writer who deletes the last rows can no longer present a valid surviving
+  prefix as complete when a retained checkpoint exists. Verification and audit
+  packets report chain validity and checkpoint completeness separately;
+  versioned or immutable journal retention is required to protect against
+  host-level rollback. (#173)
+- **Revoking the final eval signing key no longer drops the requirement for
+  signed evidence.** Existing key registrations are migrated to durable tenant
+  opt-ins. Key management reports when signatures are required but no active
+  key can verify new evidence. (#174)
+
 - OTLP numeric attributes that overflow integer/float conversion now use the
   existing malformed-value fallback instead of raising an uncaught exception.
 
@@ -49,6 +60,10 @@ Semantic Versioning.
   counter so the posture is visible on the platform.
 
 ### Fixed
+
+- **Unobserved mapped framework requirements no longer count as satisfied.**
+  Coverage distinguishes recent passing evidence from unknown requirements,
+  approved waivers and open violations, including in the audit packet. (#172)
 
 - **A malformed OTLP attribute no longer turns into a 500.** An attribute
   whose `key` was a list or object, an operation name that was not a string,
