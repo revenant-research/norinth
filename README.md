@@ -167,7 +167,7 @@ Norinth and some AI systems in the inventory. You need
 On a laptop or a single VM:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/revenant-research/norinth/main/scripts/install.sh | bash
+curl -fsSL https://github.com/revenant-research/norinth/releases/latest/download/install.sh | bash
 ```
 
 The installer generates every secret for you, starts PostgreSQL and Norinth in

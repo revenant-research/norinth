@@ -6,6 +6,16 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+### Changed
+
+- **Default installs and upgrades resolve one stable release.** A published
+  manifest binds the image digest, source SHA, and checksums of Compose and
+  backup/restore scripts. The installer checks those files, pins the digest in
+  `.env`, and records the installed version, channel, source SHA, and digest.
+  A release qualification job installs, upgrades, backs up, and restores from
+  the published assets. Releases without a manifest require explicit paired
+  image and source overrides. (#176)
+
 ### Security
 
 - **Audit verification checks a separate signed head journal.** A database
