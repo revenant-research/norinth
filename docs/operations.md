@@ -11,17 +11,45 @@ upgrading it.
 ### One command (laptop, VM)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/revenant-research/norinth/main/scripts/install.sh | bash
+curl -fsSL https://github.com/revenant-research/norinth/releases/latest/download/install.sh | bash
 ```
 
-The script checks for Docker (and offers to install it on Ubuntu/Debian),
-creates `./norinth`, writes a `.env` with generated secrets (PostgreSQL
-password, `NORINTH_SECRET_KEY`, administrator password), pulls the image, starts
-PostgreSQL and Norinth, waits for `/health`, and prints the URL and login.
+The script resolves the latest **stable** GitHub Release manifest. It uses that
+release's immutable image digest and downloads Compose, backup, and restore
+files from the release's source SHA, checking each file against the manifest.
+It then writes a `.env` with generated secrets (PostgreSQL password,
+`NORINTH_SECRET_KEY`, administrator password), starts PostgreSQL and Norinth,
+waits for `/health`, and prints the URL, login, release version, source SHA,
+channel, and image digest. The same data is retained in
+`norinth/installed-release.json`; the digest is retained in `.env` for Compose.
+Python 3 is required on the host to validate the manifest.
 
-Flags: `--dir PATH`, `--port N`, `--source` (build from a checkout instead of
-pulling the image), `--upgrade`, `--uninstall`, `--yes`. Re-running never
-overwrites an existing `.env`.
+For a reproducible install, choose a release tag that includes
+`release-manifest.json` and pin it explicitly (replace `<release-tag>` with the
+tag on the release page):
+
+```bash
+TAG='<release-tag>'  # replace with a manifest-bearing release tag
+curl -fsSL "https://github.com/revenant-research/norinth/releases/download/$TAG/install.sh" \
+  | bash -s -- --version "$TAG" --dir ./norinth
+cat ./norinth/installed-release.json
+```
+
+The default command fetches the installer attached to the latest qualified
+stable release, so a merge to `main` alone does not change an operator's install.
+`stable` is built from immutable version tags; `edge` tracks `main` and can
+change on every merge. The installer keeps stable users on stable. Operators
+who deliberately run edge must supply both `NORINTH_IMAGE` and
+`NORINTH_REPO_RAW` for the same commit and manage that pairing themselves.
+Supplying only one override is rejected by manifest-bearing installers.
+Releases before the manifest was introduced, including v0.2.1, keep their
+original installer; to use the new installer with an older image, supply paired
+image and source overrides.
+
+Flags: `--dir PATH`, `--port N`, `--version TAG`, `--resolve-only`,
+`--source` (build from a checkout instead of pulling the image), `--upgrade`,
+`--uninstall`, `--yes`. Re-running preserves existing secrets and updates only
+the image reference in `.env`.
 
 From a checkout: `make docker-up` (equivalent to `scripts/install.sh --source --dir . --yes`).
 
@@ -50,14 +78,16 @@ cosign verify ghcr.io/revenant-research/norinth:<version> \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-The files attached to each GitHub Release (installer, compose file, SBOM,
-SDK wheel and source distribution) come with `SHA256SUMS`, a Sigstore
-signature of that file, and SLSA build provenance for every file. Check a
+Manifest-bearing GitHub Releases attach the installer, release manifest,
+Compose, backup and restore scripts, SBOM, SDK wheel and source distribution.
+They come with `SHA256SUMS`, a Sigstore signature of that file, and SLSA build
+provenance for every file. Check a
 download before you run it:
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing
 gh attestation verify install.sh --repo revenant-research/norinth
+gh attestation verify release-manifest.json --repo revenant-research/norinth
 ```
 
 `gh attestation verify` fetches the attestation from GitHub; pass
@@ -242,7 +272,7 @@ restricted to your corporate network.
 
 ```bash
 scripts/backup.sh                                   # -> SQL dump and checkpoint journal copy
-scripts/restore.sh backups/norinth-<utc>.sql.gz     # replaces the database
+scripts/restore.sh backups/norinth-<utc>.sql.gz     # replaces the database; reconcile retained checkpoints before restart
 ```
 
 Application records are in PostgreSQL (events, entities, decisions, the
@@ -258,14 +288,28 @@ reconciles the restored chain with the pre-restore seal; follow
 ## 7. Upgrade
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/revenant-research/norinth/main/scripts/install.sh | bash -s -- --upgrade --dir ./norinth
-# or: cd norinth && docker compose pull && docker compose up -d
+curl -fsSL https://github.com/revenant-research/norinth/releases/latest/download/install.sh | bash -s -- --upgrade --dir ./norinth
+# use --version <release-tag> to pin the target instead of taking latest stable
 ```
+
+The installer verifies the next release's support files before it changes the
+installed image and preserves the existing secrets and port. After it reaches
+health, compare `installed-release.json` with the release notes and the image
+digest. A direct `docker compose pull` cannot refresh the matching support
+files, so use the installer for release upgrades.
 
 Schema changes are versioned migrations (`apps/platform/app/storage/migrations.py`)
 applied on boot and recorded in `schema_migrations`; Console → Overview shows
 the applied versions. Migrations are forward-only: take a backup first.
 Releases follow semantic versioning; the changelog lists breaking changes.
+Security fixes under **Unreleased** in `CHANGELOG.md` have not shipped to stable.
+Before tagging, move each shipped fix into that version's changelog section;
+the release workflow refuses to publish a tag without that section and copies
+it into the GitHub Release notes. The new release is initially published as a
+prerelease; its released installer, image, upgrade, backup and restore are
+qualified before it is promoted to `latest` stable. This lets operators identify
+the first stable version carrying a fix. Qualify the selected digest under your own workload
+with the load-test harness in section 8 before upgrading a production fleet.
 
 ### Audit integrity at startup
 
