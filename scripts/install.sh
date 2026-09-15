@@ -78,8 +78,9 @@ need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required. $2"; }
 resolve_release() {
   [ "$FROM_SOURCE" = 1 ] && { RELEASE_MODE="source"; IMAGE="norinth-platform:source"; return; }
   if [ -n "${NORINTH_IMAGE:-}" ] || [ -n "${NORINTH_REPO_RAW:-}" ]; then
-    [ -n "${NORINTH_IMAGE:-}" ] && [ -n "${NORINTH_REPO_RAW:-}" ] ||
+    if [ -z "${NORINTH_IMAGE:-}" ] || [ -z "${NORINTH_REPO_RAW:-}" ]; then
       die "Set NORINTH_IMAGE and NORINTH_REPO_RAW together for a custom install. A single override could mix releases."
+    fi
     RELEASE_MODE="custom"
     return
   fi
