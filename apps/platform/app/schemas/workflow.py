@@ -87,6 +87,9 @@ class RiskRuleRequest(BaseModel):
     severity: str = Field(min_length=1)
     framework_refs: list[str] = Field(default_factory=list)
     rationale: str = Field(min_length=1)
+    # observe: findings are visible but do not block releases; enforce (the
+    # default): findings count toward release gates
+    mode: str = "enforce"
 
 
 class RetentionPolicyRequest(BaseModel):

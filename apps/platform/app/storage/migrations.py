@@ -622,6 +622,12 @@ def _0025_control_coverage(connection) -> None:
             record_control_evidence(connection, app_context, control, evidence)
 
 
+def _0026_risk_rule_mode(connection) -> None:
+    """observe or enforce per risk rule; every existing rule enforces"""
+    if not _has_column(connection, "risk_rules", "mode"):
+        connection.execute("ALTER TABLE risk_rules ADD COLUMN mode TEXT NOT NULL DEFAULT 'enforce'")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
@@ -648,6 +654,7 @@ MIGRATIONS: list[Migration] = [
     Migration(23, "durable fold ledger on raw events for recoverable ingest", _0023_fold_ledger),
     Migration(24, "durable tenant attestation requirement", _0024_attestation_requirement),
     Migration(25, "control coverage and evidence freshness", _0025_control_coverage),
+    Migration(26, "observe or enforce mode for risk rules", _0026_risk_rule_mode),
 ]
 
 
