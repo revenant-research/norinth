@@ -15,6 +15,8 @@ invariants this module keeps:
 * every policy activation is hash-chained in the audit log
 * gates only tighten: policy cannot approve without evidence
 * roles stay platform-wide; policy references them, never redefines them
+* a version that loosens the policy in force is activated by someone other
+  than its author
 
 the shipped platform default (tenant_id '') encodes today's behavior exactly:
 one review stage per tier, no recertification clock, gate attestation driven
@@ -37,7 +39,7 @@ from hashlib import sha256
 from typing import Any
 
 from .entities import decode_json, encode_json, entity_id
-from .errors import RecordNotFound
+from .errors import DomainError, RecordNotFound
 from .intake import RISK_TIERS
 from .raw_events import connect
 from .workflow import apply_decision_status
@@ -56,6 +58,13 @@ MAX_FIELD_LABEL_LENGTH = 200
 # also the ceiling a policy may declare, so the knob exists in the schema but
 # cannot relax the gate below shipped behavior
 MATERIAL_CHANGE_CEILING = 0
+# evidence freshness settings (see governance_policy.control_coverage). the
+# defaults apply when a document has no evidence section, which includes the
+# seeded platform default, so an install that never sets them uses these
+DEFAULT_COVERAGE_WINDOW_DAYS = 7
+DEFAULT_STALE_AFTER_DAYS = 30
+COVERAGE_WINDOW_DAYS_CEILING = 30
+STALE_AFTER_DAYS_CEILING = 90
 
 _FIELD_KEY_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _FIELD_TYPES = {"string", "number", "boolean"}
@@ -337,9 +346,12 @@ def _validate_gates(gates: Any, errors: list[str]) -> None:
         if not isinstance(entry, dict):
             errors.append(f"{where}: must be an object")
             continue
-        unknown = set(entry) - {"require_attested_evals", "max_open_material_changes"}
+        unknown = set(entry) - {"require_attested_evals", "max_open_material_changes", "min_control_coverage"}
         if unknown:
             errors.append(f"{where}: unknown keys: {', '.join(sorted(unknown))}")
+        min_coverage = entry.get("min_control_coverage", 0)
+        if isinstance(min_coverage, bool) or not isinstance(min_coverage, (int, float)) or not (0 <= min_coverage <= 100):
+            errors.append(f"{where}: min_control_coverage must be a number between 0 and 100")
         attested = entry.get("require_attested_evals", False)
         if not isinstance(attested, bool):
             errors.append(f"{where}: require_attested_evals must be a boolean")
@@ -352,6 +364,21 @@ def _validate_gates(gates: Any, errors: list[str]) -> None:
             errors.append(
                 f"{where}: max_open_material_changes cannot exceed {MATERIAL_CHANGE_CEILING} (the platform floor)"
             )
+
+
+def _validate_evidence(evidence: Any, errors: list[str]) -> None:
+    if not isinstance(evidence, dict):
+        errors.append("evidence must be an object")
+        return
+    unknown = set(evidence) - {"coverage_window_days", "stale_after_days"}
+    if unknown:
+        errors.append(f"evidence has unknown keys: {', '.join(sorted(unknown))}")
+    for key, ceiling in (("coverage_window_days", COVERAGE_WINDOW_DAYS_CEILING), ("stale_after_days", STALE_AFTER_DAYS_CEILING)):
+        value = evidence.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, int) or isinstance(value, bool) or not (1 <= value <= ceiling):
+            errors.append(f"evidence.{key} must be an integer between 1 and {ceiling}")
 
 
 def _validate_vendors(vendors: Any, grants: dict[str, set[str]], errors: list[str]) -> None:
@@ -376,7 +403,7 @@ def validate_policy_body(body: Any, connection=None) -> list[str]:
         return ["policy body must be a JSON object"]
     if body.get("schema") != POLICY_SCHEMA:
         errors.append(f"schema must be '{POLICY_SCHEMA}'")
-    unknown = set(body) - {"schema", "intake", "gates", "vendors"}
+    unknown = set(body) - {"schema", "intake", "gates", "vendors", "evidence"}
     if unknown:
         errors.append(f"unknown top-level keys: {', '.join(sorted(unknown))}")
     owned = connection is None
@@ -392,6 +419,8 @@ def validate_policy_body(body: Any, connection=None) -> list[str]:
         _validate_gates(body["gates"], errors)
     if "vendors" in body:
         _validate_vendors(body["vendors"], grants, errors)
+    if "evidence" in body:
+        _validate_evidence(body["evidence"], errors)
     return errors
 
 
@@ -472,6 +501,7 @@ def resolve_gate_policy(connection, tenant_id: str | None, environment: str) -> 
             return {
                 "require_attested_evals": bool(entry.get("require_attested_evals", False)),
                 "max_open_material_changes": min(int(entry.get("max_open_material_changes", 0)), MATERIAL_CHANGE_CEILING),
+                "min_control_coverage": float(entry.get("min_control_coverage", 0) or 0),
                 "policy_tenant": policy["tenant_id"],
                 "policy_version": policy["version"],
             }
@@ -479,8 +509,33 @@ def resolve_gate_policy(connection, tenant_id: str | None, environment: str) -> 
     return {
         "require_attested_evals": False,
         "max_open_material_changes": 0,
+        "min_control_coverage": 0.0,
         "policy_tenant": default["tenant_id"],
         "policy_version": default["version"],
+    }
+
+
+def _evidence_settings(body: dict[str, Any], default_body: dict[str, Any]) -> dict[str, int]:
+    """evidence settings a document resolves to: its own section, else the
+    platform default's, else the shipped defaults, key by key"""
+    resolved = {"coverage_window_days": DEFAULT_COVERAGE_WINDOW_DAYS, "stale_after_days": DEFAULT_STALE_AFTER_DAYS}
+    for key in resolved:
+        for document in (body, default_body):
+            value = (document.get("evidence") or {}).get(key)
+            if value is not None:
+                resolved[key] = int(value)
+                break
+    return resolved
+
+
+def resolve_evidence_policy(connection, tenant_id: str | None) -> dict[str, Any]:
+    """coverage window and stale age for one organization"""
+    policy = active_policy(connection, tenant_id)
+    default = _platform_default(connection)
+    return {
+        **_evidence_settings(policy["body"], default["body"]),
+        "policy_tenant": policy["tenant_id"],
+        "policy_version": policy["version"],
     }
 
 
@@ -568,10 +623,18 @@ def create_policy_draft(tenant_id: str, body: dict[str, Any], actor_ref: str) ->
         )
 
 
+class PolicyActivationRequiresSecondPerson(DomainError):
+    """the version loosens the policy in force and its author tried to activate it"""
+
+
 def activate_policy(tenant_id: str, version: int, actor_ref: str) -> dict[str, Any]:
     """put one version in force; the previous active version is superseded in
     the same transaction. in-flight subjects keep the stages they were
     materialized with, so activation never rewrites open work
+
+    a version that loosens the policy in force (see policy_loosening) must be
+    activated by someone other than its author; tightening and neutral changes
+    may be activated by the author
     """
     if not tenant_id:
         raise ValueError("a tenant_id is required to activate a governance policy")
@@ -593,6 +656,14 @@ def activate_policy(tenant_id: str, version: int, actor_ref: str) -> dict[str, A
         previous = connection.execute(
             "SELECT * FROM governance_policies WHERE tenant_id = ? AND status = 'active'", (tenant_id,)
         ).fetchone()
+        default_body = _platform_default(connection)["body"]
+        previous_body = _policy_row(previous)["body"] if previous is not None else default_body
+        loosening = policy_loosening(previous_body, target["body"], default_body)
+        if loosening and target.get("created_by") == actor_ref:
+            raise PolicyActivationRequiresSecondPerson(
+                "this version loosens the policy in force, so someone other than its author must activate it: "
+                + "; ".join(loosening)
+            )
         if previous is not None:
             connection.execute(
                 "UPDATE governance_policies SET status = 'superseded' WHERE tenant_id = ? AND version = ?",
@@ -607,7 +678,6 @@ def activate_policy(tenant_id: str, version: int, actor_ref: str) -> dict[str, A
                 "SELECT * FROM governance_policies WHERE tenant_id = ? AND version = ?", (tenant_id, version)
             ).fetchone()
         )
-        previous_body = _policy_row(previous)["body"] if previous is not None else _platform_default(connection)["body"]
     from .audit import record_audit
 
     record_audit(
@@ -621,6 +691,8 @@ def activate_policy(tenant_id: str, version: int, actor_ref: str) -> dict[str, A
             "body_hash": activated["body_hash"],
             "superseded_version": previous["version"] if previous is not None else None,
             "diff": policy_diff_summary(previous_body, activated["body"]),
+            "loosens": loosening,
+            "author": target.get("created_by"),
         },
     )
     return activated
@@ -653,6 +725,120 @@ def policy_diff_summary(old_body: dict[str, Any], new_body: dict[str, Any]) -> l
         elif old_flat[key] != new_flat[key]:
             changes.append(f"changed {key}: {encode_json(old_flat[key])} -> {encode_json(new_flat[key])}")
     return changes or ["no changes"]
+
+
+def _tier_entry(body: dict[str, Any], default_body: dict[str, Any], tier: str) -> dict[str, Any]:
+    """the tier entry resolve_tier_policy would use, computed from documents"""
+    for document in (body, default_body):
+        entry = ((document.get("intake") or {}).get("tiers") or {}).get(tier)
+        if entry is not None:
+            return entry
+    return {"stages": [{"role": "governance_reviewer"}]}
+
+
+def _vendor_entry(body: dict[str, Any], default_body: dict[str, Any]) -> dict[str, Any]:
+    for document in (body, default_body):
+        entry = document.get("vendors")
+        if entry is not None:
+            return entry
+    return DEFAULT_POLICY_BODY["vendors"]
+
+
+def _gate_entry(body: dict[str, Any], default_body: dict[str, Any], environment: str) -> dict[str, Any]:
+    """the gate entry resolve_gate_policy would use, computed from documents"""
+    for document in (body, default_body):
+        environments = (document.get("gates") or {}).get("environments") or {}
+        entry = environments.get(environment)
+        if entry is None:
+            entry = environments.get("*")
+        if entry is not None:
+            return entry
+    return {}
+
+
+def _requires_attested(body: dict[str, Any], default_body: dict[str, Any], environment: str) -> bool:
+    return bool(_gate_entry(body, default_body, environment).get("require_attested_evals", False))
+
+
+def _min_coverage(body: dict[str, Any], default_body: dict[str, Any], environment: str) -> float:
+    return float(_gate_entry(body, default_body, environment).get("min_control_coverage", 0) or 0)
+
+
+def _intake_fields(body: dict[str, Any], default_body: dict[str, Any]) -> list[dict[str, Any]]:
+    intake = body.get("intake") or {}
+    if "fields" in intake:
+        return list(intake.get("fields") or [])
+    return list((default_body.get("intake") or {}).get("fields") or [])
+
+
+def _stages_loosened(old: dict[str, Any], new: dict[str, Any]) -> bool:
+    """whether any approval the old stages required is gone
+
+    conservative: every old stage's role must still appear in the new stages,
+    counted with multiplicity. a role replaced by a stronger one still counts as
+    loosening, so the second person reviews the substitution
+    """
+    remaining = [stage.get("role") for stage in new.get("stages") or []]
+    for stage in old.get("stages") or []:
+        role = stage.get("role")
+        if role not in remaining:
+            return True
+        remaining.remove(role)
+    return False
+
+
+def _recertify_loosened(old: dict[str, Any], new: dict[str, Any]) -> bool:
+    before, after = old.get("recertify_days"), new.get("recertify_days")
+    return before is not None and (after is None or after > before)
+
+
+def policy_loosening(old_body: dict[str, Any], new_body: dict[str, Any], default_body: dict[str, Any]) -> list[str]:
+    """the ways new_body is less strict than old_body; empty when it is not
+
+    both documents are compared as the resolvers read them, with the platform
+    default filling what a tenant document leaves out. counted as loosening: an
+    approval stage removed or its role replaced, a recertification period
+    lengthened or removed, attested evals no longer required for an
+    environment, a lower minimum control coverage, a longer stale age or
+    coverage window, and an intake field removed or required for fewer tiers.
+    anything else (labels, ordering mode, new stages, new fields) is not
+    """
+    reasons: list[str] = []
+    for tier in RISK_TIERS:
+        old, new = _tier_entry(old_body, default_body, tier), _tier_entry(new_body, default_body, tier)
+        if _stages_loosened(old, new):
+            reasons.append(f"intake.tiers.{tier}: an approval stage is removed or its role replaced")
+        if _recertify_loosened(old, new):
+            reasons.append(f"intake.tiers.{tier}: recertification is less frequent or removed")
+    old_vendors, new_vendors = _vendor_entry(old_body, default_body), _vendor_entry(new_body, default_body)
+    if _stages_loosened(old_vendors, new_vendors):
+        reasons.append("vendors: an approval stage is removed or its role replaced")
+    if _recertify_loosened(old_vendors, new_vendors):
+        reasons.append("vendors: recertification is less frequent or removed")
+    environments = {"*"}
+    for document in (old_body, new_body, default_body):
+        environments.update(((document.get("gates") or {}).get("environments") or {}).keys())
+    for environment in sorted(environments):
+        if _requires_attested(old_body, default_body, environment) and not _requires_attested(
+            new_body, default_body, environment
+        ):
+            reasons.append(f"gates.environments.{environment}: attested evals are no longer required")
+        if _min_coverage(new_body, default_body, environment) < _min_coverage(old_body, default_body, environment):
+            reasons.append(f"gates.environments.{environment}: the minimum control coverage is lower")
+    old_evidence, new_evidence = _evidence_settings(old_body, default_body), _evidence_settings(new_body, default_body)
+    if new_evidence["stale_after_days"] > old_evidence["stale_after_days"]:
+        reasons.append("evidence: controls stay fresh longer before they are marked stale")
+    if new_evidence["coverage_window_days"] > old_evidence["coverage_window_days"]:
+        reasons.append("evidence: coverage is measured over a longer window")
+    new_fields = {field.get("key"): field for field in _intake_fields(new_body, default_body)}
+    for field in _intake_fields(old_body, default_body):
+        key = field.get("key")
+        replacement = new_fields.get(key)
+        if replacement is None:
+            reasons.append(f"intake.fields.{key}: the field is removed")
+        elif not set(field.get("required_tiers") or []) <= set(replacement.get("required_tiers") or []):
+            reasons.append(f"intake.fields.{key}: the field is required for fewer tiers")
+    return reasons
 
 
 # --- custom intake fields ---------------------------------------------------------

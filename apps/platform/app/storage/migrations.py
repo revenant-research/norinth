@@ -524,6 +524,110 @@ def _0024_attestation_requirement(connection) -> None:
     ensure_attestation_requirement(connection)
 
 
+def _0025_control_coverage(connection) -> None:
+    """traces that carried qualifying control evidence, for coverage and freshness
+
+    control_evidence_traces records one row per (control, trace) whose events
+    met the control's requirements; coverage and freshness are computed from
+    it when read. control_library gains coverage_basis (the traffic a control
+    is measured against) and the gate table records how many controls were
+    below the policy's minimum coverage.
+
+    the table is backfilled from the raw events of the last
+    STALE_AFTER_DAYS_CEILING days, the furthest back a freshness setting can
+    reach, so an upgraded install reports coverage and freshness for existing
+    evidence instead of calling every control stale
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from app.storage.governance_policy import (
+        DEFAULT_CONTROLS,
+        dict_event,
+        event_satisfies_required_fields,
+        list_control_library,
+        record_control_evidence,
+    )
+    from app.storage.policy_engine import STALE_AFTER_DAYS_CEILING
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS control_evidence_traces (
+            tenant_id TEXT NOT NULL DEFAULT '',
+            project TEXT NOT NULL,
+            environment TEXT NOT NULL,
+            application_name TEXT NOT NULL,
+            control_id TEXT NOT NULL,
+            trace_id TEXT NOT NULL,
+            last_seen TEXT NOT NULL,
+            PRIMARY KEY (tenant_id, project, environment, application_name, control_id, trace_id)
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_control_evidence_traces_trace ON control_evidence_traces(trace_id)"
+    )
+    if not _has_column(connection, "control_library", "coverage_basis"):
+        connection.execute("ALTER TABLE control_library ADD COLUMN coverage_basis TEXT")
+    for default in DEFAULT_CONTROLS:
+        if default.get("coverage_basis"):
+            connection.execute(
+                "UPDATE control_library SET coverage_basis = ? WHERE tenant_id = '' AND control_id = ?",
+                (default["coverage_basis"], default["control_id"]),
+            )
+    if not _has_column(connection, "deployment_approval_gates", "undercovered_control_count"):
+        connection.execute(
+            "ALTER TABLE deployment_approval_gates ADD COLUMN undercovered_control_count INTEGER NOT NULL DEFAULT 0"
+        )
+
+    cutoff = (datetime.now(UTC) - timedelta(days=STALE_AFTER_DAYS_CEILING)).strftime("%Y-%m-%d %H:%M:%S")
+    apps = connection.execute(
+        "SELECT DISTINCT tenant_id, project, environment, application_name FROM governance_applications"
+    ).fetchall()
+    libraries: dict[str, list[dict[str, Any]]] = {}
+    for app in apps:
+        app_context = dict(app)
+        tid = app_context.get("tenant_id") or ""
+        if tid not in libraries:
+            libraries[tid] = list_control_library(connection, tid)
+        wanted = sorted({t for control in libraries[tid] for t in control["evidence_event_types"]})
+        if not wanted:
+            continue
+        placeholders = ", ".join("?" for _ in wanted)
+        rows = connection.execute(
+            f"""
+            SELECT raw_event FROM sdk_events
+            WHERE project = ? AND environment = ? AND application_name = ?
+              AND ((? IS NULL AND tenant_id IS NULL) OR tenant_id = ?)
+              AND event_type IN ({placeholders})
+              AND REPLACE(timestamp, 'T', ' ') >= ?
+            """,  # noqa: S608 - placeholders are generated, values are bound
+            (
+                app_context["project"],
+                app_context["environment"],
+                app_context["application_name"],
+                app_context.get("tenant_id"),
+                app_context.get("tenant_id"),
+                *wanted,
+                cutoff,
+            ),
+        ).fetchall()
+        events = [dict_event(row["raw_event"]) for row in rows]
+        for control in libraries[tid]:
+            evidence = [
+                event
+                for event in events
+                if event.get("type") in control["evidence_event_types"]
+                and event_satisfies_required_fields(event, control["required_fields"])
+            ]
+            record_control_evidence(connection, app_context, control, evidence)
+
+
+def _0026_risk_rule_mode(connection) -> None:
+    """observe or enforce per risk rule; every existing rule enforces"""
+    if not _has_column(connection, "risk_rules", "mode"):
+        connection.execute("ALTER TABLE risk_rules ADD COLUMN mode TEXT NOT NULL DEFAULT 'enforce'")
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
@@ -549,6 +653,8 @@ MIGRATIONS: list[Migration] = [
     Migration(22, "governance policy engine (policies, approval stages, vendor registry)", _0022_governance_policy_engine),
     Migration(23, "durable fold ledger on raw events for recoverable ingest", _0023_fold_ledger),
     Migration(24, "durable tenant attestation requirement", _0024_attestation_requirement),
+    Migration(25, "control coverage and evidence freshness", _0025_control_coverage),
+    Migration(26, "observe or enforce mode for risk rules", _0026_risk_rule_mode),
 ]
 
 

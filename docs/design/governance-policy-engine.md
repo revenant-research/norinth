@@ -131,14 +131,15 @@ default-with-tenant-overlay pattern (`control_library`, `risk_rules`).
   },
   "gates": {
     "environments": {
-      "production": {"require_attested_evals": true, "max_open_material_changes": 0},
+      "production": {"require_attested_evals": true, "max_open_material_changes": 0, "min_control_coverage": 95},
       "*":          {"require_attested_evals": false}
     }
   },
   "vendors": {
     "stages": [{"role": "governance_reviewer"}, {"role": "governance_admin"}],
     "recertify_days": 365
-  }
+  },
+  "evidence": {"coverage_window_days": 7, "stale_after_days": 30}
 }
 ```
 
@@ -236,6 +237,17 @@ version consulted, alongside the evidence it already records.
 `tenant_requires_attestation` becomes a read of the policy, with the existing
 attestation-keys behavior as the seeded default.
 
+`min_control_coverage` (0 to 100, default 0) sets the share of recent traffic
+each passing control must cover before a gate can be approved. Coverage is the
+share of the application's traces in the coverage window that carried
+qualifying evidence: for a control with a `coverage_basis` (the guardrail and
+traceability controls use `model.call`), the share of those traces with
+evidence on the same trace; otherwise the share of the control's own evidence
+traces whose events carry every required field. The `evidence` section sets
+the window (`coverage_window_days`, 1 to 30, default 7) and the age after which
+a control's latest evidence is reported as stale (`stale_after_days`, 1 to 90,
+default 30). A gate under a policy with no minimum does not compute coverage.
+
 ### 4. Vendors
 
 A minimal registry — not vendor questionnaires:
@@ -312,6 +324,13 @@ activates a non-default policy.
   evaluation of tenant-authored strings. Validation rejects unknown structure.
 - Policy writes require `config_write`; activation is audited with the body
   hash, so a quietly weakened policy is as visible as a deleted audit row.
+- A version that loosens the policy in force must be activated by someone
+  other than its author. Loosening means an approval stage removed or its role
+  replaced, a recertification period lengthened or removed, attested evals no
+  longer required for an environment, or an intake field removed or required
+  for fewer tiers. Tightening and neutral changes can be activated by the
+  author. The activation audit entry records the author and the loosening
+  reasons.
 - Policy can only tighten gates, never below the shipped floor — a tenant
   cannot configure its way past evidence binding.
 - Stage labels and field labels are rendered in the UI: length-capped and
@@ -322,9 +341,9 @@ activates a non-default policy.
 ## Open questions
 
 1. Should activating a policy itself require a second person (maker–checker on
-   the policy)? Leaning yes for a later round via the same stage machinery
-   (`subject_type = "policy_activation"`), shipped after v1 so the engine can
-   govern itself.
+   the policy)? Resolved: only when the version loosens the policy in force
+   (see Security considerations). A full stage-based approval for policy
+   activation (`subject_type = "policy_activation"`) remains possible later.
 2. Should a tier's stages be allowed to name the *same role twice* (two
    different people from one role)? v1 says yes implicitly — the
    distinct-decider rule forces two people; the question is whether the UI

@@ -6,6 +6,31 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **Observe mode for an organization's own risk rules.** Every open finding
+  counts toward a release gate, so a new custom rule blocked every release as
+  soon as it was added. `POST /api/risk-rules` now takes `mode`: `observe` or
+  `enforce` (the default). Findings from an observe-mode rule have status
+  `observed`: they appear in the register but do not count toward release
+  gates, framework gaps, incident evidence or owner routing. Promoting the
+  rule to enforce opens its findings at once and is recorded as
+  `risk_rule.promote`; every rule change is now in the audit log. Built-in
+  rules always enforce, and an enforced rule cannot return to observe mode.
+
+- **Control coverage and evidence freshness.** A control still passes once
+  qualifying evidence has arrived, and each assessment now also reports the
+  share of the application's traces in the last 7 days that carried that
+  evidence, and whether the latest evidence is more than 30 days old. The
+  guardrail and traceability controls are measured against model-call traces
+  (a guardrail decision covers the model calls on its trace); the other
+  controls against their own events. The governance policy sets the window,
+  the stale age, and an optional minimum coverage per environment that the
+  release gate enforces. With no minimum, the default, gates behave as before.
+  Lowering the minimum, lengthening the stale age or lengthening the window
+  counts as loosening the policy. Migration 25 backfills evidence from the
+  last 90 days of stored events.
+
 ### Changed
 
 - **Default installs and upgrades resolve one stable release.** A published
@@ -18,6 +43,15 @@ Semantic Versioning.
 
 ### Security
 
+- **Loosening the governance policy takes two people.** A policy version that
+  removes an approval stage or replaces its role, lengthens or removes a
+  recertification period, stops requiring attested evals for an environment,
+  or removes an intake field or requires it for fewer tiers can no longer be
+  activated by the person who drafted it. Another `config.write` holder
+  activates it. Tightening and neutral changes are unchanged. The diff
+  endpoint and the activation audit entry list the loosening reasons, and the
+  policy page saves a loosening draft for another administrator instead of
+  activating it.
 - **Audit verification checks a separate signed head journal.** A database
   writer who deletes the last rows can no longer present a valid surviving
   prefix as complete when a retained checkpoint exists. Verification and audit
@@ -70,6 +104,21 @@ Semantic Versioning.
   counter so the posture is visible on the platform.
 
 ### Fixed
+
+- **A failed evaluation is reported as a failed evaluation.** An `eval.result`
+  below its threshold carries status `error`, and `RISK-OPS-001` (operational
+  reliability) counted it as a runtime failure. Failed evaluations now raise
+  the new rule `RISK-EVL-002` (Failed evaluation) instead, and `RISK-OPS-001`
+  counts only runtime events. Release gates block on a failed evaluation as
+  before. Existing `RISK-OPS-001` findings are left for a reviewer to close.
+
+- **An agent more autonomous than its system's intake is a finding.** Intake
+  records autonomy on a three-level scale that sets the risk tier, and the
+  agent registry uses levels 0 to 4, with no link between them. Registry
+  levels now map onto the intake scale (0 assistive, 1 and 2 supervised, 3
+  and 4 autonomous), the registry reports each agent's intake level, and a
+  running agent whose level is above what its system's live intake declares
+  raises `RISK-AGT-INTAKE` (High).
 
 - **Unobserved mapped framework requirements no longer count as satisfied.**
   Coverage distinguishes recent passing evidence from unknown requirements,
