@@ -17,6 +17,8 @@ invariants this module keeps:
 * roles stay platform-wide; policy references them, never redefines them
 * a version that loosens the policy in force is activated by someone other
   than its author
+* a version cannot put in force a stage list that the organization's active
+  people cannot decide, one distinct person per stage
 
 the shipped platform default (tenant_id '') encodes today's behavior exactly:
 one review stage per tier, no recertification clock, gate attestation driven
@@ -627,6 +629,89 @@ class PolicyActivationRequiresSecondPerson(DomainError):
     """the version loosens the policy in force and its author tried to activate it"""
 
 
+def _eligible_deciders(connection, tenant_id: str) -> dict[str, set[str]]:
+    """for every decision role, the active people whose active role
+    assignments carry at least that role's authority (the rule
+    actor_satisfies_stage_role applies when a stage is decided). an assignment
+    limited to one project or environment still counts: that person can decide
+    subjects in their scope"""
+    grants = _decision_capable_roles(connection)
+    held: dict[str, set[str]] = {}
+    for row in connection.execute(
+        """
+        SELECT ra.user_ref, ra.role FROM role_assignments ra
+        JOIN platform_users u ON u.user_ref = ra.user_ref
+        WHERE ra.tenant_id = ? AND ra.status = 'active' AND u.status = 'active'
+        """,
+        (tenant_id,),
+    ).fetchall():
+        held.setdefault(row["user_ref"], set()).add(row["role"])
+    eligible: dict[str, set[str]] = {}
+    for required, required_grants in grants.items():
+        eligible[required] = {
+            user
+            for user, roles in held.items()
+            if required in roles or any(required_grants <= grants.get(role, set()) for role in roles)
+        }
+    return eligible
+
+
+def _can_staff(roles: list[str], eligible: dict[str, set[str]]) -> bool:
+    """whether each stage can go to a different eligible person
+
+    no person decides two stages of one subject, so this is a matching of
+    stages to people: augmenting paths over at most MAX_STAGES_PER_SUBJECT
+    stages
+    """
+    assigned: dict[str, int] = {}
+
+    def place(stage: int, seen: set[str]) -> bool:
+        for person in sorted(eligible.get(roles[stage], set())):
+            if person in seen:
+                continue
+            seen.add(person)
+            if person not in assigned or place(assigned[person], seen):
+                assigned[person] = stage
+                return True
+        return False
+
+    return all(place(stage, set()) for stage in range(len(roles)))
+
+
+def _stage_roles(entry: dict[str, Any]) -> list[str]:
+    return [str(stage.get("role")) for stage in entry.get("stages") or []]
+
+
+def _stage_sections(body: dict[str, Any], default_body: dict[str, Any]) -> dict[str, list[str]]:
+    """each subject kind's stage roles as the resolvers read the document"""
+    sections = {f"intake.tiers.{tier}": _stage_roles(_tier_entry(body, default_body, tier)) for tier in RISK_TIERS}
+    sections["vendors"] = _stage_roles(_vendor_entry(body, default_body))
+    return sections
+
+
+def unstaffed_stage_changes(
+    connection, tenant_id: str, old_body: dict[str, Any], new_body: dict[str, Any], default_body: dict[str, Any]
+) -> list[str]:
+    """stage lists new_body changes that the organization cannot decide
+
+    only changed stage lists are checked: activation should not be refused for
+    a gap the policy in force already has, and a new organization with no
+    reviewers yet can still tighten other parts of its policy
+    """
+    before = _stage_sections(old_body, default_body)
+    after = _stage_sections(new_body, default_body)
+    eligible = _eligible_deciders(connection, tenant_id)
+    reasons: list[str] = []
+    for section, roles in after.items():
+        if roles == before.get(section) or _can_staff(roles, eligible):
+            continue
+        reasons.append(
+            f"{section}: {len(roles)} stage(s) ({', '.join(roles)}) need {len(roles)} different active people "
+            "with that authority, and the organization does not have them"
+        )
+    return reasons
+
+
 def activate_policy(tenant_id: str, version: int, actor_ref: str) -> dict[str, Any]:
     """put one version in force; the previous active version is superseded in
     the same transaction. in-flight subjects keep the stages they were
@@ -663,6 +748,12 @@ def activate_policy(tenant_id: str, version: int, actor_ref: str) -> dict[str, A
             raise PolicyActivationRequiresSecondPerson(
                 "this version loosens the policy in force, so someone other than its author must activate it: "
                 + "; ".join(loosening)
+            )
+        unstaffed = unstaffed_stage_changes(connection, tenant_id, previous_body, target["body"], default_body)
+        if unstaffed:
+            raise DomainError(
+                "this version has approval stages nobody in the organization can decide; assign the roles first: "
+                + "; ".join(unstaffed)
             )
         if previous is not None:
             connection.execute(
