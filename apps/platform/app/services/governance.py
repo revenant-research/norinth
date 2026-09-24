@@ -21,6 +21,7 @@ from app.storage.governance_policy import (
     list_control_assessments,
     list_controls_catalog,
     list_risk_findings,
+    with_coverage,
 )
 from app.storage.incidents import list_incidents
 from app.storage.lifecycle import list_change_events, list_review_tasks
@@ -357,11 +358,11 @@ def build_application_detail(scope: ScopeFilter, application_id: str) -> dict[st
             for risk in list_risks(**scope_kwargs)
             if risk.get("application_name") == application_name
         ],
-        "controls": [
+        "controls": with_coverage([
             control
             for control in list_control_assessments(**scope_kwargs)
             if control.get("application_name") == application_name
-        ],
+        ]),
         "runtime_controls": list_controls(**scope_kwargs),
         "changes": [
             change
@@ -445,7 +446,7 @@ def build_workflow_detail(scope: ScopeFilter, workflow_id: str) -> dict[str, Any
         "guardrails": filter_by_workflow(build_guardrails(scope)["guardrails"], workflow_name),
         "evals": filter_by_workflow(build_evals(scope)["evals"], workflow_name),
         "risks": filter_by_workflow(list_risk_findings(**scope_kwargs), workflow_name),
-        "controls": filter_by_workflow(list_control_assessments(**scope_kwargs), workflow_name),
+        "controls": with_coverage(filter_by_workflow(list_control_assessments(**scope_kwargs), workflow_name)),
         "deployments": filter_by_workflow(list_deployments(**scope_kwargs), workflow_name),
         "deployment_gates": filter_by_workflow(list_deployment_gates(**scope_kwargs), workflow_name),
         "prompt_templates": filter_by_workflow(list_prompt_templates(**scope_kwargs), workflow_name),
@@ -502,11 +503,11 @@ def build_deployment_gate_detail(scope: ScopeFilter, gate_id: str) -> dict[str, 
             for risk in list_risk_findings(**scope_kwargs)
             if risk.get("application_name") == gate.get("application_name")
         ],
-        "controls": [
+        "controls": with_coverage([
             control
             for control in list_control_assessments(**scope_kwargs)
             if control.get("application_name") == gate.get("application_name")
-        ],
+        ]),
         "review_tasks": [
             task
             for task in list_review_tasks(**scope_kwargs)
@@ -539,11 +540,11 @@ def build_incident_detail(scope: ScopeFilter, incident_id: str) -> dict[str, Any
             for risk in list_risk_findings(**scope_kwargs)
             if risk.get("application_name") == incident.get("application_name")
         ],
-        "controls": [
+        "controls": with_coverage([
             control
             for control in list_control_assessments(**scope_kwargs)
             if control.get("application_name") == incident.get("application_name")
-        ],
+        ]),
         "deployment": find_record(list_deployments(**scope_kwargs), "deployment_id", incident.get("deployment_id")),
         "deployment_gate": find_record(list_deployment_gates(**scope_kwargs), "gate_id", incident.get("deployment_gate_id")),
         "owners": [
@@ -651,7 +652,7 @@ def build_incidents(scope: ScopeFilter, *, limit: int | None = None, offset: int
 
 
 def build_control_evidence(scope: ScopeFilter, *, limit: int | None = None, offset: int = 0) -> dict[str, Any]:
-    return {"controls": list_control_assessments(**scope.model_dump(), limit=limit, offset=offset)}
+    return {"controls": with_coverage(list_control_assessments(**scope.model_dump(), limit=limit, offset=offset))}
 
 
 # framework_ref prefix -> display family. a control assessment cites specific
