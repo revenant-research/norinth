@@ -62,9 +62,10 @@ incidents linked to it.
 
 You register the agents you allow, each with an owner, an autonomy level, and a
 list of permitted tools. Norinth compares every agent it observes against that
-list. An unregistered agent, a tool used outside the permitted list, or an
+list. An unregistered agent, a tool used outside the permitted list, an
 agent that combines untrusted input, sensitive data, and external actions
-without a human checkpoint each raise a finding. Findings are mapped to the
+without a human checkpoint, or an agent more autonomous than its system's
+intake declares each raise a finding. Findings are mapped to the
 OWASP Top 10 for Agentic Applications.
 
 ![Agents compared against the registry](docs/images/agents.png)

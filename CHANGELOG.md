@@ -87,6 +87,14 @@ Semantic Versioning.
   counts only runtime events. Release gates block on a failed evaluation as
   before. Existing `RISK-OPS-001` findings are left for a reviewer to close.
 
+- **An agent more autonomous than its system's intake is a finding.** Intake
+  records autonomy on a three-level scale that sets the risk tier, and the
+  agent registry uses levels 0 to 4, with no link between them. Registry
+  levels now map onto the intake scale (0 assistive, 1 and 2 supervised, 3
+  and 4 autonomous), the registry reports each agent's intake level, and a
+  running agent whose level is above what its system's live intake declares
+  raises `RISK-AGT-INTAKE` (High).
+
 - **Unobserved mapped framework requirements no longer count as satisfied.**
   Coverage distinguishes recent passing evidence from unknown requirements,
   approved waivers and open violations, including in the audit packet. (#172)

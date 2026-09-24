@@ -15,6 +15,7 @@ from typing import Any
 
 from .entities import decode_json, encode_json, entity_id
 from .errors import DomainError
+from .intake import AUTONOMY_LEVELS as INTAKE_AUTONOMY_LEVELS
 from .raw_events import connect
 
 AUTONOMY_LEVELS = {
@@ -23,6 +24,17 @@ AUTONOMY_LEVELS = {
     2: "supervised (AI acts; human reviews before effect)",
     3: "delegated (AI acts within bounds; human monitors)",
     4: "fully autonomous (AI plans and acts; human informed)",
+}
+
+# the intake's three-level scale is a banding of this five-level one: 0 the AI
+# only suggests, 1-2 it acts with a human approving or reviewing first, 3-4 it
+# acts on its own. used to compare an agent with its system's intake
+INTAKE_AUTONOMY_FOR_LEVEL = {
+    0: "assistive",
+    1: "supervised",
+    2: "supervised",
+    3: "autonomous",
+    4: "autonomous",
 }
 
 # risk rules this module derives; registered in the catalog but evaluated here,
@@ -65,6 +77,16 @@ AGENT_RISK_RULES = [
         "rationale": "Agents at autonomy level 3+ act within bounds on their own; without a declared human "
         "checkpoint there is no way to interrupt or override (EU AI Act Art 14 human oversight).",
     },
+    {
+        "rule_id": "RISK-AGT-INTAKE",
+        "name": "Agent is more autonomous than its system's intake declares",
+        "signal": "agent_autonomy_exceeds_intake",
+        "severity": "High",
+        "framework_refs": ["NIST AI RMF MAP 1.1", "ISO/IEC 42001 A.5.2"],
+        "rationale": "The intake's autonomy level sets the system's risk tier and the approvals it needs. An "
+        "agent registered at a higher autonomy than the intake declares means the system was reviewed at a "
+        "lower tier than it runs at.",
+    },
 ]
 
 
@@ -104,6 +126,7 @@ def _row(row: Any) -> dict[str, Any]:
     for flag in ("processes_untrusted_input", "accesses_sensitive_data", "can_act_externally", "human_checkpoint"):
         record[flag] = bool(record.get(flag))
     record["autonomy_level_label"] = AUTONOMY_LEVELS.get(int(record.get("autonomy_level") or 0))
+    record["intake_autonomy"] = INTAKE_AUTONOMY_FOR_LEVEL.get(int(record.get("autonomy_level") or 0))
     return record
 
 
@@ -248,11 +271,31 @@ def _observed_agent_activity(connection, tenant_id: str) -> dict[str, dict[str, 
     return activity
 
 
+def _declared_intake_autonomy(connection, tenant_id: str) -> dict[tuple[str, str, str], int]:
+    """the most autonomous level each system's live intake records declare,
+    as an index into the intake scale, keyed by (project, environment, app)"""
+    declared: dict[tuple[str, str, str], int] = {}
+    rows = connection.execute(
+        """
+        SELECT project, environment, application_name, autonomy_level FROM ai_use_cases
+        WHERE tenant_id = ? AND status NOT IN ('retired', 'rejected')
+        """,
+        (tenant_id,),
+    ).fetchall()
+    for row in rows:
+        if row["autonomy_level"] not in INTAKE_AUTONOMY_LEVELS:
+            continue
+        key = (row["project"], row["environment"], row["application_name"])
+        declared[key] = max(declared.get(key, 0), INTAKE_AUTONOMY_LEVELS.index(row["autonomy_level"]))
+    return declared
+
+
 def compute_agent_posture(tenant_id: str) -> dict[str, Any]:
     """reconcile observed agent activity against the registry, read-only"""
     registered = {agent["agent_name"]: agent for agent in list_registered_agents(tenant_id)}
     with connect() as connection:
         activity = _observed_agent_activity(connection, tenant_id)
+        declared = _declared_intake_autonomy(connection, tenant_id)
 
     agents: list[dict[str, Any]] = []
     findings: list[dict[str, Any]] = []
@@ -290,6 +333,20 @@ def compute_agent_posture(tenant_id: str) -> dict[str, Any]:
             if int(registration["autonomy_level"]) >= 3 and not registration["human_checkpoint"]:
                 entry["issues"].append("autonomy_without_oversight")
                 findings.append({"rule_id": "RISK-AGT-AUTONOMY", "agent": name, "obs": obs, "summary": f"Agent '{name}' is autonomy level {registration['autonomy_level']} with no human checkpoint"})
+            # compared where the agent ran; a system with no intake record is
+            # reported as unregistered elsewhere, not here
+            system = registration.get("application_name") or obs["application_name"]
+            intake_index = declared.get((obs["project"], obs["environment"], system))
+            agent_band = INTAKE_AUTONOMY_FOR_LEVEL.get(int(registration["autonomy_level"]), "autonomous")
+            if intake_index is not None and INTAKE_AUTONOMY_LEVELS.index(agent_band) > intake_index:
+                entry["issues"].append("agent_autonomy_exceeds_intake")
+                findings.append({
+                    "rule_id": "RISK-AGT-INTAKE",
+                    "agent": name,
+                    "obs": obs,
+                    "summary": f"Agent '{name}' is autonomy level {registration['autonomy_level']} ({agent_band}); "
+                    f"the intake for '{system}' declares {INTAKE_AUTONOMY_LEVELS[intake_index]}",
+                })
         agents.append(entry)
 
     # registered agents never observed at runtime are reported too (dormant)

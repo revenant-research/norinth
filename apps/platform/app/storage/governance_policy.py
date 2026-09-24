@@ -38,6 +38,7 @@ SUPPORTED_RISK_SIGNALS = {
     "unauthorized_tool",
     "agent_trifecta",
     "autonomy_without_oversight",
+    "agent_autonomy_exceeds_intake",
     # vendor signal, evaluated by storage/policy_engine.py against the vendor registry
     "unreviewed_vendor",
 }

@@ -681,6 +681,7 @@ _RULE_EVENT_TYPES = {
     "unauthorized_tool": ("tool.call",),
     "agent_trifecta": ("agent.run", "tool.call"),
     "autonomy_without_oversight": ("agent.run",),
+    "agent_autonomy_exceeds_intake": ("agent.run",),
     "unreviewed_vendor": (),  # vendor review needs its own assessment
 }
 
