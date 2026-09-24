@@ -20,10 +20,14 @@ _ASSESSMENT_ORDER = "application_name, evaluated_at"
 # tool.call telemetry
 _AGENTIC_TERMS = re.compile(r"\b(agent|agents|agentic|tool|tools|orchestrat\w+)\b")
 
+# event types whose status is a verdict rather than a runtime outcome
+_VERDICT_EVENT_TYPES = ("eval.result",)
+
 SUPPORTED_RISK_SIGNALS = {
     "provider_dependency",
     "missing_guardrail",
     "missing_eval",
+    "failed_eval",
     "missing_agent_run",
     "operational_errors",
     "retired_system_telemetry",
@@ -137,6 +141,15 @@ DEFAULT_RISK_RULES = [
         "severity": "High",
         "framework_refs": ["NIST AI RMF MEASURE 2.1"],
         "rationale": "Applications with model usage but no eval results lack measurable quality evidence.",
+    },
+    {
+        "rule_id": "RISK-EVL-002",
+        "name": "Failed evaluation",
+        "signal": "failed_eval",
+        "severity": "High",
+        "framework_refs": ["NIST AI RMF MEASURE 2.1", "NIST AI RMF MEASURE 2.5"],
+        "rationale": "An evaluation reported a result below its threshold. The system did not meet its own "
+        "quality or safety bar and needs review before release.",
     },
     {
         "rule_id": "RISK-AGT-001",
@@ -525,7 +538,12 @@ def assess_risk_rules(connection, app_context: dict[str, Any], rules: list[dict[
             " ".join((event.get("attributes") or {}).get("metadata", {}).get("use_case", "") for event in events),
         ]
     ).lower()
-    error_events = [event for event in events if event.get("status") == "error"]
+    # an eval.result's status is its verdict (error means the eval did not
+    # pass), not a runtime failure, so it is its own signal
+    error_events = [
+        event for event in events if event.get("status") == "error" and event.get("type") not in _VERDICT_EVENT_TYPES
+    ]
+    failed_evals = [event for event in by_type.get("eval.result", []) if event.get("status") == "error"]
     for rule in rules:
         signal = rule["signal"]
         if signal == "provider_dependency" and providers:
@@ -549,6 +567,8 @@ def assess_risk_rules(connection, app_context: dict[str, Any], rules: list[dict[
                 upsert_rule_finding(connection, app_context, rule, events, reason)
         if signal == "operational_errors" and error_events:
             upsert_rule_finding(connection, app_context, rule, error_events, f"{len(error_events)} error events observed")
+        if signal == "failed_eval" and failed_evals:
+            upsert_rule_finding(connection, app_context, rule, failed_evals, _failed_eval_summary(len(failed_evals)))
         if signal == "retired_system_telemetry":
             retired_since = _retired_since(connection, app_context)
             if retired_since:
@@ -565,6 +585,10 @@ def assess_risk_rules(connection, app_context: dict[str, Any], rules: list[dict[
             undurable = _undurable_health_events(events)
             if undurable:
                 upsert_rule_finding(connection, app_context, rule, undurable, _delivery_summary(undurable))
+
+
+def _failed_eval_summary(count: int) -> str:
+    return f"{count} evaluation result(s) below threshold"
 
 
 def _undurable_health_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -660,16 +684,18 @@ def _scope_params(app_context: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _app_event_stats(connection, app_context: dict[str, Any]) -> tuple[dict[str, int], int, list[str], list[str]]:
+def _app_event_stats(
+    connection, app_context: dict[str, Any]
+) -> tuple[dict[str, int], dict[str, int], list[str], list[str]]:
     """per-app aggregates over the extracted sdk_events columns
 
-    (counts by event type, total error events, distinct providers, distinct
+    (counts by event type, error events by type, distinct providers, distinct
     use cases) — everything the risk-rule conditions need, with no raw-event
     reads and no decryption; the app-scope composite index serves all four
     """
     params = _scope_params(app_context)
     counts: dict[str, int] = {}
-    errors_total = 0
+    errors: dict[str, int] = {}
     for row in connection.execute(
         f"SELECT event_type, COUNT(*) AS n, "
         f"SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors "
@@ -677,7 +703,7 @@ def _app_event_stats(connection, app_context: dict[str, Any]) -> tuple[dict[str,
         params,
     ).fetchall():
         counts[row["event_type"]] = int(row["n"])
-        errors_total += int(row["errors"] or 0)
+        errors[row["event_type"]] = int(row["errors"] or 0)
     providers = [
         row["provider"]
         for row in connection.execute(
@@ -696,7 +722,7 @@ def _app_event_stats(connection, app_context: dict[str, Any]) -> tuple[dict[str,
             params,
         ).fetchall()
     ]
-    return counts, errors_total, providers, use_cases
+    return counts, errors, providers, use_cases
 
 
 def _recent_trace_ids(
@@ -705,6 +731,7 @@ def _recent_trace_ids(
     *,
     event_type: str | None = None,
     errors_only: bool = False,
+    exclude_types: tuple[str, ...] = (),
     after_timestamp: str | None = None,
 ) -> list[str]:
     """newest distinct trace ids matching the filter, as bounded evidence"""
@@ -715,6 +742,9 @@ def _recent_trace_ids(
         params["event_type"] = event_type
     if errors_only:
         clauses.append("status = 'error'")
+    for index, excluded in enumerate(exclude_types):
+        clauses.append(f"event_type != :exclude_{index}")
+        params[f"exclude_{index}"] = excluded
     if after_timestamp is not None:
         # timestamps are utc everywhere (sdk iso-8601, db 'YYYY-MM-DD HH:MM:SS');
         # normalizing the separator makes them sort together lexicographically
@@ -788,7 +818,9 @@ def _assess_rules_from_columns(
     exception reads sdk.health attributes, which are not extracted, from the
     batch that is already in memory in plaintext
     """
-    counts, errors_total, providers, use_cases = _app_event_stats(connection, app_context)
+    counts, errors, providers, use_cases = _app_event_stats(connection, app_context)
+    errors_total = sum(n for event_type, n in errors.items() if event_type not in _VERDICT_EVENT_TYPES)
+    failed_evals = errors.get("eval.result", 0)
     app_text = " ".join([app_context["application_name"], *use_cases]).lower()
     for rule in rules:
         signal = rule["signal"]
@@ -833,8 +865,16 @@ def _assess_rules_from_columns(
                 connection,
                 app_context,
                 rule,
-                _recent_trace_ids(connection, app_context, errors_only=True),
+                _recent_trace_ids(connection, app_context, errors_only=True, exclude_types=_VERDICT_EVENT_TYPES),
                 f"{errors_total} error events observed",
+            )
+        if signal == "failed_eval" and failed_evals:
+            write_rule_finding(
+                connection,
+                app_context,
+                rule,
+                _recent_trace_ids(connection, app_context, event_type="eval.result", errors_only=True),
+                _failed_eval_summary(failed_evals),
             )
         if signal == "retired_system_telemetry":
             retired_since = _retired_since(connection, app_context)

@@ -672,6 +672,7 @@ _RULE_EVENT_TYPES = {
     "provider_dependency": ("model.call",),
     "missing_guardrail": ("guardrail.decision",),
     "missing_eval": ("eval.result",),
+    "failed_eval": ("eval.result",),
     "missing_agent_run": ("agent.run",),
     "operational_errors": ("model.call", "agent.run"),
     "retired_system_telemetry": (),  # active usage cannot prove a retired system is dormant
