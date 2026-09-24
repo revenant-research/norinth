@@ -207,6 +207,11 @@ def gate_required_reason(connection, evidence: dict[str, Any], tenant_id: str | 
         parts.append(f"{evidence['risk_count']} open risk findings")
     if evidence["missing_control_count"]:
         parts.append(f"{evidence['missing_control_count']} missing controls")
+    if evidence.get("undercovered_control_count"):
+        parts.append(
+            f"{evidence['undercovered_control_count']} controls below "
+            f"{evidence['min_control_coverage']:g}% coverage"
+        )
     if evidence["material_change_count"] > int(evidence.get("max_open_material_changes") or 0):
         parts.append(f"{evidence['material_change_count']} material changes")
     if evidence["prompt_evidence_status"] != "linked":
@@ -265,9 +270,9 @@ def upsert_deployment_gate(connection, version: dict[str, Any]) -> None:
             gate_id, deployment_id, version_id, tenant_id, project, environment, application_name, workflow_name,
             gate_status, required_reason, risk_count, missing_control_count, material_change_count,
             prompt_version_id, prompt_evidence_status, passing_eval_count, policy_tenant, policy_version,
-            actor_ref, rationale, submitted_at, decided_at, updated_at
+            undercovered_control_count, actor_ref, rationale, submitted_at, decided_at, updated_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, datetime('now'), NULL, datetime('now'))
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, datetime('now'), NULL, datetime('now'))
         ON CONFLICT(gate_id) DO UPDATE SET
             gate_status=excluded.gate_status,
             required_reason=excluded.required_reason,
@@ -279,6 +284,7 @@ def upsert_deployment_gate(connection, version: dict[str, Any]) -> None:
             passing_eval_count=excluded.passing_eval_count,
             policy_tenant=excluded.policy_tenant,
             policy_version=excluded.policy_version,
+            undercovered_control_count=excluded.undercovered_control_count,
             updated_at=datetime('now')
         """,
         (
@@ -300,6 +306,7 @@ def upsert_deployment_gate(connection, version: dict[str, Any]) -> None:
             evidence["passing_eval_count"],
             evidence["policy_tenant"],
             evidence["policy_version"],
+            evidence["undercovered_control_count"],
         ),
     )
 
@@ -329,6 +336,14 @@ def gate_evidence_counts(connection, version: dict[str, Any]) -> dict[str, Any]:
     material_change_count = count_scoped(connection, "change_events", "status = 'open'", params)
     prompt_version = find_prompt_version(connection, params)
     passing_eval_count = count_passing_eval_evidence(connection, params, require_attested)
+    # coverage is only computed when the policy asks for it, so a gate under a
+    # policy with no minimum costs and behaves exactly as before
+    min_coverage = float(requirements.get("min_control_coverage") or 0)
+    undercovered = 0
+    if min_coverage > 0:
+        from .governance_policy import count_undercovered_controls
+
+        undercovered = count_undercovered_controls(connection, params, min_coverage)
     return {
         "risk_count": risk_count,
         "missing_control_count": missing_control_count,
@@ -338,6 +353,8 @@ def gate_evidence_counts(connection, version: dict[str, Any]) -> dict[str, Any]:
         "passing_eval_count": passing_eval_count,
         "require_attested_evals": require_attested,
         "max_open_material_changes": int(requirements["max_open_material_changes"]),
+        "min_control_coverage": min_coverage,
+        "undercovered_control_count": undercovered,
         "policy_tenant": requirements["policy_tenant"],
         "policy_version": requirements["policy_version"],
     }
@@ -461,6 +478,12 @@ def set_deployment_gate_status(gate_id: str, status: str, actor_ref: str, ration
                 raise DomainError("deployment gate cannot be approved while risk findings are open; mitigate or accept them first")
             if int(evidence["missing_control_count"] or 0) > 0:
                 raise DomainError("deployment gate cannot be approved while controls are missing evidence")
+            if int(evidence["undercovered_control_count"] or 0) > 0:
+                raise DomainError(
+                    f"deployment gate cannot be approved while {evidence['undercovered_control_count']} controls "
+                    f"cover less than {evidence['min_control_coverage']:g}% of recent traffic "
+                    "(the governance policy sets this minimum for this environment)"
+                )
             if int(evidence["material_change_count"] or 0) > int(evidence.get("max_open_material_changes") or 0):
                 raise DomainError("deployment gate cannot be approved while material changes are unreviewed; review or accept them first")
         if not (rationale or "").strip():
@@ -473,7 +496,7 @@ def set_deployment_gate_status(gate_id: str, status: str, actor_ref: str, ration
                 UPDATE deployment_approval_gates
                 SET risk_count = ?, missing_control_count = ?, material_change_count = ?,
                     prompt_version_id = ?, prompt_evidence_status = ?, passing_eval_count = ?,
-                    policy_tenant = ?, policy_version = ?,
+                    policy_tenant = ?, policy_version = ?, undercovered_control_count = ?,
                     required_reason = ?
                 WHERE gate_id = ?
                 """,
@@ -486,6 +509,7 @@ def set_deployment_gate_status(gate_id: str, status: str, actor_ref: str, ration
                     evidence["passing_eval_count"],
                     evidence["policy_tenant"],
                     evidence["policy_version"],
+                    evidence["undercovered_control_count"],
                     gate_required_reason(connection, evidence, gate.get("tenant_id")),
                     gate_id,
                 ),

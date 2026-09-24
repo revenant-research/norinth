@@ -131,14 +131,15 @@ default-with-tenant-overlay pattern (`control_library`, `risk_rules`).
   },
   "gates": {
     "environments": {
-      "production": {"require_attested_evals": true, "max_open_material_changes": 0},
+      "production": {"require_attested_evals": true, "max_open_material_changes": 0, "min_control_coverage": 95},
       "*":          {"require_attested_evals": false}
     }
   },
   "vendors": {
     "stages": [{"role": "governance_reviewer"}, {"role": "governance_admin"}],
     "recertify_days": 365
-  }
+  },
+  "evidence": {"coverage_window_days": 7, "stale_after_days": 30}
 }
 ```
 
@@ -235,6 +236,17 @@ changes must be zero to approve; that stays the ceiling for
 version consulted, alongside the evidence it already records.
 `tenant_requires_attestation` becomes a read of the policy, with the existing
 attestation-keys behavior as the seeded default.
+
+`min_control_coverage` (0 to 100, default 0) sets the share of recent traffic
+each passing control must cover before a gate can be approved. Coverage is the
+share of the application's traces in the coverage window that carried
+qualifying evidence: for a control with a `coverage_basis` (the guardrail and
+traceability controls use `model.call`), the share of those traces with
+evidence on the same trace; otherwise the share of the control's own evidence
+traces whose events carry every required field. The `evidence` section sets
+the window (`coverage_window_days`, 1 to 30, default 7) and the age after which
+a control's latest evidence is reported as stale (`stale_after_days`, 1 to 90,
+default 30). A gate under a policy with no minimum does not compute coverage.
 
 ### 4. Vendors
 

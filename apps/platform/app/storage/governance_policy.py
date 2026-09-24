@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from . import db
@@ -58,6 +59,8 @@ DEFAULT_CONTROLS = [
         "framework_refs": ["NIST AI RMF GOVERN 1.6", "EU AI Act Art 26", "SOC 2 CC7.2"],
         "evidence_event_types": ["trace.completed"],
         "required_fields": ["trace_id", "workflow_name", "user_id"],
+        # every traced model call should sit inside a request that names its actor
+        "coverage_basis": "model.call",
         "rationale": "Governance review requires traceable request context, actor metadata, and workflow linkage.",
     },
     {
@@ -90,6 +93,8 @@ DEFAULT_CONTROLS = [
         "framework_refs": ["NIST AI RMF MANAGE 1.3", "ISO/IEC 42001 A.8.2"],
         "evidence_event_types": ["guardrail.decision"],
         "required_fields": ["guardrail_name", "decision", "matched_rules"],
+        # a guardrail decision counts for the model calls on the same trace
+        "coverage_basis": "model.call",
         "rationale": "Policy, safety, and privacy controls require recorded guardrail decisions and matched rules.",
     },
     {
@@ -443,6 +448,7 @@ def assess_controls(connection, app_context: dict[str, Any], controls: list[dict
             if event.get("type") in control["evidence_event_types"]
             and event_satisfies_required_fields(event, control["required_fields"])
         ]
+        record_control_evidence(connection, app_context, control, evidence)
         trace_ids = sorted({event["trace_id"] for event in evidence if event.get("trace_id")})
         _write_assessment(
             connection,
@@ -794,6 +800,7 @@ def _fold_controls(connection, app_context: dict[str, Any], controls: list[dict[
             if event.get("type") in control["evidence_event_types"]
             and event_satisfies_required_fields(event, control["required_fields"])
         ]
+        record_control_evidence(connection, app_context, control, evidence)
         existing = connection.execute(
             "SELECT status, evidence_trace_ids, evidence_count FROM control_assessments WHERE assessment_id = ?",
             (_assessment_id(app_context, control),),
@@ -982,17 +989,22 @@ def upsert_control_definition(control: dict[str, Any], tenant_id: str) -> dict[s
     (tenant_id '') are immutable here, writes land under the tenant's own id"""
     if not tenant_id:
         raise DomainError("a tenant_id is required to customize the control library")
+    basis = control.get("coverage_basis") or None
+    if basis is not None and not _EVENT_TYPE_RE.match(basis):
+        raise DomainError("coverage_basis must be an event type such as model.call")
     with connect() as connection:
         connection.execute(
             """
             INSERT INTO control_library (
-                tenant_id, control_id, name, framework_refs, evidence_event_types, required_fields, rationale
+                tenant_id, control_id, name, framework_refs, evidence_event_types, required_fields, rationale,
+                coverage_basis
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (tenant_id, control_id) DO UPDATE SET
                 name=excluded.name, framework_refs=excluded.framework_refs,
                 evidence_event_types=excluded.evidence_event_types,
-                required_fields=excluded.required_fields, rationale=excluded.rationale
+                required_fields=excluded.required_fields, rationale=excluded.rationale,
+                coverage_basis=excluded.coverage_basis
             """,
             (
                 tenant_id,
@@ -1002,9 +1014,10 @@ def upsert_control_definition(control: dict[str, Any], tenant_id: str) -> dict[s
                 encode_json(control["evidence_event_types"]),
                 encode_json(control["required_fields"]),
                 control["rationale"],
+                basis,
             ),
         )
-    return {**control, "tenant_id": tenant_id}
+    return {**control, "coverage_basis": basis, "tenant_id": tenant_id}
 
 
 def upsert_risk_rule(rule: dict[str, Any], tenant_id: str) -> dict[str, Any]:
@@ -1036,6 +1049,209 @@ def upsert_risk_rule(rule: dict[str, Any], tenant_id: str) -> dict[str, Any]:
     return {**rule, "tenant_id": tenant_id}
 
 
+
+
+# --- coverage and freshness ---------------------------------------------------------
+#
+# an assessment says whether evidence for a control has ever arrived. coverage
+# says how much of the application's recent traffic the evidence covers, and
+# freshness says how long ago the latest evidence arrived. both are computed
+# when read, from control_evidence_traces (the traces that carried qualifying
+# evidence, written by the fold) and the sdk_events columns, so they stay
+# correct as the window moves even when no new telemetry arrives.
+#
+# the traffic a control is measured against is its coverage_basis event type
+# when it has one (a guardrail decision covers the model calls on its trace),
+# otherwise its own evidence event types (the share of those traces whose
+# events carry every required field).
+
+_EVENT_TYPE_RE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$")
+
+
+def _day_text(moment: datetime) -> str:
+    """utc 'YYYY-MM-DD HH:MM:SS', the form event timestamps normalize to"""
+    return moment.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _normalized_event_time(value: str | None) -> str:
+    return _normalize_ts(value).replace("T", " ")[:19]
+
+
+def record_control_evidence(
+    connection, app_context: dict[str, Any], control: dict[str, Any], evidence: list[dict[str, Any]]
+) -> None:
+    """record the traces that carried qualifying evidence for one control
+
+    idempotent: a trace is one row, and re-folding the same events leaves it
+    unchanged, so a retried fold cannot inflate coverage
+    """
+    latest: dict[str, str] = {}
+    for event in evidence:
+        trace_id = event.get("trace_id")
+        if not trace_id:
+            continue
+        seen = _normalized_event_time(event.get("timestamp"))
+        if seen > latest.get(trace_id, ""):
+            latest[trace_id] = seen
+    for trace_id, seen in latest.items():
+        connection.execute(
+            """
+            INSERT INTO control_evidence_traces (
+                tenant_id, project, environment, application_name, control_id, trace_id, last_seen
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (tenant_id, project, environment, application_name, control_id, trace_id)
+            DO UPDATE SET last_seen = CASE
+                WHEN excluded.last_seen > control_evidence_traces.last_seen THEN excluded.last_seen
+                ELSE control_evidence_traces.last_seen END
+            """,
+            (
+                app_context.get("tenant_id") or "",
+                app_context["project"],
+                app_context["environment"],
+                app_context["application_name"],
+                control["control_id"],
+                trace_id,
+                seen,
+            ),
+        )
+
+
+def control_coverage(
+    connection,
+    app_context: dict[str, Any],
+    control: dict[str, Any],
+    *,
+    window_days: int,
+    stale_after_days: int,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """coverage of one control over the recent window, and its freshness
+
+    coverage_pct is None when the application had no traffic of the basis type
+    in the window: there was nothing to cover, which is not a shortfall
+    """
+    moment = now or datetime.now(UTC)
+    basis_types = [control["coverage_basis"]] if control.get("coverage_basis") else list(control["evidence_event_types"])
+    placeholders = ", ".join(f":basis_{index}" for index in range(len(basis_types)))
+    params: dict[str, Any] = {
+        "project": app_context["project"],
+        "environment": app_context["environment"],
+        "application_name": app_context["application_name"],
+        "tenant_id": app_context.get("tenant_id"),
+        "tenant_key": app_context.get("tenant_id") or "",
+        "control_id": control["control_id"],
+        "cutoff": _day_text(moment - timedelta(days=window_days)),
+        **{f"basis_{index}": event_type for index, event_type in enumerate(basis_types)},
+    }
+    row = connection.execute(
+        f"""
+        SELECT COUNT(DISTINCT e.trace_id) AS basis, COUNT(DISTINCT c.trace_id) AS covered
+        FROM sdk_events e
+        LEFT JOIN control_evidence_traces c
+          ON c.trace_id = e.trace_id
+         AND c.control_id = :control_id
+         AND c.tenant_id = :tenant_key
+         AND c.project = e.project
+         AND c.environment = e.environment
+         AND c.application_name = e.application_name
+        WHERE e.project = :project AND e.environment = :environment
+          AND e.application_name = :application_name
+          AND ((:tenant_id IS NULL AND e.tenant_id IS NULL) OR e.tenant_id = :tenant_id)
+          AND e.event_type IN ({placeholders})
+          AND REPLACE(e.timestamp, 'T', ' ') >= :cutoff
+        """,  # noqa: S608 - placeholders are generated, values are bound
+        params,
+    ).fetchone()
+    latest = connection.execute(
+        """
+        SELECT MAX(last_seen) AS latest FROM control_evidence_traces
+        WHERE tenant_id = :tenant_key AND project = :project AND environment = :environment
+          AND application_name = :application_name AND control_id = :control_id
+        """,
+        params,
+    ).fetchone()
+    basis = int(row["basis"] or 0)
+    covered = int(row["covered"] or 0)
+    last_evidence_at = latest["latest"] if latest else None
+    return {
+        "basis_event_types": basis_types,
+        "window_days": window_days,
+        "basis_traces": basis,
+        "covered_traces": covered,
+        "coverage_pct": round(100.0 * covered / basis, 1) if basis else None,
+        "last_evidence_at": last_evidence_at,
+        "stale_after_days": stale_after_days,
+        "stale": last_evidence_at is None or last_evidence_at < _day_text(moment - timedelta(days=stale_after_days)),
+    }
+
+
+def with_coverage(rows: list[dict[str, Any]], *, now: datetime | None = None) -> list[dict[str, Any]]:
+    """control assessment rows with a coverage block each, under the evidence
+    settings of each row's organization"""
+    from .policy_engine import resolve_evidence_policy
+
+    if not rows:
+        return rows
+    enriched: list[dict[str, Any]] = []
+    with connect() as connection:
+        libraries: dict[str, dict[str, dict[str, Any]]] = {}
+        settings: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            tid = row.get("tenant_id") or ""
+            if tid not in libraries:
+                libraries[tid] = {c["control_id"]: c for c in list_control_library(connection, tid)}
+                settings[tid] = resolve_evidence_policy(connection, tid or None)
+            control = libraries[tid].get(row["control_id"]) or {
+                "control_id": row["control_id"],
+                "evidence_event_types": row.get("evidence_event_types") or [],
+            }
+            if not control.get("evidence_event_types"):
+                enriched.append({**row, "coverage": None})
+                continue
+            coverage = control_coverage(
+                connection,
+                row,
+                control,
+                window_days=settings[tid]["coverage_window_days"],
+                stale_after_days=settings[tid]["stale_after_days"],
+                now=now,
+            )
+            enriched.append({**row, "coverage": coverage})
+    return enriched
+
+
+def count_undercovered_controls(
+    connection, app_context: dict[str, Any], min_coverage: float, *, now: datetime | None = None
+) -> int:
+    """passing controls of one application whose recent coverage is below the
+    minimum. missing controls are already counted as missing, and a waived
+    control is a reviewer's decision, so neither counts here"""
+    from .policy_engine import resolve_evidence_policy
+
+    tid = app_context.get("tenant_id") or ""
+    library = {c["control_id"]: c for c in list_control_library(connection, tid)}
+    evidence_settings = resolve_evidence_policy(connection, tid or None)
+    rows = connection.execute(
+        f"SELECT control_id FROM control_assessments WHERE {_APP_SCOPE_SQL} AND status = 'passing'",  # noqa: S608
+        _scope_params(app_context),
+    ).fetchall()
+    count = 0
+    for row in rows:
+        control = library.get(row["control_id"])
+        if control is None or not control.get("evidence_event_types"):
+            continue
+        coverage = control_coverage(
+            connection,
+            app_context,
+            control,
+            window_days=evidence_settings["coverage_window_days"],
+            stale_after_days=evidence_settings["stale_after_days"],
+            now=now,
+        )
+        if coverage["coverage_pct"] is not None and coverage["coverage_pct"] < min_coverage:
+            count += 1
+    return count
 
 
 def list_control_assessments(

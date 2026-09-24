@@ -87,7 +87,8 @@ administrator accounts cannot hold decision roles.
 A deployment reported by your pipeline gets a gate. The gate stays closed until
 the required evidence exists: no open risk findings, no missing controls, no
 unreviewed material changes, a linked prompt version, and a passing evaluation
-for the exact version being released. Evaluations can be signed by a key your
+for the exact version being released. Your governance policy can also require
+each control to cover a minimum share of recent traffic. Evaluations can be signed by a key your
 CI registers, so a passing result cannot be forged by someone who only holds an
 ingestion key. The `norinth gate check` command lets CI wait on the gate before
 deploying.
@@ -272,7 +273,11 @@ A few terms show up throughout Norinth:
   as "evaluation evidence exists before release". Norinth maps controls to the
   frameworks that name them and reports coverage as the share of mapped
   requirements currently satisfied. It is not a claim about the whole
-  regulation.
+  regulation. Each control also reports how much of the last 7 days of traffic
+  its evidence covers (for example, the share of model calls that had a
+  guardrail check on the same trace) and is marked stale when its latest
+  evidence is more than 30 days old. Both periods are set in the governance
+  policy.
 
 - **Release gate.** A checkpoint a deployment must pass before it ships.
 

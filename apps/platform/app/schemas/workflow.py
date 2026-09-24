@@ -75,6 +75,9 @@ class ControlDefinitionRequest(BaseModel):
     evidence_event_types: list[str] = Field(min_length=1)
     required_fields: list[str] = Field(default_factory=list)
     rationale: str = Field(min_length=1)
+    # the event type whose traces the evidence must cover; none measures the
+    # evidence events' own field completeness
+    coverage_basis: str | None = None
 
 
 class RiskRuleRequest(BaseModel):

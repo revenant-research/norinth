@@ -29,12 +29,14 @@ export type FieldDef = {
   max_length?: number;
   required_tiers?: string[];
 };
-export type GateRule = { require_attested_evals?: boolean; max_open_material_changes?: number };
+export type GateRule = { require_attested_evals?: boolean; max_open_material_changes?: number; min_control_coverage?: number };
+export type EvidenceSettings = { coverage_window_days?: number; stale_after_days?: number };
 export type PolicyDoc = {
   schema: string;
   intake?: { tiers?: Record<string, TierRule>; fields?: FieldDef[] };
   gates?: { environments?: Record<string, GateRule> };
   vendors?: { stages?: StageDef[]; recertify_days?: number | null };
+  evidence?: EvidenceSettings;
 };
 
 type PolicyMeta = {
@@ -94,6 +96,17 @@ export function updateGateRule(doc: PolicyDoc, environment: string, patch: GateR
   } else {
     next.gates.environments[environment] = { ...(next.gates.environments[environment] || {}), ...patch };
   }
+  return next;
+}
+
+export function updateEvidence(doc: PolicyDoc, patch: EvidenceSettings): PolicyDoc {
+  const next = clone(doc);
+  const merged: EvidenceSettings = { ...(next.evidence || {}), ...patch };
+  for (const key of Object.keys(merged) as Array<keyof EvidenceSettings>) {
+    if (merged[key] === undefined) delete merged[key];
+  }
+  if (Object.keys(merged).length === 0) delete next.evidence;
+  else next.evidence = merged;
   return next;
 }
 
@@ -318,6 +331,41 @@ function StaffingWarning({ stages, staffedRoles }: { stages: StageDef[]; staffed
   );
 }
 
+function EvidenceSettingsEditor({ evidence, onChange }: { evidence: EvidenceSettings; onChange: (patch: EvidenceSettings) => void }) {
+  const number = (value: string, ceiling: number) => {
+    const parsed = Math.round(Number(value));
+    return Number.isFinite(parsed) && parsed >= 1 ? Math.min(ceiling, parsed) : undefined;
+  };
+  return (
+    <div className="stage-editor" data-testid="evidence-settings">
+      <label className="check-row">
+        Measure coverage over the last
+        <input
+          type="number"
+          min={1}
+          max={30}
+          aria-label="Coverage window in days"
+          value={evidence.coverage_window_days ?? 7}
+          onChange={(event) => onChange({ coverage_window_days: number(event.target.value, 30) })}
+        />
+        days
+      </label>
+      <label className="check-row">
+        Mark a control stale when its latest evidence is older than
+        <input
+          type="number"
+          min={1}
+          max={90}
+          aria-label="Stale after days"
+          value={evidence.stale_after_days ?? 30}
+          onChange={(event) => onChange({ stale_after_days: number(event.target.value, 90) })}
+        />
+        days
+      </label>
+    </div>
+  );
+}
+
 function GateRulesEditor({ environments, onChange }: { environments: Record<string, GateRule>; onChange: (environment: string, patch: GateRule | null) => void }) {
   const [newEnvironment, setNewEnvironment] = useState("");
   const names = Object.keys(environments).sort((a, b) => (a === "*" ? 1 : b === "*" ? -1 : a.localeCompare(b)));
@@ -333,6 +381,21 @@ function GateRulesEditor({ environments, onChange }: { environments: Record<stri
               onChange={(event) => onChange(name, { require_attested_evals: event.target.checked })}
             />
             Only CI-signed (attested) eval evidence counts
+          </label>
+          <label className="check-row">
+            Minimum control coverage
+            <input
+              type="number"
+              min={0}
+              max={100}
+              aria-label={`Minimum control coverage for ${name === "*" ? "all other environments" : name}`}
+              value={environments[name]?.min_control_coverage ?? 0}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                onChange(name, { min_control_coverage: Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0 });
+              }}
+            />
+            %
           </label>
           {name === "*" ? (
             <span className="hint">always present</span>
@@ -364,7 +427,8 @@ function GateRulesEditor({ environments, onChange }: { environments: Record<stri
       </div>
       <p className="hint">
         These rules only add requirements. If your organization has registered a signing key, signed evidence stays
-        required everywhere no matter what these boxes say.
+        required everywhere no matter what these boxes say. Minimum control coverage is the share of recent traffic each
+        passing control must cover before a release can be approved; 0 means coverage is not checked.
       </p>
     </div>
   );
@@ -997,7 +1061,10 @@ export function PolicyView() {
       ) : null}
 
       {tab === "gates" ? (
-        <GateRulesEditor environments={environments} onChange={(environment, patch) => edit(updateGateRule(working, environment, patch))} />
+        <>
+          <GateRulesEditor environments={environments} onChange={(environment, patch) => edit(updateGateRule(working, environment, patch))} />
+          <EvidenceSettingsEditor evidence={working.evidence || {}} onChange={(patch) => edit(updateEvidence(working, patch))} />
+        </>
       ) : null}
 
       {tab === "intake" ? (

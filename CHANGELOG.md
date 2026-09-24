@@ -6,6 +6,21 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+### Added
+
+- **Control coverage and evidence freshness.** A control still passes once
+  qualifying evidence has arrived, and each assessment now also reports the
+  share of the application's traces in the last 7 days that carried that
+  evidence, and whether the latest evidence is more than 30 days old. The
+  guardrail and traceability controls are measured against model-call traces
+  (a guardrail decision covers the model calls on its trace); the other
+  controls against their own events. The governance policy sets the window,
+  the stale age, and an optional minimum coverage per environment that the
+  release gate enforces. With no minimum, the default, gates behave as before.
+  Lowering the minimum, lengthening the stale age or lengthening the window
+  counts as loosening the policy. Migration 25 backfills evidence from the
+  last 90 days of stored events.
+
 ### Changed
 
 - **Default installs and upgrades resolve one stable release.** A published
