@@ -8,6 +8,16 @@ Semantic Versioning.
 
 ### Added
 
+- **Observe mode for an organization's own risk rules.** Every open finding
+  counts toward a release gate, so a new custom rule blocked every release as
+  soon as it was added. `POST /api/risk-rules` now takes `mode`: `observe` or
+  `enforce` (the default). Findings from an observe-mode rule have status
+  `observed`: they appear in the register but do not count toward release
+  gates, framework gaps, incident evidence or owner routing. Promoting the
+  rule to enforce opens its findings at once and is recorded as
+  `risk_rule.promote`; every rule change is now in the audit log. Built-in
+  rules always enforce, and an enforced rule cannot return to observe mode.
+
 - **Control coverage and evidence freshness.** A control still passes once
   qualifying evidence has arrived, and each assessment now also reports the
   share of the application's traces in the last 7 days that carried that

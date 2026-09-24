@@ -77,6 +77,11 @@ guardrail evidence or an unregistered system in production. People can raise
 findings too. Accepting a risk requires an owner, a compensating control, and
 an expiry date. When the exception expires, the finding reopens.
 
+An organization can add its own rules. A new rule can start in observe mode:
+its findings appear in the register with the status "observed" but do not
+block releases. Promoting the rule to enforce opens those findings and is
+recorded in the audit log. Built-in rules always enforce.
+
 The person who submits a change can never be the one who approves it, and
 administrator accounts cannot hold decision roles.
 

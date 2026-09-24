@@ -44,6 +44,13 @@ SUPPORTED_RISK_SIGNALS = {
     "unreviewed_vendor",
 }
 
+# a rule in observe mode raises findings with status "observed": visible in the
+# register, but not counted by release gates, framework gaps, incident evidence
+# or owner routing. a tenant's own rules can start in observe mode and be
+# promoted to enforce; built-in rules always enforce, and an enforced rule
+# cannot return to observe mode, because that would relax the gates
+RULE_MODES = ("observe", "enforce")
+
 DEFAULT_CONTROLS = [
     {
         "control_id": "AI-INV-001",
@@ -955,8 +962,9 @@ def write_rule_finding(
     )
     # a reviewer's decision (accepted, mitigation_required, ...) survives
     # recompute instead of being reset to "open"
+    computed = "observed" if rule.get("mode") == "observe" else "open"
     status = _preserve_decided_status(
-        connection, "risk_findings", "finding_id", finding_id, "open", {"open"}
+        connection, "risk_findings", "finding_id", finding_id, computed, {"open", "observed"}
     )
     connection.execute(
         """
@@ -1020,21 +1028,45 @@ def upsert_control_definition(control: dict[str, Any], tenant_id: str) -> dict[s
     return {**control, "coverage_basis": basis, "tenant_id": tenant_id}
 
 
+def _built_in_rule_ids() -> set[str]:
+    from .agents import AGENT_RISK_RULES
+    from .policy_engine import VENDOR_RISK_RULES
+
+    return {str(rule["rule_id"]) for rule in [*DEFAULT_RISK_RULES, *AGENT_RISK_RULES, *VENDOR_RISK_RULES]}
+
+
 def upsert_risk_rule(rule: dict[str, Any], tenant_id: str) -> dict[str, Any]:
+    """create or update one of a tenant's risk rules
+
+    the result carries previous_mode (None for a new rule) so the caller can
+    record a promotion. promoting a rule to enforce turns its observed findings
+    into open ones at once, rather than on the application's next telemetry
+    """
     if rule["signal"] not in SUPPORTED_RISK_SIGNALS:
         raise DomainError(f"unsupported risk signal: {rule['signal']}")
     if not tenant_id:
         raise DomainError("a tenant_id is required to customize risk rules")
+    mode = rule.get("mode") or "enforce"
+    if mode not in RULE_MODES:
+        raise DomainError(f"mode must be one of {', '.join(RULE_MODES)}")
+    if mode == "observe" and rule["rule_id"] in _built_in_rule_ids():
+        raise DomainError("built-in rules always enforce; observe mode is for your own rules")
     with connect() as connection:
+        existing = connection.execute(
+            "SELECT mode FROM risk_rules WHERE tenant_id = ? AND rule_id = ?", (tenant_id, rule["rule_id"])
+        ).fetchone()
+        previous_mode = existing["mode"] if existing is not None else None
+        if previous_mode == "enforce" and mode == "observe":
+            raise DomainError("an enforced rule cannot return to observe mode, because that would relax release gates")
         connection.execute(
             """
             INSERT INTO risk_rules (
-                tenant_id, rule_id, name, signal, severity, framework_refs, rationale
+                tenant_id, rule_id, name, signal, severity, framework_refs, rationale, mode
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (tenant_id, rule_id) DO UPDATE SET
                 name=excluded.name, signal=excluded.signal, severity=excluded.severity,
-                framework_refs=excluded.framework_refs, rationale=excluded.rationale
+                framework_refs=excluded.framework_refs, rationale=excluded.rationale, mode=excluded.mode
             """,
             (
                 tenant_id,
@@ -1044,9 +1076,19 @@ def upsert_risk_rule(rule: dict[str, Any], tenant_id: str) -> dict[str, Any]:
                 rule["severity"],
                 encode_json(rule["framework_refs"]),
                 rule["rationale"],
+                mode,
             ),
         )
-    return {**rule, "tenant_id": tenant_id}
+        reopened = 0
+        if previous_mode == "observe" and mode == "enforce":
+            reopened = connection.execute(
+                """
+                UPDATE risk_findings SET status = 'open', evaluated_at = datetime('now')
+                WHERE tenant_id = ? AND rule_id = ? AND status = 'observed'
+                """,
+                (tenant_id, rule["rule_id"]),
+            ).rowcount
+    return {**rule, "mode": mode, "previous_mode": previous_mode, "reopened_findings": reopened, "tenant_id": tenant_id}
 
 
 
