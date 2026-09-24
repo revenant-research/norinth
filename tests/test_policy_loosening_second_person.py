@@ -15,6 +15,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "apps" / "platform"))
 
+from tests.helpers import staff_policy_stages  # noqa: E402
 from tests.test_policy_engine import _add_user, _client_for, _make_org  # noqa: E402
 
 DEFAULT = {
@@ -108,6 +109,7 @@ def test_author_cannot_activate_a_loosening_version(super_admin_client):
     email, password = _make_org(super_admin_client, "acme")
     with _client_for(email, password) as author:
         _add_user(author, "second@acme.test", role="org_admin")
+        staff_policy_stages(author, "acme.test", TWO_STAGE_HIGH)
         # tightening the default: the author may activate it alone
         v1 = _draft(author, TWO_STAGE_HIGH)
         assert author.post(f"/api/governance-policy/versions/{v1}/activate").status_code == 200

@@ -331,6 +331,10 @@ activates a non-default policy.
   for fewer tiers. Tightening and neutral changes can be activated by the
   author. The activation audit entry records the author and the loosening
   reasons.
+- A version cannot be activated if a stage list it changes cannot be staffed:
+  each stage needs a different active person whose role carries at least the
+  stage role's authority. Stage lists the version leaves unchanged are not
+  checked, so a gap already in force does not block unrelated changes.
 - Policy can only tighten gates, never below the shipped floor — a tenant
   cannot configure its way past evidence binding.
 - Stage labels and field labels are rendered in the UI: length-capped and

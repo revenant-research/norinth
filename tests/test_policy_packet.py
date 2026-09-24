@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "apps" / "platform"))
 
-from tests.helpers import login_and_activate  # noqa: E402
+from tests.helpers import login_and_activate, staff_policy_stages  # noqa: E402
 
 
 def test_packet_carries_policy_stages_and_vendors(super_admin_client):
@@ -40,6 +40,7 @@ def test_packet_carries_policy_stages_and_vendors(super_admin_client):
             }
         },
     }
+    staff_policy_stages(org, "acme.test", two_stage)
     draft = org.post("/api/governance-policy/draft", json={"body": two_stage})
     version = draft.json()["policy"]["version"]
     body_hash = draft.json()["policy"]["body_hash"]

@@ -279,6 +279,35 @@ describe("PolicyView", () => {
     expect(confirmSpy).not.toHaveBeenCalled();
   });
 
+  it("a draft with stages nobody can decide is saved but not activated", async () => {
+    const user = userEvent.setup();
+    const post = vi.spyOn(api, "postJson").mockResolvedValue({ policy: { version: 4 } } as any);
+    const confirmSpy = vi.spyOn(confirmModule, "confirm").mockResolvedValue(true);
+    const base = api.getJson as unknown as { getMockImplementation: () => (path: string) => Promise<unknown> };
+    const loads = base.getMockImplementation();
+    vi.spyOn(api, "getJson").mockImplementation(async (path: string) => {
+      if (path.startsWith("/api/governance-policy/diff")) {
+        return {
+          from: "in force",
+          to: "v4",
+          diff: ["changed intake.tiers.high.stages"],
+          loosens: [],
+          unstaffed: ["intake.tiers.high: 3 stage(s) need 3 different active people"],
+        } as any;
+      }
+      return loads(path) as any;
+    });
+    render(<PolicyView />);
+    await waitFor(() => expect(screen.getByTestId("tier-card-high")).toBeInTheDocument());
+
+    await user.click(screen.getByTestId("tier-card-high").querySelector(".pipeline-add") as HTMLElement);
+    await user.click(screen.getByRole("button", { name: "Review & put in force" }));
+
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post.mock.calls[0][0]).toBe("/api/governance-policy/draft");
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
   it("declining the confirmation keeps the draft in history without activating", async () => {
     const user = userEvent.setup();
     const post = vi.spyOn(api, "postJson").mockResolvedValue({ policy: { version: 4 } } as any);

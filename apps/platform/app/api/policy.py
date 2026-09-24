@@ -55,6 +55,7 @@ from app.storage.policy_engine import (
     stage_subject_undecided,
     stages_for_subject,
     submit_vendor_review,
+    unstaffed_stage_changes,
     upsert_vendor,
     validate_policy_body,
     vendor_coverage,
@@ -199,7 +200,14 @@ def governance_policy_diff(
         "diff": policy_diff_summary(base_body, target["body"]),
         # non-empty means the author cannot activate this version themselves
         "loosens": policy_loosening(base_body, target["body"], effective_policy(None)["body"]),
+        # non-empty means nobody can activate this version until roles are assigned
+        "unstaffed": _unstaffed(tenant_id, base_body, target["body"]),
     }
+
+
+def _unstaffed(tenant_id: str, base_body: dict[str, Any], body: dict[str, Any]) -> list[str]:
+    with connect() as connection:
+        return unstaffed_stage_changes(connection, tenant_id, base_body, body, effective_policy(None)["body"])
 
 
 # --- approval stages --------------------------------------------------------------
