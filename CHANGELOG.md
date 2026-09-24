@@ -80,6 +80,13 @@ Semantic Versioning.
 
 ### Fixed
 
+- **A failed evaluation is reported as a failed evaluation.** An `eval.result`
+  below its threshold carries status `error`, and `RISK-OPS-001` (operational
+  reliability) counted it as a runtime failure. Failed evaluations now raise
+  the new rule `RISK-EVL-002` (Failed evaluation) instead, and `RISK-OPS-001`
+  counts only runtime events. Release gates block on a failed evaluation as
+  before. Existing `RISK-OPS-001` findings are left for a reviewer to close.
+
 - **Unobserved mapped framework requirements no longer count as satisfied.**
   Coverage distinguishes recent passing evidence from unknown requirements,
   approved waivers and open violations, including in the audit packet. (#172)
