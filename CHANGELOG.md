@@ -18,6 +18,15 @@ Semantic Versioning.
 
 ### Security
 
+- **Loosening the governance policy takes two people.** A policy version that
+  removes an approval stage or replaces its role, lengthens or removes a
+  recertification period, stops requiring attested evals for an environment,
+  or removes an intake field or requires it for fewer tiers can no longer be
+  activated by the person who drafted it. Another `config.write` holder
+  activates it. Tightening and neutral changes are unchanged. The diff
+  endpoint and the activation audit entry list the loosening reasons, and the
+  policy page saves a loosening draft for another administrator instead of
+  activating it.
 - **Audit verification checks a separate signed head journal.** A database
   writer who deletes the last rows can no longer present a valid surviving
   prefix as complete when a retained checkpoint exists. Verification and audit

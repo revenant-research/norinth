@@ -15,6 +15,8 @@ invariants this module keeps:
 * every policy activation is hash-chained in the audit log
 * gates only tighten: policy cannot approve without evidence
 * roles stay platform-wide; policy references them, never redefines them
+* a version that loosens the policy in force is activated by someone other
+  than its author
 
 the shipped platform default (tenant_id '') encodes today's behavior exactly:
 one review stage per tier, no recertification clock, gate attestation driven
@@ -37,7 +39,7 @@ from hashlib import sha256
 from typing import Any
 
 from .entities import decode_json, encode_json, entity_id
-from .errors import RecordNotFound
+from .errors import DomainError, RecordNotFound
 from .intake import RISK_TIERS
 from .raw_events import connect
 from .workflow import apply_decision_status
@@ -568,10 +570,18 @@ def create_policy_draft(tenant_id: str, body: dict[str, Any], actor_ref: str) ->
         )
 
 
+class PolicyActivationRequiresSecondPerson(DomainError):
+    """the version loosens the policy in force and its author tried to activate it"""
+
+
 def activate_policy(tenant_id: str, version: int, actor_ref: str) -> dict[str, Any]:
     """put one version in force; the previous active version is superseded in
     the same transaction. in-flight subjects keep the stages they were
     materialized with, so activation never rewrites open work
+
+    a version that loosens the policy in force (see policy_loosening) must be
+    activated by someone other than its author; tightening and neutral changes
+    may be activated by the author
     """
     if not tenant_id:
         raise ValueError("a tenant_id is required to activate a governance policy")
@@ -593,6 +603,14 @@ def activate_policy(tenant_id: str, version: int, actor_ref: str) -> dict[str, A
         previous = connection.execute(
             "SELECT * FROM governance_policies WHERE tenant_id = ? AND status = 'active'", (tenant_id,)
         ).fetchone()
+        default_body = _platform_default(connection)["body"]
+        previous_body = _policy_row(previous)["body"] if previous is not None else default_body
+        loosening = policy_loosening(previous_body, target["body"], default_body)
+        if loosening and target.get("created_by") == actor_ref:
+            raise PolicyActivationRequiresSecondPerson(
+                "this version loosens the policy in force, so someone other than its author must activate it: "
+                + "; ".join(loosening)
+            )
         if previous is not None:
             connection.execute(
                 "UPDATE governance_policies SET status = 'superseded' WHERE tenant_id = ? AND version = ?",
@@ -607,7 +625,6 @@ def activate_policy(tenant_id: str, version: int, actor_ref: str) -> dict[str, A
                 "SELECT * FROM governance_policies WHERE tenant_id = ? AND version = ?", (tenant_id, version)
             ).fetchone()
         )
-        previous_body = _policy_row(previous)["body"] if previous is not None else _platform_default(connection)["body"]
     from .audit import record_audit
 
     record_audit(
@@ -621,6 +638,8 @@ def activate_policy(tenant_id: str, version: int, actor_ref: str) -> dict[str, A
             "body_hash": activated["body_hash"],
             "superseded_version": previous["version"] if previous is not None else None,
             "diff": policy_diff_summary(previous_body, activated["body"]),
+            "loosens": loosening,
+            "author": target.get("created_by"),
         },
     )
     return activated
@@ -653,6 +672,104 @@ def policy_diff_summary(old_body: dict[str, Any], new_body: dict[str, Any]) -> l
         elif old_flat[key] != new_flat[key]:
             changes.append(f"changed {key}: {encode_json(old_flat[key])} -> {encode_json(new_flat[key])}")
     return changes or ["no changes"]
+
+
+def _tier_entry(body: dict[str, Any], default_body: dict[str, Any], tier: str) -> dict[str, Any]:
+    """the tier entry resolve_tier_policy would use, computed from documents"""
+    for document in (body, default_body):
+        entry = ((document.get("intake") or {}).get("tiers") or {}).get(tier)
+        if entry is not None:
+            return entry
+    return {"stages": [{"role": "governance_reviewer"}]}
+
+
+def _vendor_entry(body: dict[str, Any], default_body: dict[str, Any]) -> dict[str, Any]:
+    for document in (body, default_body):
+        entry = document.get("vendors")
+        if entry is not None:
+            return entry
+    return DEFAULT_POLICY_BODY["vendors"]
+
+
+def _requires_attested(body: dict[str, Any], default_body: dict[str, Any], environment: str) -> bool:
+    """require_attested_evals as resolve_gate_policy resolves it"""
+    for document in (body, default_body):
+        environments = (document.get("gates") or {}).get("environments") or {}
+        entry = environments.get(environment)
+        if entry is None:
+            entry = environments.get("*")
+        if entry is not None:
+            return bool(entry.get("require_attested_evals", False))
+    return False
+
+
+def _intake_fields(body: dict[str, Any], default_body: dict[str, Any]) -> list[dict[str, Any]]:
+    intake = body.get("intake") or {}
+    if "fields" in intake:
+        return list(intake.get("fields") or [])
+    return list((default_body.get("intake") or {}).get("fields") or [])
+
+
+def _stages_loosened(old: dict[str, Any], new: dict[str, Any]) -> bool:
+    """whether any approval the old stages required is gone
+
+    conservative: every old stage's role must still appear in the new stages,
+    counted with multiplicity. a role replaced by a stronger one still counts as
+    loosening, so the second person reviews the substitution
+    """
+    remaining = [stage.get("role") for stage in new.get("stages") or []]
+    for stage in old.get("stages") or []:
+        role = stage.get("role")
+        if role not in remaining:
+            return True
+        remaining.remove(role)
+    return False
+
+
+def _recertify_loosened(old: dict[str, Any], new: dict[str, Any]) -> bool:
+    before, after = old.get("recertify_days"), new.get("recertify_days")
+    return before is not None and (after is None or after > before)
+
+
+def policy_loosening(old_body: dict[str, Any], new_body: dict[str, Any], default_body: dict[str, Any]) -> list[str]:
+    """the ways new_body is less strict than old_body; empty when it is not
+
+    both documents are compared as the resolvers read them, with the platform
+    default filling what a tenant document leaves out. counted as loosening: an
+    approval stage removed or its role replaced, a recertification period
+    lengthened or removed, attested evals no longer required for an
+    environment, and an intake field removed or required for fewer tiers.
+    anything else (labels, ordering mode, new stages, new fields) is not
+    """
+    reasons: list[str] = []
+    for tier in RISK_TIERS:
+        old, new = _tier_entry(old_body, default_body, tier), _tier_entry(new_body, default_body, tier)
+        if _stages_loosened(old, new):
+            reasons.append(f"intake.tiers.{tier}: an approval stage is removed or its role replaced")
+        if _recertify_loosened(old, new):
+            reasons.append(f"intake.tiers.{tier}: recertification is less frequent or removed")
+    old_vendors, new_vendors = _vendor_entry(old_body, default_body), _vendor_entry(new_body, default_body)
+    if _stages_loosened(old_vendors, new_vendors):
+        reasons.append("vendors: an approval stage is removed or its role replaced")
+    if _recertify_loosened(old_vendors, new_vendors):
+        reasons.append("vendors: recertification is less frequent or removed")
+    environments = {"*"}
+    for document in (old_body, new_body, default_body):
+        environments.update(((document.get("gates") or {}).get("environments") or {}).keys())
+    for environment in sorted(environments):
+        if _requires_attested(old_body, default_body, environment) and not _requires_attested(
+            new_body, default_body, environment
+        ):
+            reasons.append(f"gates.environments.{environment}: attested evals are no longer required")
+    new_fields = {field.get("key"): field for field in _intake_fields(new_body, default_body)}
+    for field in _intake_fields(old_body, default_body):
+        key = field.get("key")
+        replacement = new_fields.get(key)
+        if replacement is None:
+            reasons.append(f"intake.fields.{key}: the field is removed")
+        elif not set(field.get("required_tiers") or []) <= set(replacement.get("required_tiers") or []):
+            reasons.append(f"intake.fields.{key}: the field is required for fewer tiers")
+    return reasons
 
 
 # --- custom intake fields ---------------------------------------------------------

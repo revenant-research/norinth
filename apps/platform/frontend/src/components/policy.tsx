@@ -746,11 +746,27 @@ export function PolicyView() {
     try {
       const draft = await postJson<{ policy: PolicyVersion }>("/api/governance-policy/draft", { body: working });
       let lines: string[] = [];
+      let loosens: string[] = [];
       try {
-        const diff = await getJson<{ diff: string[] }>(`/api/governance-policy/diff?to_version=${draft.policy.version}`);
+        const diff = await getJson<{ diff: string[]; loosens?: string[] }>(
+          `/api/governance-policy/diff?to_version=${draft.policy.version}`,
+        );
         lines = diff.diff;
+        loosens = diff.loosens ?? [];
       } catch {
         lines = ["(change summary unavailable)"];
+      }
+      if (loosens.length > 0) {
+        // the author of a loosening version cannot activate it; another
+        // administrator puts it in force from History
+        toast.success(
+          `Saved as draft v${draft.policy.version}. It loosens the policy in force, so another administrator must put it in force: ${loosens.join("; ")}`,
+        );
+        setDoc(null);
+        reloadAll();
+        window.location.hash = "#policy/history";
+        setTab("history");
+        return;
       }
       const ok = await confirm({
         title: "Put these rules in force?",
@@ -784,15 +800,24 @@ export function PolicyView() {
 
   async function activate(version: PolicyVersion) {
     let lines: string[] = [];
+    let loosens: string[] = [];
     try {
-      const diff = await getJson<{ diff: string[] }>(`/api/governance-policy/diff?to_version=${version.version}`);
+      const diff = await getJson<{ diff: string[]; loosens?: string[] }>(
+        `/api/governance-policy/diff?to_version=${version.version}`,
+      );
       lines = diff.diff;
+      loosens = diff.loosens ?? [];
     } catch {
       lines = ["(change summary unavailable)"];
     }
+    const loosening =
+      loosens.length > 0
+        ? `This version loosens the policy in force, so its author (${version.created_by}) cannot put it in force:\n${loosens.join("\n")}\n\n`
+        : "";
     const ok = await confirm({
       title: `Put version ${version.version} in force?`,
       body:
+        loosening +
         "New reviews, release gates and vendor reviews follow it immediately; reviews already in flight keep the rules they started under.\n\nChanges:\n" +
         lines.slice(0, 12).join("\n") +
         (lines.length > 12 ? `\n…and ${lines.length - 12} more` : ""),

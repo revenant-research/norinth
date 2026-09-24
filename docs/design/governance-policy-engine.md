@@ -312,6 +312,13 @@ activates a non-default policy.
   evaluation of tenant-authored strings. Validation rejects unknown structure.
 - Policy writes require `config_write`; activation is audited with the body
   hash, so a quietly weakened policy is as visible as a deleted audit row.
+- A version that loosens the policy in force must be activated by someone
+  other than its author. Loosening means an approval stage removed or its role
+  replaced, a recertification period lengthened or removed, attested evals no
+  longer required for an environment, or an intake field removed or required
+  for fewer tiers. Tightening and neutral changes can be activated by the
+  author. The activation audit entry records the author and the loosening
+  reasons.
 - Policy can only tighten gates, never below the shipped floor — a tenant
   cannot configure its way past evidence binding.
 - Stage labels and field labels are rendered in the UI: length-capped and
@@ -322,9 +329,9 @@ activates a non-default policy.
 ## Open questions
 
 1. Should activating a policy itself require a second person (maker–checker on
-   the policy)? Leaning yes for a later round via the same stage machinery
-   (`subject_type = "policy_activation"`), shipped after v1 so the engine can
-   govern itself.
+   the policy)? Resolved: only when the version loosens the policy in force
+   (see Security considerations). A full stage-based approval for policy
+   activation (`subject_type = "policy_activation"`) remains possible later.
 2. Should a tier's stages be allowed to name the *same role twice* (two
    different people from one role)? v1 says yes implicitly — the
    distinct-decider rule forces two people; the question is whether the UI
