@@ -324,7 +324,7 @@ def human_decision(record_id: str, decision: str, payload: DecisionInput, actor:
         raise HTTPException(422, "Unsupported decision")
     with store.transaction(tenant(actor)) as connection:
         target = human_target(connection, actor, record_id)
-        record = engine.decide(connection, actor, target, decision, payload.rationale)
+        record = engine.decide(connection, actor, target, decision, payload.rationale, payload.expected_body_digest)
     audit(actor.user_ref, record, decision)
     return {"record": record}
 
@@ -449,7 +449,7 @@ def delegate(payload: DelegationInput, response: Response, actor: ActorContext =
             raise HTTPException(409, "Integration is inactive")
         connection.execute("SAVEPOINT delegation_check")
         try:
-            engine.decide(connection, actor, target, payload.decision, payload.rationale)
+            engine.decide(connection, actor, target, payload.decision, payload.rationale, payload.expected_body_digest)
         finally:
             connection.execute("ROLLBACK TO SAVEPOINT delegation_check")
             connection.execute("RELEASE SAVEPOINT delegation_check")
@@ -502,7 +502,12 @@ def redeem(payload: RedeemInput, source: dict[str, Any] = Depends(principal)):
         target = store.load(connection, source["tenant_id"], delegation["body"]["target_id"])
         engine.principal_scope(source, "systems:read", target)
         record = engine.decide(
-            connection, actor, target, delegation["body"]["decision"], delegation["body"]["rationale"]
+            connection,
+            actor,
+            target,
+            delegation["body"]["decision"],
+            delegation["body"]["rationale"],
+            delegation["body"]["expected_body_digest"],
         )
         connection.execute(
             "UPDATE portable_credentials SET consumed_at = ? WHERE token_hash = ?",

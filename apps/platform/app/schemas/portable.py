@@ -138,6 +138,7 @@ class VerificationInput(Contract):
 
 
 class DecisionInput(Contract):
+    expected_body_digest: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
     rationale: str = Field(min_length=12, max_length=2000)
 
 

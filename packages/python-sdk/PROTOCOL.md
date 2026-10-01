@@ -192,13 +192,16 @@ and report actual model/tool use through telemetry and observations.
 People submit revisions through `POST /api/portable/submissions` using their
 own Norinth session. The stored author is the authenticated actor; clients
 cannot supply `submitted_by`. Machine submissions record the service identity.
-`POST /api/portable/records/{id}/{decision}` records a rationale and requires
+`POST /api/portable/records/{id}/{decision}` records a rationale, requires
+`expected_body_digest` (the returned record's `body_digest`) from the exact
+record the reviewer read, and requires
 an authorized independent actor. `approve_system` uses `review.decide`,
 `approve_revision` uses `gate.decide`, policy/pack activation uses
 `config.write`, and retirement uses `lifecycle.manage`. Authors cannot decide
 their own work. A revision cannot be approved with failed, missing or stale
 evidence or a policy violation. Decisions are immutable records linked to the
-exact target and its body digest. Governance changes confer no authority until
+exact target, its body digest and an immutable copy of the reviewed body, so
+changing a system name or purpose never erases the historical review context. Governance changes confer no authority until
 the exact resulting state is anchored in Norinth's hash-chained audit log.
 An audit failure leaves `audited_at` empty and permission indeterminate.
 Authorized people can retry the audit through
@@ -211,7 +214,9 @@ If it needs a service to relay an exact human decision, a real session creates
 rationale. `/v1/portable/delegations/redeem` consumes the returned `nrd_` token
 once within 60 seconds. The integration cannot change the decision or name a
 user. Norinth rechecks active user, current permission, MFA enrollment policy,
-scope and independence on redemption. This is a narrowly bound delegation,
+scope, independence and the exact target body digest on redemption. Changing a
+mutable system purpose after review or delegation issuance rejects approval
+with `409`; the reviewer must refresh and make a new exact decision. This is a narrowly bound delegation,
 not a general impersonation token.
 
 ### Current permission and online consumption
