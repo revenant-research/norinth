@@ -496,6 +496,7 @@ def decide(
             "decision": decision,
             "rationale": rationale,
             "target_body_digest": store.digest(target["body"]),
+            "target_snapshot": target["body"],
         },
         created_by=actor.user_ref,
     )

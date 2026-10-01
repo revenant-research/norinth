@@ -761,6 +761,7 @@ def test_audit_failure_cannot_confer_authority_and_retry_preserves_original_deci
         decision = store.load(connection, "documents", recovered["record"]["decision_id"], "decision")
     assert decision["created_by"] == "reviewer@documents.test"
     assert decision["body"]["rationale"] == RATIONALE["rationale"]
+    assert decision["body"]["target_snapshot"] == s["revision"]["body"]
     assert ok(authorize(s))["authorization"]["body"]["outcome"] == "allow"
 
 

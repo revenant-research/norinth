@@ -200,7 +200,8 @@ an authorized independent actor. `approve_system` uses `review.decide`,
 `config.write`, and retirement uses `lifecycle.manage`. Authors cannot decide
 their own work. A revision cannot be approved with failed, missing or stale
 evidence or a policy violation. Decisions are immutable records linked to the
-exact target and its body digest. Governance changes confer no authority until
+exact target, its body digest and an immutable copy of the reviewed body, so
+changing a system name or purpose never erases the historical review context. Governance changes confer no authority until
 the exact resulting state is anchored in Norinth's hash-chained audit log.
 An audit failure leaves `audited_at` empty and permission indeterminate.
 Authorized people can retry the audit through
