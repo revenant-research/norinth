@@ -66,6 +66,38 @@ def test_otel_mapper_skips_non_genai_spans():
     assert otel_spans_to_events(payload) == []
 
 
+def test_otel_mapper_records_executed_model_and_preserves_requested_model(client):
+    """A routed response must populate inventory with the model that actually ran."""
+    import json
+
+    from app.ingestion.otel import otel_spans_to_events
+    from app.storage.entities import connect
+
+    payload = _otlp_chat_span()
+    span = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    span["attributes"].append({"key": "gen_ai.response.model", "value": {"stringValue": "gpt-4o-actual"}})
+    event, = otel_spans_to_events(payload)
+    assert event["attributes"]["model"] == "gpt-4o-actual"
+    assert event["attributes"]["requested_model"] == "gpt-4o"
+    response = client.post("/v1/otel/traces", json=payload, headers={"Authorization": "Bearer dev"})
+    assert response.status_code == 200, response.text
+    with connect() as connection:
+        row = connection.execute("SELECT models FROM governance_applications WHERE tenant_id = 'tenant-local'").fetchone()
+    assert json.loads(row["models"]) == ["gpt-4o-actual"]
+
+
+def test_otel_mapper_accepts_a_response_model_without_a_request_model():
+    from app.ingestion.otel import otel_spans_to_events
+
+    payload = _otlp_chat_span()
+    attributes = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["attributes"]
+    attributes[:] = [attr for attr in attributes if attr["key"] != "gen_ai.request.model"]
+    attributes.append({"key": "gen_ai.response.model", "value": {"stringValue": "actual-model"}})
+    event, = otel_spans_to_events(payload)
+    assert event["attributes"]["model"] == "actual-model"
+    assert event["attributes"].get("requested_model") is None
+
+
 def test_otel_endpoint_ingests_and_populates_inventory(client):
     resp = client.post(
         "/v1/otel/traces",
