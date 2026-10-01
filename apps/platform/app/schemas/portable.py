@@ -37,6 +37,13 @@ class IntegrationCreate(Contract):
     scopes: list[Scope] = Field(min_length=1, max_length=6)
     capabilities: list[ActionCapability] = Field(default_factory=list, max_length=32)
 
+    @field_validator("scopes")
+    @classmethod
+    def dependent_scopes(cls, scopes: list[Scope]) -> list[Scope]:
+        if len(set(scopes)) != len(scopes) or "systems:read" not in scopes:
+            raise ValueError("Integration scopes must be unique and include systems:read for their bound resources")
+        return scopes
+
 
 class SystemInput(Contract):
     external_id: str = Field(min_length=1, max_length=256)

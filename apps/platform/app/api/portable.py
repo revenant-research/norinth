@@ -199,30 +199,49 @@ def systems(scope: ScopeFilter = Depends(scoped_dependency), limit: int = 100, o
     return {"systems": rows[:limit], "has_more": len(rows) > limit, "offset": offset, "limit": limit}
 
 
+def workspace_snapshot(connection, system: dict[str, Any], offset: int) -> dict[str, Any]:
+    if not 0 <= offset <= 1000000:
+        raise HTTPException(422, "Invalid history offset")
+    result: dict[str, Any] = {"system": system, "offset": offset}
+    for kind in ("revision", "policy", "authorization", "receipt", "decision", "observation", "verification"):
+        rows = store.records(
+            connection, system["tenant_id"], kind, subject_id=system["record_id"], limit=101, offset=offset
+        )
+        result[kind + "s"] = rows[:100]
+        result[kind + "s_has_more"] = len(rows) > 100
+    pack_rows = store.records(
+        connection,
+        system["tenant_id"],
+        "pack",
+        project=system["project"],
+        environment=system["environment"],
+        limit=101,
+        offset=offset,
+    )
+    result["packs"] = pack_rows[:100]
+    result["packs_has_more"] = len(pack_rows) > 100
+    result["active_policy"] = engine.active_policy(connection, system)
+    source = store.load(connection, system["tenant_id"], system["integration_id"], "integration")
+    result["integration"] = source
+    result["eligibility"] = {
+        r["record_id"]: engine.evaluate(
+            connection, source, AuthorizationInput(revision_id=r["record_id"], purpose="release")
+        )
+        for r in result["revisions"]
+    }
+    return result
+
+
 @router.get("/api/portable/systems/{system_id}")
 def system_detail(system_id: str, offset: int = 0, actor: ActorContext = Depends(current_actor)):
     with store.connect() as connection:
-        system = human_target(connection, actor, system_id, kind="system")
-        if not 0 <= offset <= 1000000:
-            raise HTTPException(422, "Invalid history offset")
-        result: dict[str, Any] = {"system": system, "offset": offset}
-        for kind in ("revision", "policy", "authorization", "receipt", "decision", "observation", "verification"):
-            rows = store.records(connection, tenant(actor), kind, subject_id=system_id, limit=101, offset=offset)
-            result[kind + "s"] = rows[:100]
-            result[kind + "s_has_more"] = len(rows) > 100
-        result["packs"] = store.records(
-            connection, tenant(actor), "pack", project=system["project"], environment=system["environment"]
-        )
-        result["active_policy"] = engine.active_policy(connection, system)
-        source = store.load(connection, tenant(actor), system["integration_id"], "integration")
-        result["integration"] = source
-        result["eligibility"] = {
-            r["record_id"]: engine.evaluate(
-                connection, source, AuthorizationInput(revision_id=r["record_id"], purpose="release")
-            )
-            for r in result["revisions"]
-        }
-        return result
+        return workspace_snapshot(connection, human_target(connection, actor, system_id, kind="system"), offset)
+
+
+@router.get("/v1/portable/systems/{system_id}/workspace")
+def machine_workspace(system_id: str, offset: int = 0, source: dict[str, Any] = Depends(principal)):
+    with store.connect() as connection:
+        return workspace_snapshot(connection, engine.system_for_source(connection, source, system_id), offset)
 
 
 @router.post("/v1/portable/systems")
@@ -377,34 +396,39 @@ def draft_pack(
     return {"pack": record}
 
 
+def control_snapshot(connection, system: dict[str, Any], revision_id: str) -> dict[str, Any]:
+    revision = store.load(connection, system["tenant_id"], revision_id, "revision")
+    if revision["body"]["system_id"] != system["record_id"]:
+        raise HTTPException(404, "Revision not found for system")
+    packs = store.records(
+        connection,
+        system["tenant_id"],
+        "pack",
+        state="active",
+        project=system["project"],
+        environment=system["environment"],
+        limit=501,
+    )
+    if len(packs) > 500:
+        raise HTTPException(409, "Too many active packs to assess completely")
+    return {
+        "assessments": [
+            assessment for pack in packs for assessment in engine.assess_pack(connection, system, revision, pack)
+        ],
+        "basis": "Mapped controls for this system and revision only; not certification or full framework coverage.",
+    }
+
+
 @router.get("/api/portable/systems/{system_id}/controls")
 def portable_controls(system_id: str, revision_id: str, actor: ActorContext = Depends(current_actor)):
     with store.connect() as connection:
-        system = human_target(connection, actor, system_id, kind="system")
-        revision = human_target(connection, actor, revision_id, kind="revision")
-        if revision["body"]["system_id"] != system_id:
-            raise HTTPException(404, "Revision not found for system")
-        packs = store.records(
-            connection,
-            tenant(actor),
-            "pack",
-            state="active",
-            project=system["project"],
-            environment=system["environment"],
-            limit=501,
-        )
-        if len(packs) > 500:
-            raise HTTPException(409, "Too many active packs to assess completely")
-        assessments = [
-            assessment
-            for pack in packs
-            if pack["state"] == "active"
-            for assessment in engine.assess_pack(connection, system, revision, pack)
-        ]
-    return {
-        "assessments": assessments,
-        "basis": "Mapped controls for this system and revision only; not certification or full framework coverage.",
-    }
+        return control_snapshot(connection, human_target(connection, actor, system_id, kind="system"), revision_id)
+
+
+@router.get("/v1/portable/systems/{system_id}/controls")
+def machine_controls(system_id: str, revision_id: str, source: dict[str, Any] = Depends(principal)):
+    with store.connect() as connection:
+        return control_snapshot(connection, engine.system_for_source(connection, source, system_id), revision_id)
 
 
 @router.post("/api/portable/delegations")

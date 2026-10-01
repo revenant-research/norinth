@@ -624,12 +624,18 @@ def test_public_contract_can_be_consumed_by_the_independent_python_client(setup)
     from norinth_logger.portable import PermissionDenied, PortableClient, PortableError
 
     def transport(path, payload):
-        response = s["admin"].post(path, headers=s["headers"], json=payload)
+        response = (
+            s["admin"].get(path, headers=s["headers"])
+            if payload is None
+            else s["admin"].post(path, headers=s["headers"], json=payload)
+        )
         if response.status_code != 200:
             raise PortableError("Request rejected")
         return response.json()
 
     runner = PortableClient("https://norinth.example.test", "nri_example", transport=transport)
+    assert runner.workspace(s["system"]["record_id"])["system"]["record_id"] == s["system"]["record_id"]
+    assert runner.controls(s["system"]["record_id"], s["revision"]["record_id"])["assessments"] == []
     request = {"revision_id": s["revision"]["record_id"], "purpose": "release"}
     with pytest.raises(PermissionDenied):
         runner.consume(runner.authorize(request), request)
@@ -756,3 +762,27 @@ def test_credential_rotation_preserves_binding_and_does_not_revive_revoked_integ
     assert bound["record_id"] == s["system"]["record_id"] and bound["state"] == "approved"
     ok(s["admin"].post(url + "/revoke", json={}))
     assert s["admin"].post(url + "/rotate", json={}).status_code == 409
+
+
+def test_server_adapter_can_read_current_workspace_without_issuing_permits(setup):
+    s = setup
+    ready(s)
+    from app.storage import portable as store
+
+    with store.connect() as connection:
+        before = len(store.records(connection, "documents", "authorization"))
+    workspace = ok(
+        s["admin"].get(f"/v1/portable/systems/{s['system']['record_id']}/workspace", headers=s["evidence_headers"])
+    )
+    assert workspace["eligibility"][s["revision"]["record_id"]]["outcome"] == "allow"
+    assert "token" not in str(workspace)
+    assert workspace["active_policy"]["record_id"] == s["policy"]["record_id"]
+    controls = ok(
+        s["admin"].get(
+            f"/v1/portable/systems/{s['system']['record_id']}/controls?revision_id={s['revision']['record_id']}",
+            headers=s["evidence_headers"],
+        )
+    )
+    assert controls["assessments"] == []
+    with store.connect() as connection:
+        assert len(store.records(connection, "documents", "authorization")) == before

@@ -164,8 +164,7 @@ request uses `Authorization: Bearer <nri_credential>`; tenancy and scope come
 from that credential, never from a payload or a claimed user identity.
 Scopes are `systems:read`, `systems:write`, `revisions:write`,
 `observations:write`, `authorizations:request`, and `receipts:write`.
-Dependencies matter: a source that submits revisions or observations also
-needs `systems:read`. Use a separate collector identity for independent
+Every integration needs `systems:read` for its bound resources. Use a separate collector identity for independent
 correction verification. Capabilities declare a name, resource type, operation,
 primitive parameter types, reversibility and verification check ID; declarations
 alone confer no execution permission.
@@ -305,7 +304,13 @@ release checks, immutable configuration, policy drafts, scoped integration
 credentials, evidence, permission history, correction receipts and accountable
 decisions. `/api/portable/systems`, `/api/portable/integrations`, and system
 history accept bounded `limit`/`offset` pagination (history pages are 100).
-The read-only live eligibility check issues no permit. Frontend
+The read-only live eligibility check issues no permit. A server-side adapter
+can read the same snapshot at `GET /v1/portable/systems/{id}/workspace` and
+control assessments at `GET /v1/portable/systems/{id}/controls?revision_id=...`
+using only its scoped integration credential. These reads cannot record a
+human decision or mint a permission; they allow a host to display current
+status without creating unused permits. The Python client exposes `workspace`
+and `controls` for this purpose. Frontend
 `createPortableClient` takes an injected human-authenticated transport;
 `PortableSystemWorkspace` takes that client, actor permissions and a source/
 evidence link resolver. Hosts supply their own transport and URLs; the

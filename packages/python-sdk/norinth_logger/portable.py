@@ -16,7 +16,7 @@ import urllib.request
 from collections.abc import Callable
 from typing import Any
 
-Transport = Callable[[str, dict[str, Any]], dict[str, Any]]
+Transport = Callable[[str, dict[str, Any] | None], dict[str, Any]]
 
 
 class PortableError(RuntimeError):
@@ -60,14 +60,14 @@ class PortableClient:
         self.endpoint = endpoint.rstrip("/")
         self._token = integration_token
         self.timeout = timeout
-        self._transport = transport or self._post
+        self._transport = transport or self._http
 
-    def _post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def _http(self, path: str, payload: dict[str, Any] | None) -> dict[str, Any]:
         request = urllib.request.Request(
             self.endpoint + path,
-            data=json.dumps(payload, allow_nan=False).encode(),
+            data=json.dumps(payload, allow_nan=False).encode() if payload is not None else None,
             headers={"Authorization": "Bearer " + self._token, "Content-Type": "application/json"},
-            method="POST",
+            method="POST" if payload is not None else "GET",
         )
         try:
             with urllib.request.build_opener(_NoRedirect()).open(request, timeout=self.timeout) as response:
@@ -84,7 +84,7 @@ class PortableClient:
             # Do not echo response bodies or a URL containing sensitive data.
             raise PortableError("Norinth request failed; do not execute the effect") from error
 
-    def _call(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def _call(self, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         try:
             return self._transport("/v1/portable" + path, payload)
         except PortableError:
@@ -94,6 +94,22 @@ class PortableClient:
 
     def register_system(self, system: dict[str, Any]) -> dict[str, Any]:
         return self._call("/systems", system)["system"]
+
+    def workspace(self, system_id: str, *, offset: int = 0) -> dict[str, Any]:
+        return self._call(
+            "/systems/"
+            + urllib.parse.quote(system_id, safe="")
+            + "/workspace?"
+            + urllib.parse.urlencode({"offset": offset})
+        )
+
+    def controls(self, system_id: str, revision_id: str) -> dict[str, Any]:
+        return self._call(
+            "/systems/"
+            + urllib.parse.quote(system_id, safe="")
+            + "/controls?"
+            + urllib.parse.urlencode({"revision_id": revision_id})
+        )
 
     def submit_revision(self, system_id: str, manifest: dict[str, Any]) -> dict[str, Any]:
         return self._call("/systems/" + urllib.parse.quote(system_id, safe="") + "/revisions", manifest)["revision"]
