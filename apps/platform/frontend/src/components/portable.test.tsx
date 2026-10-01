@@ -210,6 +210,15 @@ describe("Portable workspace with an independent host", () => {
     expect(screen.getByText("Purpose needs review")).toBeInTheDocument();
   });
 
+  it("can allow an automatic release without claiming a human approved it", async () => {
+    const value = { ...workspace, revisions: [{ ...revision, state: "pending_review" }], eligibility: { "revision-1": { ...workspace.eligibility["revision-1"], outcome: "allow", reasons: [] } } };
+    const { client } = hostClient(value);
+    render(<PortableSystemWorkspace systemId="system-1" client={client} user={{ user_ref: "reader@test", permissions: [] }} />);
+    await screen.findByText("Allowed now");
+    expect(screen.getByText("No human approval recorded")).toBeInTheDocument();
+    expect(screen.queryByText("Needs review")).not.toBeInTheDocument();
+  });
+
   it("rejects executable and relative host links", () => {
     expect(safePortableLink("javascript:alert(1)")).toBeUndefined();
     expect(safePortableLink("data:text/html,foo")).toBeUndefined();
