@@ -628,6 +628,12 @@ def _0026_risk_rule_mode(connection) -> None:
         connection.execute("ALTER TABLE risk_rules ADD COLUMN mode TEXT NOT NULL DEFAULT 'enforce'")
 
 
+def _0027_portable_contracts(connection) -> None:
+    from app.storage.portable import ensure_tables
+
+    ensure_tables(connection)
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
@@ -655,6 +661,7 @@ MIGRATIONS: list[Migration] = [
     Migration(24, "durable tenant attestation requirement", _0024_attestation_requirement),
     Migration(25, "control coverage and evidence freshness", _0025_control_coverage),
     Migration(26, "observe or enforce mode for risk rules", _0026_risk_rule_mode),
+    Migration(27, "portable execution integration contracts", _0027_portable_contracts),
 ]
 
 

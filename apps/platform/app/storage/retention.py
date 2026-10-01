@@ -19,6 +19,8 @@ from .raw_events import connect
 # every tenant-scoped table except audit_logs (retained) and organizations
 # (the tenant record, removed last)
 _TENANT_SCOPED_TABLES = (
+    "portable_credentials",
+    "portable_records",
     "sdk_events",
     "governance_applications",
     "governance_workflows",
