@@ -37,7 +37,12 @@ from app.storage import portable as store
 from app.storage.audit import record_audit
 from app.storage.workflow import load_platform_user
 
-router = APIRouter()
+
+def no_store(response: Response) -> None:
+    response.headers["Cache-Control"] = "no-store"
+
+
+router = APIRouter(dependencies=[Depends(no_store)])
 
 
 def tenant(actor: ActorContext) -> str:
