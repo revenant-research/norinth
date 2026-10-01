@@ -6,6 +6,8 @@ raw events only; derived governance records and the audit log are kept
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from tests.helpers import login_and_activate
 
 
@@ -66,7 +68,7 @@ def test_retention_window_is_per_organization(super_admin_client):
         for tenant, token in (("keeper", keeper_token), ("ager", ager_token)):
             resp = anon.post("/v1/events/batch", json={"events": [
                 _event(tenant, f"{tenant}_old", "2020-01-01T00:00:00Z"),
-                _event(tenant, f"{tenant}_new", "2026-08-24T00:00:00Z"),
+                _event(tenant, f"{tenant}_new", datetime.now(UTC).isoformat()),
             ]}, headers={"Authorization": f"Bearer {token}"})
             assert resp.status_code == 200, resp.text
 

@@ -62,9 +62,10 @@ incidents linked to it.
 
 You register the agents you allow, each with an owner, an autonomy level, and a
 list of permitted tools. Norinth compares every agent it observes against that
-list. An unregistered agent, a tool used outside the permitted list, or an
+list. An unregistered agent, a tool used outside the permitted list, an
 agent that combines untrusted input, sensitive data, and external actions
-without a human checkpoint each raise a finding. Findings are mapped to the
+without a human checkpoint, or an agent more autonomous than its system's
+intake declares each raise a finding. Findings are mapped to the
 OWASP Top 10 for Agentic Applications.
 
 ![Agents compared against the registry](docs/images/agents.png)
@@ -76,6 +77,11 @@ guardrail evidence or an unregistered system in production. People can raise
 findings too. Accepting a risk requires an owner, a compensating control, and
 an expiry date. When the exception expires, the finding reopens.
 
+An organization can add its own rules. A new rule can start in observe mode:
+its findings appear in the register with the status "observed" but do not
+block releases. Promoting the rule to enforce opens those findings and is
+recorded in the audit log. Built-in rules always enforce.
+
 The person who submits a change can never be the one who approves it, and
 administrator accounts cannot hold decision roles.
 
@@ -86,7 +92,8 @@ administrator accounts cannot hold decision roles.
 A deployment reported by your pipeline gets a gate. The gate stays closed until
 the required evidence exists: no open risk findings, no missing controls, no
 unreviewed material changes, a linked prompt version, and a passing evaluation
-for the exact version being released. Evaluations can be signed by a key your
+for the exact version being released. Your governance policy can also require
+each control to cover a minimum share of recent traffic. Evaluations can be signed by a key your
 CI registers, so a passing result cannot be forged by someone who only holds an
 ingestion key. The `norinth gate check` command lets CI wait on the gate before
 deploying.
@@ -271,7 +278,11 @@ A few terms show up throughout Norinth:
   as "evaluation evidence exists before release". Norinth maps controls to the
   frameworks that name them and reports coverage as the share of mapped
   requirements currently satisfied. It is not a claim about the whole
-  regulation.
+  regulation. Each control also reports how much of the last 7 days of traffic
+  its evidence covers (for example, the share of model calls that had a
+  guardrail check on the same trace) and is marked stale when its latest
+  evidence is more than 30 days old. Both periods are set in the governance
+  policy.
 
 - **Release gate.** A checkpoint a deployment must pass before it ships.
 
