@@ -107,7 +107,10 @@ def _span_to_event(span: dict[str, Any], resource_attrs: dict[str, Any], path: s
         return None  # not a gen_ai span
 
     provider = attrs.get("gen_ai.provider.name") or attrs.get("gen_ai.system")
-    model = attrs.get("gen_ai.request.model") or attrs.get("gen_ai.response.model")
+    # Routers and aliases can resolve to a different model. Inventory and
+    # approved-model rules must describe the response, not merely the request.
+    requested_model = attrs.get("gen_ai.request.model")
+    model = attrs.get("gen_ai.response.model") or requested_model
     service = resource_attrs.get("service.name") or "otel"
     workflow_name = span.get("name") or operation or "otel-span"
     application_name = attrs.get("gen_ai.agent.name") or service
@@ -122,6 +125,7 @@ def _span_to_event(span: dict[str, Any], resource_attrs: dict[str, Any], path: s
     event_attributes: dict[str, Any] = {
         "provider": provider,
         "model": model,
+        "requested_model": requested_model,
         "operation": operation,
         "source": "otel",
         "usage": {

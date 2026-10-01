@@ -71,7 +71,110 @@ def test_gate_check_is_tenant_bound_and_reflects_human_approval(super_admin_clie
         assert resp.status_code == 200, resp.text
     approved = acme.get("/v1/gates/check", params={"deployment_id": "dep-1", "version": "v1"}, headers=h).json()
     assert approved["approved"] is True and approved["decided_by"] == "gov@acme.test" and approved["blocking"] is None
+    assert approved["current_eligibility"]["eligible"] is True
+    # New evidence invalidates current eligibility without changing the final
+    # human decision. Risk acceptance must clear the live check without a fold.
+    failed_eval = _eval()
+    failed_eval["span_id"] = "spn_failed"
+    failed_eval["attributes"] = {**failed_eval["attributes"], "passed": False, "score": 0.1}
+    model_call = {**BASE, "type": "model.call", "trace_id": "runtime", "span_id": "model_call",
+                  "timestamp": "2026-08-22T00:00:04Z", "status": "success",
+                  "attributes": {"provider": "openai", "model": "gpt-4o", "metadata": META}}
+    assert acme.post("/v1/events/batch", json={"events": [model_call, failed_eval]}, headers=h).status_code == 200
+    check = acme.get("/v1/gates/check", params={"deployment_id": "dep-1", "version": "v1"}, headers=h)
+    blocked = check.json()
+    assert check.headers["Cache-Control"] == "no-store"
+    assert blocked["approved"] is True and blocked["blocking"] is None
+    assert blocked["current_eligibility"]["eligible"] is False
+    assert "open_risks" in blocked["current_eligibility"]["blockers"]
+    assert blocked["decided_at"] == approved["decided_at"]
+    from app.storage.raw_events import connect
+
+    with connect() as connection:
+        findings = connection.execute("SELECT finding_id FROM risk_findings WHERE tenant_id = 'acme' AND status = 'open'").fetchall()
+        missing = connection.execute("SELECT assessment_id FROM control_assessments WHERE tenant_id = 'acme' AND status = 'missing'").fetchall()
+    assert findings
+    with TestClient(app) as gov:
+        login_and_activate(gov, "gov@acme.test", "gov-password-1-rotated-1")
+        for finding in findings:
+            result = gov.post("/api/decisions", json={"target_type": "risk_finding", "target_id": finding["finding_id"],
+                                                     "decision": "accept_risk", "rationale": "Risk owner reviewed compensating controls"})
+            assert result.status_code == 200, result.text
+        for assessment in missing:
+            result = gov.post("/api/decisions", json={"target_type": "control_assessment", "target_id": assessment["assessment_id"],
+                                                     "decision": "waive", "rationale": "Risk owner recorded compensating controls"})
+            assert result.status_code == 200, result.text
+    restored = acme.get("/v1/gates/check", params={"deployment_id": "dep-1", "version": "v1"}, headers=h).json()
+    assert restored["current_eligibility"]["eligible"] is True
+    assert restored["decided_at"] == approved["decided_at"]
+    # Durable-but-unprojected telemetry must not produce a green live check.
+    from app.storage.raw_events import insert_events
+
+    unfolded = _eval()
+    unfolded["span_id"] = "awaiting_projection"
+    insert_events([unfolded])
+    pending_projection = acme.get("/v1/gates/check", params={"deployment_id": "dep-1", "version": "v1"}, headers=h).json()
+    assert "pending_evidence" in pending_projection["current_eligibility"]["blockers"]
+    assert pending_projection["current_eligibility"]["eligible"] is False
+    from app.storage.fold import fold_pending
+
+    fold_pending("acme")
+    # A policy tightening must be visible immediately, without further events.
+    draft = acme.post("/api/governance-policy/draft", json={"body": {
+        "schema": "governance-policy/v1", "gates": {"environments": {"prod": {"require_attested_evals": True}}},
+    }})
+    assert draft.status_code == 200, draft.text
+    policy_version = draft.json()["policy"]["version"]
+    assert acme.post(f"/api/governance-policy/versions/{policy_version}/activate").status_code == 200
+    tightened = acme.get("/v1/gates/check", params={"deployment_id": "dep-1", "version": "v1"}, headers=h).json()
+    assert tightened["approved"] is True
+    assert tightened["current_eligibility"]["eligible"] is False
+    assert "missing_attested_eval" in tightened["current_eligibility"]["blockers"]
+    assert tightened["current_eligibility"]["policy_version"] == policy_version
     acme.close()
+
+
+def test_gate_check_requires_scope_when_release_names_collide(super_admin_client):
+    org, key = _org(super_admin_client, "acme", "oa@acme.test")
+    h = {"Authorization": f"Bearer {key}"}
+    events = []
+    for project, environment in (("p1", "prod"), ("p1", "staging"), ("p2", "prod")):
+        event = _deployment("v1")
+        event.update(project=project, environment=environment, span_id=f"{project}-{environment}")
+        events.append(event)
+    assert org.post("/v1/events/batch", json={"events": events}, headers=h).status_code == 200
+    params = {"deployment_id": "dep-1", "version": "v1"}
+    assert org.get("/v1/gates/check", params=params, headers=h).status_code == 409
+    assert org.get("/v1/gates/check", params={**params, "project": "p1"}, headers=h).status_code == 409
+    check = org.get("/v1/gates/check", params={**params, "project": "p1", "environment": "staging"}, headers=h)
+    assert check.status_code == 200, check.text
+    assert check.json()["environment"] == "staging"
+    assert check.json()["current_eligibility"]["eligible"] is False
+    assert "release_not_approved" in check.json()["current_eligibility"]["blockers"]
+    assert org.get("/v1/gates/check", params={**params, "project": "other"}, headers=h).status_code == 404
+    org.close()
+
+
+def test_cli_current_check_fails_closed_and_forwards_scope(monkeypatch):
+    from norinth_logger import cli
+
+    urls = []
+    body = {"approved": True, "gate_id": "gate1", "status": "approved",
+            "current_eligibility": {"eligible": False, "blockers": ["open_risks"]}}
+
+    def fake_http(method, url, **kwargs):
+        urls.append(url)
+        return 200, body
+
+    monkeypatch.setattr(cli, "_http", fake_http)
+    monkeypatch.setenv("NORINTH_ENDPOINT", "http://norinth.test")
+    monkeypatch.setenv("NORINTH_API_KEY", "key")
+    args = ["gate", "check", "--deployment", "dep", "--version", "v1", "--project", "p1", "--environment", "prod"]
+    assert cli.main(args) == 0  # existing historical-approval contract
+    assert cli.main([*args, "--current"]) == 1
+    assert "project=p1" in urls[-1] and "environment=prod" in urls[-1]
+    del body["current_eligibility"]
+    assert cli.main([*args, "--current"]) == 3  # old servers cannot silently allow
 
 
 def test_cli_gate_check_and_doctor_exit_codes(super_admin_client, monkeypatch):
