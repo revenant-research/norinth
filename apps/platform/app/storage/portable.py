@@ -66,6 +66,7 @@ def transaction(tenant_id: str):
 def decode(row) -> dict[str, Any]:
     record = dict(row)
     record["body"] = json.loads(record["body"])
+    record["body_digest"] = digest(record["body"])
     return record
 
 

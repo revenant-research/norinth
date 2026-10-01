@@ -75,7 +75,10 @@ def integration(admin, name, scopes=SCOPES, environment="prod", capabilities=Non
 
 
 def decide(client, record, decision):
-    return client.post(f"/api/portable/records/{record['record_id']}/{decision}", json=RATIONALE)
+    return client.post(
+        f"/api/portable/records/{record['record_id']}/{decision}",
+        json={**RATIONALE, "expected_body_digest": record["body_digest"]},
+    )
 
 
 @pytest.fixture
@@ -217,7 +220,11 @@ def test_existing_ingestion_key_is_not_integration_authority(setup):
     assert s["admin"].post("/v1/portable/systems", headers=s["evidence_headers"], json=SYSTEM).status_code == 403
     assert (
         s["admin"]
-        .post("/api/portable/records/unknown/approve_system", headers=s["headers"], json=RATIONALE)
+        .post(
+            "/api/portable/records/unknown/approve_system",
+            headers=s["headers"],
+            json={**RATIONALE, "expected_body_digest": "sha256:" + "0" * 64},
+        )
         .status_code
         == 404
     )
@@ -425,6 +432,7 @@ def test_delegation_is_exact_single_use_and_rechecks_human_permission(setup):
         **RATIONALE,
         "integration_id": s["executor"]["record_id"],
         "target_id": new["record_id"],
+        "expected_body_digest": new["body_digest"],
         "decision": "approve_revision",
     }
     delegated = ok(s["reviewer"].post("/api/portable/delegations", json=payload))
@@ -451,7 +459,12 @@ def test_delegation_is_exact_single_use_and_rechecks_human_permission(setup):
     )["revision"]
     s["revision"] = another
     ok(observe(s))
-    delegated = ok(s["reviewer"].post("/api/portable/delegations", json={**payload, "target_id": another["record_id"]}))
+    delegated = ok(
+        s["reviewer"].post(
+            "/api/portable/delegations",
+            json={**payload, "target_id": another["record_id"], "expected_body_digest": another["body_digest"]},
+        )
+    )
     ok(
         s["admin"].post(
             "/api/org/role-assignments",
@@ -786,3 +799,74 @@ def test_server_adapter_can_read_current_workspace_without_issuing_permits(setup
     assert controls["assessments"] == []
     with store.connect() as connection:
         assert len(store.records(connection, "documents", "authorization")) == before
+
+
+def test_human_approval_rejects_a_system_changed_after_review(setup):
+    s = setup
+    original = ok(
+        s["admin"].post("/v1/portable/systems", headers=s["headers"], json={**SYSTEM, "external_id": "job-43"})
+    )["system"]
+    changed = ok(
+        s["admin"].post(
+            "/v1/portable/systems",
+            headers=s["headers"],
+            json={**SYSTEM, "external_id": "job-43", "purpose": "A different operating purpose"},
+        )
+    )["system"]
+    assert changed["record_id"] == original["record_id"] and changed["body_digest"] != original["body_digest"]
+    assert decide(s["reviewer"], original, "approve_system").status_code == 409
+    assert ok(s["admin"].get(f"/api/portable/systems/{changed['record_id']}"))["system"]["state"] == "planned"
+    assert ok(decide(s["reviewer"], changed, "approve_system"))["record"]["state"] == "approved"
+
+
+def test_delegated_approval_is_bound_to_the_exact_reviewed_system_body(setup):
+    s = setup
+    original = ok(
+        s["admin"].post("/v1/portable/systems", headers=s["headers"], json={**SYSTEM, "external_id": "job-43"})
+    )["system"]
+    token = ok(
+        s["reviewer"].post(
+            "/api/portable/delegations",
+            json={
+                **RATIONALE,
+                "expected_body_digest": original["body_digest"],
+                "integration_id": s["executor"]["record_id"],
+                "target_id": original["record_id"],
+                "decision": "approve_system",
+            },
+        )
+    )["token"]
+    changed = ok(
+        s["admin"].post(
+            "/v1/portable/systems",
+            headers=s["headers"],
+            json={**SYSTEM, "external_id": "job-43", "purpose": "An unreviewed purpose"},
+        )
+    )["system"]
+    response = s["admin"].post("/v1/portable/delegations/redeem", headers=s["headers"], json={"token": token})
+    assert response.status_code == 409
+    assert ok(s["admin"].get(f"/api/portable/systems/{changed['record_id']}"))["system"]["state"] == "planned"
+
+
+def test_new_decision_contract_does_not_allow_unbound_approval(setup):
+    s = setup
+    assert (
+        s["reviewer"]
+        .post(f"/api/portable/records/{s['revision']['record_id']}/approve_revision", json=RATIONALE)
+        .status_code
+        == 422
+    )
+
+
+def test_readonly_eligibility_cannot_report_allow_for_an_unaudited_executor(setup):
+    s = setup
+    ready(s)
+    from app.storage import portable as store
+
+    with store.connect() as connection:
+        connection.execute(
+            "UPDATE portable_records SET audited_at = '' WHERE record_id = ?", (s["executor"]["record_id"],)
+        )
+    snapshot = ok(s["admin"].get(f"/api/portable/systems/{s['system']['record_id']}"))
+    current = snapshot["eligibility"][s["revision"]["record_id"]]
+    assert current["outcome"] == "indeterminate" and current["reasons"] == ["executor_audit_pending"]

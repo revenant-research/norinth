@@ -261,6 +261,8 @@ def evaluate(connection, principal: dict[str, Any], request: AuthorizationInput)
     }
     if principal["state"] != "active":
         return {**base, "outcome": "deny", "reasons": ["executor_inactive"]}
+    if not principal["audited_at"]:
+        return {**base, "reasons": ["executor_audit_pending"]}
     if system["state"] != "approved":
         return {
             **base,
@@ -428,7 +430,9 @@ def consume_authorization(
     return store.set_state(connection, grant, "consumed")
 
 
-def decide(connection, actor: ActorContext, target: dict[str, Any], decision: str, rationale: str) -> dict[str, Any]:
+def decide(
+    connection, actor: ActorContext, target: dict[str, Any], decision: str, rationale: str, expected_body_digest: str
+) -> dict[str, Any]:
     kinds = {
         "approve_system": ("system", "review.decide", "approved"),
         "approve_revision": ("revision", "gate.decide", "approved"),
@@ -440,6 +444,8 @@ def decide(connection, actor: ActorContext, target: dict[str, Any], decision: st
     if target["kind"] != kind:
         raise HTTPException(422, "Decision does not match target type")
     require_human(actor, permission, target)
+    if store.digest(target["body"]) != expected_body_digest:
+        raise HTTPException(409, "Record changed after review; refresh it and make a new decision")
     if decision == "approve_system" and not target["body"].get("purpose", "").strip():
         raise HTTPException(409, "Declare the system purpose before approval")
     if target["created_by"] == actor.user_ref:
