@@ -8,6 +8,9 @@ import styles from "./Badge.module.css";
 export type Tone = "neutral" | "signal" | "success" | "warning" | "danger";
 
 const STATUS_TONES: Record<string, Tone> = {
+  allow: "success", verified: "success",
+  requires_review: "warning", indeterminate: "warning", audit_pending: "warning", verification_pending: "warning", planned: "warning",
+  deny: "danger",
   approved: "success", passing: "success", success: "success", closed: "success", active: "success", attested: "success",
   resolved: "success", assigned: "success", linked: "success", registered: "success", enforced: "success", healthy: "success",
   open: "warning", pending: "warning", pending_review: "warning", unassigned: "warning", unattested: "warning", medium: "warning",

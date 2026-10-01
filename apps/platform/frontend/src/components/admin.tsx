@@ -64,6 +64,8 @@ export function IntakeView({ scope }: { scope: Scope }) {
   // the document so the form always matches what the server will enforce
   const policy = useResource(() => getJson<{ policy: { body: { intake?: { fields?: IntakeField[] } } } }>("/api/governance-policy"));
   const [form, setForm] = useState({
+    project: scope.project || "default",
+    environment: scope.environment || "production",
     application_name: "",
     use_case: "",
     description: "",
@@ -108,6 +110,8 @@ export function IntakeView({ scope }: { scope: Scope }) {
       <Feedback message={error} />
       <Section title="Register an AI use case" description="The risk tier is derived from data sensitivity, autonomy, and whether the system affects individuals.">
         <form className="admin-form" onSubmit={submit}>
+          <label>Project<input value={form.project} onChange={event => setForm({ ...form, project: event.target.value })} required maxLength={128} /></label>
+          <label>Environment<input value={form.environment} onChange={event => setForm({ ...form, environment: event.target.value })} required maxLength={128} /></label>
           <label>
             Application
             <input value={form.application_name} onChange={(event) => setForm({ ...form, application_name: event.target.value })} required />
