@@ -162,7 +162,7 @@ export function explainPortableReason(reason: string): string {
 
 export function portableStatusLabel(status: string): string {
   const labels: Record<string, string> = {
-    planned: "Purpose needs review", approved: "Approved", pending_review: "Revision needs review",
+    planned: "Purpose needs review", approved: "Approved", pending_review: "No human approval recorded",
     active: "Active", draft: "Draft", superseded: "Replaced", retired: "Retired", revoked: "Revoked",
     allow: "Allowed now", deny: "Blocked now", requires_review: "Needs review", indeterminate: "Cannot establish permission",
     audit_pending: "Audit recording pending", verification_pending: "Awaiting independent verification",

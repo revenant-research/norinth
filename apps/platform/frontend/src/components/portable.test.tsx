@@ -171,7 +171,7 @@ describe("Portable workspace with an independent host", () => {
         resolveLink={() => "javascript:alert(1)"}
       />,
     );
-    await screen.findByText("Revision needs review");
+    await screen.findByText("No human approval recorded");
     expect(
       screen.queryByRole("button", { name: "Approve this revision" }),
     ).not.toBeInTheDocument();
