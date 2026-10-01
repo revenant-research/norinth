@@ -335,17 +335,27 @@ def cmd_gate_check(args: argparse.Namespace) -> int:
         return 3
     from urllib.parse import urlencode
 
-    url = f"{endpoint}/v1/gates/check?" + urlencode({"deployment_id": args.deployment, "version": args.version})
+    params = {"deployment_id": args.deployment, "version": args.version}
+    for name in ("project", "environment"):
+        if s.get(f"NORINTH_{name.upper()}"):
+            params[name] = s[f"NORINTH_{name.upper()}"]
+    url = f"{endpoint}/v1/gates/check?" + urlencode(params)
     deadline = time.time() + max(0, args.wait)
     while True:
         status, body = _http("GET", url, key=key)
         if status == 200 and isinstance(body, dict):
-            if body.get("approved"):
+            current = body.get("current_eligibility") or {}
+            if args.current and "eligible" not in current:
+                _bad("platform does not report current eligibility; upgrade Norinth before using --current")
+                return 3
+            if body.get("approved") and (not args.current or current.get("eligible") is True):
                 _ok(f"gate {body['gate_id']} approved by {body.get('decided_by')} at {body.get('decided_at')}")
                 return 0
             msg = f"gate {body.get('gate_id')} is {body.get('status')}"
             if body.get("blocking"):
                 msg += f": {body['blocking']}"
+            if args.current and current.get("blockers"):
+                msg += f": {', '.join(current['blockers'])}"
             if time.time() < deadline:
                 print(f"  … {msg}; waiting")
                 time.sleep(min(15, max(1, args.poll)))
@@ -417,6 +427,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_connection_flags(check)
     check.add_argument("--deployment", required=True, help="deployment_id as sent in deployment.event")
     check.add_argument("--version", required=True, help="version as sent in deployment.event")
+    check.add_argument("--current", action="store_true", help="also require eligibility under current evidence and policy")
     check.add_argument("--wait", type=int, default=0, help="seconds to keep polling for approval (default: no wait)")
     check.add_argument("--poll", type=int, default=10, help="poll interval in seconds")
     check.set_defaults(func=cmd_gate_check)
