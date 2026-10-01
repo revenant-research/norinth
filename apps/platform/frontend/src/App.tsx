@@ -907,6 +907,10 @@ function Controls({ data }: { data: DashboardData }) {
         <MetricCard label="Assessments" value={totalOf(data, "controls", data.controls)} />
         <MetricCard label="Passing" value={data.controls.filter((control) => control.status === "passing").length} />
         <MetricCard label="Missing" value={data.controls.filter((control) => control.status === "missing").length} />
+        <MetricCard
+          label="Stale"
+          value={data.controls.filter((control) => control.status === "passing" && control.coverage?.stale).length}
+        />
         <MetricCard label="Trace Links" value={new Set(data.controls.flatMap((control) => control.evidence_trace_ids || [])).size} />
       </div>
       <Section title="Controls" description="Each control is passing with linked evidence or missing with the gap named. Control owners can waive with a rationale.">
@@ -1817,6 +1821,21 @@ function IncidentClosurePanel({ incident, mutate }: { incident: Record<string, a
   );
 }
 
+/** how much recent traffic a control's evidence covers, and how old it is */
+export function ControlCoverage({ coverage, passing }: { coverage: Record<string, any>; passing: boolean }) {
+  const traffic = formatList(coverage.basis_event_types) || "matching";
+  const share =
+    coverage.coverage_pct === null || coverage.coverage_pct === undefined
+      ? `No ${traffic} traffic in the last ${coverage.window_days} days.`
+      : `Covers ${coverage.coverage_pct}% of ${coverage.basis_traces} ${traffic} traces in the last ${coverage.window_days} days (${coverage.covered_traces} with evidence).`;
+  const latest = coverage.last_evidence_at ? `Latest evidence ${formatTimestamp(coverage.last_evidence_at)}.` : "No evidence recorded.";
+  return (
+    <p data-testid="control-coverage">
+      {share} {latest} {passing && coverage.stale ? <Badge value="stale" /> : null}
+    </p>
+  );
+}
+
 function ControlCards({ rows, total }: { rows: Array<Record<string, any>>; total?: number }) {
   return (
     <RecordList total={total} empty="No control assessments generated yet.">
@@ -1827,6 +1846,7 @@ function ControlCards({ rows, total }: { rows: Array<Record<string, any>>; total
             <Badge value={control.status} />
           </div>
           <p>{control.application_name}. Required record types: {formatList(control.evidence_event_types) || "none"}</p>
+          {control.coverage ? <ControlCoverage coverage={control.coverage} passing={control.status === "passing"} /> : null}
           <p>Required fields: {formatList(control.required_fields) || "none"}. Frameworks: {formatList(control.framework_refs) || "none"}</p>
           <p>{control.rationale}</p>
           <EvidenceTraceLinks traceIds={control.evidence_trace_ids || []} />

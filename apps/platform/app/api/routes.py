@@ -365,7 +365,27 @@ def configure_risk_rule(payload: RiskRuleRequest, actor: ActorContext = Depends(
     except AuthorizationError as error:
         raise_forbidden(error)
     tenant_id = _require_tenant_for_config(actor)
-    return {"risk_rule": upsert_risk_rule(payload.model_dump(), tenant_id)}
+    try:
+        rule = upsert_risk_rule(payload.model_dump(), tenant_id)
+    except DomainError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    # a rule's mode decides whether its findings block releases, so every
+    # change, and a promotion in particular, is on the audit chain
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="risk_rule.promote" if rule["previous_mode"] == "observe" and rule["mode"] == "enforce" else "risk_rule.configure",
+        tenant_id=tenant_id,
+        target_type="risk_rule",
+        target_id=rule["rule_id"],
+        detail={
+            "mode": rule["mode"],
+            "previous_mode": rule["previous_mode"],
+            "signal": rule["signal"],
+            "severity": rule["severity"],
+            "reopened_findings": rule["reopened_findings"],
+        },
+    )
+    return {"risk_rule": rule}
 
 
 @router.get("/api/retention-policy")

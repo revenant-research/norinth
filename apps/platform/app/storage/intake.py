@@ -11,6 +11,7 @@ from .raw_events import connect
 
 # inputs to the risk tier; order matters, higher index is higher risk
 DATA_SENSITIVITY_LEVELS = ["public", "internal", "confidential", "restricted"]
+# a banding of the agent registry's 0-4 scale; see agents.INTAKE_AUTONOMY_FOR_LEVEL
 AUTONOMY_LEVELS = ["assistive", "supervised", "autonomous"]
 RISK_TIERS = ["limited", "elevated", "high"]
 

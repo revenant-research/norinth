@@ -28,6 +28,7 @@ _TENANT_SCOPED_TABLES = (
     "governance_risks",
     "governance_controls",
     "control_assessments",
+    "control_evidence_traces",
     "risk_findings",
     "lifecycle_fingerprints",
     "change_events",

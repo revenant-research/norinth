@@ -300,7 +300,8 @@ def refresh_workflow_state(scopes: list[dict[str, Any]] | None = None) -> None:
             if not _in_scopes(app_context, wanted):
                 continue
             apply_owner_policies(connection, app_context, owner_policies_for(app_context.get("tenant_id")), "application", app_context["application_name"], "active")
-        for row in connection.execute("SELECT DISTINCT tenant_id, project, environment, application_name, risk, finding_id FROM risk_findings").fetchall():
+        # an observed finding (a rule in observe mode) is not routed to an owner
+        for row in connection.execute("SELECT DISTINCT tenant_id, project, environment, application_name, risk, finding_id FROM risk_findings WHERE status != 'observed'").fetchall():
             app_context = dict(row)
             if not _in_scopes(app_context, wanted):
                 continue

@@ -13,13 +13,19 @@ import { useResource } from "./useResource";
 // it. issue badges map to the owasp top 10 for agentic apps so a reviewer sees
 // why an agent is flagged
 
-export type AgentIssue = "unregistered_agent" | "unauthorized_tool" | "agent_trifecta" | "autonomy_without_oversight";
+export type AgentIssue =
+  | "unregistered_agent"
+  | "unauthorized_tool"
+  | "agent_trifecta"
+  | "autonomy_without_oversight"
+  | "agent_autonomy_exceeds_intake";
 
 export const ISSUE_LABELS: Record<AgentIssue, { label: string; owasp: string; tone: "danger" | "warn" }> = {
   unregistered_agent: { label: "Shadow agent (unregistered)", owasp: "ASI10 Rogue agents", tone: "danger" },
   unauthorized_tool: { label: "Tool outside allow-list", owasp: "ASI02/03 Tool misuse", tone: "danger" },
   agent_trifecta: { label: "Lethal trifecta, no human checkpoint", owasp: "ASI01/09", tone: "danger" },
   autonomy_without_oversight: { label: "High autonomy, no oversight", owasp: "ASI09 / EU AI Act Art 14", tone: "warn" },
+  agent_autonomy_exceeds_intake: { label: "More autonomous than its intake", owasp: "NIST MAP 1.1 / ISO 42001 A.5.2", tone: "warn" },
 };
 
 type Posture = {

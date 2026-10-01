@@ -36,6 +36,7 @@ from app.storage.policy_engine import (
     MAX_INTAKE_FIELDS,
     MAX_STAGES_PER_SUBJECT,
     RECERTIFY_DAYS_FLOOR,
+    PolicyActivationRequiresSecondPerson,
     activate_policy,
     actor_decided_sibling_stage,
     create_policy_draft,
@@ -48,6 +49,7 @@ from app.storage.policy_engine import (
     load_stage_subject,
     load_vendor,
     policy_diff_summary,
+    policy_loosening,
     retire_vendor,
     stage_maker,
     stage_subject_undecided,
@@ -163,6 +165,8 @@ def activate_governance_policy(version: int, actor: ActorContext = Depends(curre
         activated = activate_policy(tenant_id, version, actor.user_ref)
     except RecordNotFound as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
+    except PolicyActivationRequiresSecondPerson as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     return {"policy": activated}
@@ -193,6 +197,8 @@ def governance_policy_diff(
         "from": base_label,
         "to": f"v{to_version}",
         "diff": policy_diff_summary(base_body, target["body"]),
+        # non-empty means the author cannot activate this version themselves
+        "loosens": policy_loosening(base_body, target["body"], effective_policy(None)["body"]),
     }
 
 
