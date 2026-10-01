@@ -40,7 +40,9 @@ const displayedState = (record: PortableRecord) =>
   record.audited_at === "" ? "audit_pending" : record.state;
 export const portableError = (e: unknown) =>
   e instanceof Error ? e.message : "The request failed.";
-function Status({ value }: { value: string }) { return <Badge value={value}>{portableStatusLabel(value)}</Badge>; }
+function Status({ value }: { value: string }) {
+  return <Badge value={value}>{portableStatusLabel(value)}</Badge>;
+}
 function Guidance({ title, children }: { title: string; children: ReactNode }) {
   return (
     <details>
@@ -278,7 +280,12 @@ export function PortableSystemWorkspace({
       return;
     setPending(true);
     try {
-      await client.decide(record.record_id, decision, rationale);
+      await client.decide(
+        record.record_id,
+        decision,
+        rationale,
+        record.body_digest,
+      );
       setRationale("");
       setRefresh((v) => v + 1);
     } catch (e) {
@@ -373,8 +380,10 @@ export function PortableSystemWorkspace({
         <Card padding="md">
           <Stack gap={2}>
             <Text>
-              Runtime policy: {active ? displayedState(active) : "not configured"}. Executor:{" "}
-              {value.integration.body.name} ({value.integration.state}).
+              Runtime policy:{" "}
+              {active ? displayedState(active) : "not configured"}. Executor:{" "}
+              {value.integration.body.name} ({displayedState(value.integration)}
+              ).
             </Text>
             <Text>
               Runtime enforcement: requires the source platform to consume each
@@ -661,6 +670,26 @@ export function PortableSystemWorkspace({
               <Text size="sm">
                 {record.body.rationale} · {record.created_at}
               </Text>
+              {record.body.target_snapshot ? (
+                <details>
+                  <summary>Material reviewed for this decision</summary>
+                  {record.body.target_snapshot.purpose ? (
+                    <Text>
+                      Reviewed purpose: {record.body.target_snapshot.purpose}
+                    </Text>
+                  ) : null}
+                  <pre>
+                    {JSON.stringify(
+                      {
+                        digest: record.body.target_body_digest,
+                        material: record.body.target_snapshot,
+                      },
+                      null,
+                      2,
+                    )}
+                  </pre>
+                </details>
+              ) : null}
             </Card>
           ))}
         </Section>

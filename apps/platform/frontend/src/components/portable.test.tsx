@@ -17,6 +17,7 @@ import { runAxe, formatViolations } from "../test/axe";
 
 const system: PortableRecord = {
   record_id: "system-1",
+  body_digest: "sha256:" + "a".repeat(64),
   tenant_id: "documents",
   kind: "system",
   project: "documents",
@@ -150,6 +151,7 @@ describe("Portable workspace with an independent host", () => {
         "/api/portable/records/revision-1/approve_revision",
         "POST",
         {
+          expected_body_digest: revision.body_digest,
           rationale:
             "Quality evidence and operating limits have been reviewed.",
         },

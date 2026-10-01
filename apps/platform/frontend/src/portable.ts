@@ -5,6 +5,7 @@
 // in the executor's secret store, never in a browser or these view components.
 export type PortableRecord = {
   record_id: string;
+  body_digest: string;
   tenant_id: string;
   kind: string;
   project: string;
@@ -74,11 +75,16 @@ export function createPortableClient(transport: PortableTransport) {
         `/api/portable/systems/${segment(id)}/controls?revision_id=${segment(revision)}`,
         "GET",
       ),
-    decide: (id: string, decision: string, rationale: string) =>
+    decide: (
+      id: string,
+      decision: string,
+      rationale: string,
+      expected_body_digest: string,
+    ) =>
       transport<{ record: PortableRecord }>(
         `/api/portable/records/${segment(id)}/${segment(decision)}`,
         "POST",
-        { rationale },
+        { rationale, expected_body_digest },
       ),
     retryAudit: (id: string) =>
       transport<{ record: PortableRecord }>(
@@ -128,24 +134,35 @@ export function createPortableClient(transport: PortableTransport) {
 }
 export type PortableClient = ReturnType<typeof createPortableClient>;
 
-
 export function explainPortableReason(reason: string): string {
   const [code, detail] = reason.split(":", 2);
   const labels: Record<string, string> = {
     system_planned: "The system's stated purpose needs approval.",
     system_retired: "The system is retired and cannot be released or run.",
+    executor_audit_pending:
+      "The executor credential is waiting for its audit record and cannot grant permission yet.",
     executor_inactive: "The executor's integration is inactive.",
-    governance_audit_pending: "A governance change is waiting for its audit record; it grants no permission yet.",
-    no_active_runtime_policy: "No independently activated operating policy covers this system.",
-    revision_requires_review: "An independent reviewer must approve this exact revision.",
-    autonomy_exceeds_policy: "The revision requests more autonomy than the policy permits.",
-    external_action_not_allowed: "The policy does not permit this revision's external effects.",
+    governance_audit_pending:
+      "A governance change is waiting for its audit record; it grants no permission yet.",
+    no_active_runtime_policy:
+      "No independently activated operating policy covers this system.",
+    revision_requires_review:
+      "An independent reviewer must approve this exact revision.",
+    autonomy_exceeds_policy:
+      "The revision requests more autonomy than the policy permits.",
+    external_action_not_allowed:
+      "The policy does not permit this revision's external effects.",
     human_checkpoint_required: "This revision must include a human checkpoint.",
-    action_not_allowed: "The requested action is not allowed by this policy and executor registration.",
-    resource_not_allowed: "The target resource is outside this revision's approved operating limits.",
-    remediation_parameters_not_preapproved: "The correction's parameters do not match the values approved in policy.",
-    invalid_action_parameters: "The action parameters do not match the executor's declared parameter types.",
-    pending_legacy_evidence: "Previously received telemetry is still being processed, so permission cannot be established.",
+    action_not_allowed:
+      "The requested action is not allowed by this policy and executor registration.",
+    resource_not_allowed:
+      "The target resource is outside this revision's approved operating limits.",
+    remediation_parameters_not_preapproved:
+      "The correction's parameters do not match the values approved in policy.",
+    invalid_action_parameters:
+      "The action parameters do not match the executor's declared parameter types.",
+    pending_legacy_evidence:
+      "Previously received telemetry is still being processed, so permission cannot be established.",
   };
   const scoped: Record<string, string> = {
     missing_evidence: `No evidence has been received for ${detail} on this exact revision.`,
@@ -155,19 +172,40 @@ export function explainPortableReason(reason: string): string {
     pending_evidence_audit: `Evidence for ${detail} is waiting for its audit record.`,
     outside_policy: `The revision declares ${detail} that the operating policy does not allow.`,
     invalid_action_parameter: `The parameter ${detail} has an invalid type or value.`,
-    legacy_blocker: "The explicitly linked existing system has an unresolved finding, missing control, or open change.",
+    legacy_blocker:
+      "The explicitly linked existing system has an unresolved finding, missing control, or open change.",
   };
-  return labels[code] || scoped[code] || `Permission cannot be established: ${reason}.`;
+  return (
+    labels[code] ||
+    scoped[code] ||
+    `Permission cannot be established: ${reason}.`
+  );
 }
 
 export function portableStatusLabel(status: string): string {
   const labels: Record<string, string> = {
-    planned: "Purpose needs review", approved: "Approved", pending_review: "No human approval recorded",
-    active: "Active", draft: "Draft", superseded: "Replaced", retired: "Retired", revoked: "Revoked",
-    allow: "Allowed now", deny: "Blocked now", requires_review: "Needs review", indeterminate: "Cannot establish permission",
-    audit_pending: "Audit recording pending", verification_pending: "Awaiting independent verification",
-    verified: "Independently verified", reported_executed: "Executor reported execution", consumed: "Permission consumed",
-    passing: "Passing", failed: "Failed", unknown: "Unknown", not_applicable: "Does not apply", recorded: "Recorded",
+    planned: "Purpose needs review",
+    approved: "Approved",
+    pending_review: "No human approval recorded",
+    active: "Active",
+    draft: "Draft",
+    superseded: "Replaced",
+    retired: "Retired",
+    revoked: "Revoked",
+    allow: "Allowed now",
+    deny: "Blocked now",
+    requires_review: "Needs review",
+    indeterminate: "Cannot establish permission",
+    audit_pending: "Audit recording pending",
+    verification_pending: "Awaiting independent verification",
+    verified: "Independently verified",
+    reported_executed: "Executor reported execution",
+    consumed: "Permission consumed",
+    passing: "Passing",
+    failed: "Failed",
+    unknown: "Unknown",
+    not_applicable: "Does not apply",
+    recorded: "Recorded",
   };
   return labels[status] || status.replaceAll("_", " ");
 }
