@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Any
 
 from . import db
@@ -589,23 +590,77 @@ def list_deployment_gates(
     return [dict(row) for row in rows]
 
 
-def find_gate_for_release(tenant_id: str, deployment_id: str, version: str) -> dict[str, Any] | None:
+def find_gate_for_release(
+    tenant_id: str,
+    deployment_id: str,
+    version: str,
+    *,
+    project: str | None = None,
+    environment: str | None = None,
+) -> dict[str, Any] | None:
     """gate for a (deployment, version) pair, tenant-bound so the CI lookup
     never crosses the key's org"""
     with connect() as connection:
-        row = connection.execute(
-            """
-            SELECT g.gate_id, g.gate_status, g.required_reason, g.application_name, g.workflow_name,
-                   g.actor_ref, g.rationale, g.decided_at, g.updated_at, v.version, v.deployment_id
+        clauses = ["v.deployment_id = :deployment_id", "v.version = :version", "g.tenant_id = :tenant_id"]
+        params = {"deployment_id": deployment_id, "version": version, "tenant_id": tenant_id}
+        for key, value in (("project", project), ("environment", environment)):
+            if value is not None:
+                clauses.append(f"g.{key} = :{key}")
+                params[key] = value
+        rows = connection.execute(
+            f"""
+            SELECT g.*, v.version, v.artifact_ref
             FROM deployment_approval_gates g
             JOIN deployment_versions v ON v.version_id = g.version_id
-            WHERE v.deployment_id = ? AND v.version = ? AND g.tenant_id = ?
-            ORDER BY v.observed_at DESC
-            LIMIT 1
+            WHERE {' AND '.join(clauses)}
+            LIMIT 2
             """,
-            (deployment_id, version, tenant_id),
+            params,
+        ).fetchall()
+        if not rows:
+            return None
+        if len(rows) > 1:
+            raise DomainError("ambiguous release gate; specify project and environment")
+        gate = dict(rows[0])
+        evidence = live_gate_evidence(connection, gate)
+        blockers = []
+        # The durable ledger can contain events whose projection failed or is
+        # still running. Do not authorize on a deceptively clean projection.
+        pending = connection.execute(
+            "SELECT COUNT(*) AS count FROM sdk_events WHERE tenant_id = ? AND folded_at IS NULL",
+            (tenant_id,),
         ).fetchone()
-    return None if row is None else dict(row)
+        if pending["count"]:
+            blockers.append("pending_evidence")
+        for key, code in (
+            ("risk_count", "open_risks"),
+            ("missing_control_count", "missing_controls"),
+            ("undercovered_control_count", "insufficient_coverage"),
+        ):
+            if evidence[key]:
+                blockers.append(code)
+        if evidence["material_change_count"] > evidence["max_open_material_changes"]:
+            blockers.append("open_material_changes")
+        if evidence["prompt_evidence_status"] != "linked":
+            blockers.append("missing_prompt")
+        if evidence["passing_eval_count"] == 0:
+            blockers.append("missing_attested_eval" if evidence["require_attested_evals"] else "missing_eval")
+        reasons = []
+        if gate["gate_status"] != "approved":
+            reasons.append("Release is not approved")
+        if pending["count"]:
+            reasons.append("Telemetry projection is pending")
+        if any(code != "pending_evidence" for code in blockers):
+            reasons.append(gate_required_reason(connection, evidence, tenant_id))
+        gate["current_eligibility"] = {
+            "eligible": gate["gate_status"] == "approved" and not blockers,
+            "blockers": (["release_not_approved"] if gate["gate_status"] != "approved" else []) + blockers,
+            "reason": "; ".join(reasons) or "No blocking governance evidence detected",
+            "policy_tenant": evidence["policy_tenant"],
+            "policy_version": evidence["policy_version"],
+            "checked_at": datetime.now(UTC).isoformat(),
+        }
+    return gate
 
 
 def count_deployment_gates(

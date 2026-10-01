@@ -42,6 +42,34 @@ receiver's cumulative event count. Receivers SHOULD return `401` on signature
 failure and `4xx` on malformed batches. Clients are fail-open and MUST NOT
 propagate transport errors into host application code.
 
+### Release gate checks
+
+`GET /v1/gates/check` uses the ingestion key's tenant and requires
+`deployment_id` and `version`. Supply `project` and `environment` to identify
+the intended release scope. A missing gate returns `404`; an ambiguous lookup
+returns `409` rather than selecting a gate from another environment or project.
+
+The response's `approved`, `status`, `decided_by`, and `decided_at` describe the
+recorded human decision. They remain historical facts when new evidence arrives.
+`project`, `environment`, and `artifact_ref` identify the checked release.
+
+The additive `current_eligibility` object reports `eligible`, `blockers`, `reason`,
+`policy_tenant`, `policy_version`, and `checked_at`. Eligibility requires an
+approved gate and no current blockers. Blocker codes are `release_not_approved`,
+`pending_evidence`, `open_risks`, `missing_controls`, `insufficient_coverage`,
+`open_material_changes`, `missing_prompt`, `missing_eval`, and
+`missing_attested_eval`. Unprojected telemetry, including quarantined events,
+blocks eligibility until projection completes. Active policy changes and risk or
+control decisions are reflected without requiring new telemetry. Responses use
+`Cache-Control: no-store`.
+
+This is a read-only snapshot of known governance evidence, not a signed runtime
+permit or proof that the deployed artifact matches `artifact_ref`. Integrators
+must compare the artifact and scope and check again at the release boundary.
+`norinth gate check --current` requires current eligibility and fails closed
+against a server that does not supply it. Without that flag the CLI retains its
+historical approval check. Both modes forward project/environment settings.
+
 ## The `NorinthEvent` object
 
 | Field | Type | Required | Notes |
