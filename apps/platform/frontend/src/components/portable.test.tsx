@@ -181,12 +181,10 @@ describe("Portable workspace with an independent host", () => {
   });
 
   it("loads the standalone planned inventory without relying on telemetry", async () => {
-    const transport = vi
-      .fn()
-      .mockResolvedValue({
-        systems: [{ ...system, state: "planned" }],
-        has_more: false,
-      });
+    const transport = vi.fn().mockResolvedValue({
+      systems: [{ ...system, state: "planned" }],
+      has_more: false,
+    });
     const client = createPortableClient(transport);
     render(
       <PortableSystemsView
@@ -211,9 +209,25 @@ describe("Portable workspace with an independent host", () => {
   });
 
   it("can allow an automatic release without claiming a human approved it", async () => {
-    const value = { ...workspace, revisions: [{ ...revision, state: "pending_review" }], eligibility: { "revision-1": { ...workspace.eligibility["revision-1"], outcome: "allow", reasons: [] } } };
+    const value = {
+      ...workspace,
+      revisions: [{ ...revision, state: "pending_review" }],
+      eligibility: {
+        "revision-1": {
+          ...workspace.eligibility["revision-1"],
+          outcome: "allow",
+          reasons: [],
+        },
+      },
+    };
     const { client } = hostClient(value);
-    render(<PortableSystemWorkspace systemId="system-1" client={client} user={{ user_ref: "reader@test", permissions: [] }} />);
+    render(
+      <PortableSystemWorkspace
+        systemId="system-1"
+        client={client}
+        user={{ user_ref: "reader@test", permissions: [] }}
+      />,
+    );
     await screen.findByText("Allowed now");
     expect(screen.getByText("No human approval recorded")).toBeInTheDocument();
     expect(screen.queryByText("Needs review")).not.toBeInTheDocument();
