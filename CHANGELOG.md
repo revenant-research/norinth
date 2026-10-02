@@ -8,6 +8,13 @@ Semantic Versioning.
 
 ### Added
 
+- **A policy cannot put in force approval stages nobody can decide.**
+  Activation refuses a version when a stage list it changes cannot be given a
+  different active person per stage, each holding a role with at least the
+  stage role's authority. Stage lists the version leaves unchanged are not
+  checked. The policy diff endpoint lists the gaps, and the policy page saves
+  such a version as a draft and names the roles to assign.
+
 - **Observe mode for an organization's own risk rules.** Every open finding
   counts toward a release gate, so a new custom rule blocked every release as
   soon as it was added. `POST /api/risk-rules` now takes `mode`: `observe` or

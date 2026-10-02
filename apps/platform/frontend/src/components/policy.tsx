@@ -811,14 +811,27 @@ export function PolicyView() {
       const draft = await postJson<{ policy: PolicyVersion }>("/api/governance-policy/draft", { body: working });
       let lines: string[] = [];
       let loosens: string[] = [];
+      let unstaffed: string[] = [];
       try {
-        const diff = await getJson<{ diff: string[]; loosens?: string[] }>(
+        const diff = await getJson<{ diff: string[]; loosens?: string[]; unstaffed?: string[] }>(
           `/api/governance-policy/diff?to_version=${draft.policy.version}`,
         );
         lines = diff.diff;
         loosens = diff.loosens ?? [];
+        unstaffed = diff.unstaffed ?? [];
       } catch {
         lines = ["(change summary unavailable)"];
+      }
+      if (unstaffed.length > 0) {
+        // no one can activate a version whose new stages nobody can decide
+        toast.error(
+          `Saved as draft v${draft.policy.version}. Assign these roles before it can be put in force: ${unstaffed.join("; ")}`,
+        );
+        setDoc(null);
+        reloadAll();
+        window.location.hash = "#policy/history";
+        setTab("history");
+        return;
       }
       if (loosens.length > 0) {
         // the author of a loosening version cannot activate it; another

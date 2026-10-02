@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "apps" / "platform"))
 
-from tests.helpers import login_and_activate  # noqa: E402
+from tests.helpers import login_and_activate, staff_policy_stages  # noqa: E402
 
 HIGH_TIER_INTAKE = {
     "application_name": "Claims",
@@ -68,6 +68,7 @@ def _add_user(org_client, email, role, password="user-pw-123456"):
 
 
 def _activate_policy(org_client, body):
+    staff_policy_stages(org_client, "staff.test", body)
     draft = org_client.post("/api/governance-policy/draft", json={"body": body})
     assert draft.status_code == 200, draft.text
     version = draft.json()["policy"]["version"]

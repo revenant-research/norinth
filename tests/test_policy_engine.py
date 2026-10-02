@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "apps" / "platform"))
 
-from tests.helpers import login_and_activate  # noqa: E402
+from tests.helpers import login_and_activate, staff_policy_stages  # noqa: E402
 
 
 def _make_org(super_admin_client, tenant_id="acme"):
@@ -135,6 +135,7 @@ def test_draft_activate_supersede_and_audit_chain(super_admin_client):
         assert invalid.status_code == 400
         assert "schema" in invalid.json()["detail"]
 
+        staff_policy_stages(org, "acme.test", _two_stage_policy())
         draft = org.post("/api/governance-policy/draft", json={"body": _two_stage_policy()})
         assert draft.status_code == 200, draft.text
         version = draft.json()["policy"]["version"]
@@ -189,6 +190,7 @@ def test_policy_versions_are_tenant_isolated(super_admin_client):
     email_a, password_a = _make_org(super_admin_client, "acme")
     email_b, password_b = _make_org(super_admin_client, "umbra")
     with _client_for(email_a, password_a) as acme:
+        staff_policy_stages(acme, "acme.test", _two_stage_policy())
         draft = acme.post("/api/governance-policy/draft", json={"body": _two_stage_policy()})
         version = draft.json()["policy"]["version"]
         assert acme.post(f"/api/governance-policy/versions/{version}/activate").status_code == 200
