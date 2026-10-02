@@ -29,6 +29,7 @@ import { LandingPage } from "./components/landing";
 import { SetupWizard } from "./components/setup";
 import { InviteScreen } from "./components/invite";
 import { Home } from "./components/home";
+import { PortableSystemsView } from "./components/portable";
 import { SystemHubHeader } from "./components/systemHub";
 import { GettingStarted } from "./components/guide";
 import { DocsView } from "./components/docs";
@@ -71,12 +72,13 @@ const DETAIL_ROUTE_META: Record<string, RouteDef> = {
 const baseRoutes: RouteDef[] = [
   { id: "home", label: "Home", description: "What needs you, and where your organization stands.", group: "" },
   { id: "inventory", label: "AI systems", description: "Every AI system seen in production, including the ones nobody registered. Open one to see its owners, risks, controls, releases and incidents.", group: "Systems" },
+  { id: "connected", label: "Connected systems", description: "Systems registered by execution platforms, immutable revisions, current permissions, evidence and verified corrections.", group: "Systems" },
   { id: "intake", label: "Register a system", description: "Register an AI use case before it ships. It gets a risk tier and a review task the moment you submit.", permission: "intake.submit", group: "Systems" },
   { id: "agents", label: "Agents", description: "Register the agents you sanction with an autonomy level and tool allow-list. Unregistered agents and off-policy tool use become findings.", group: "Systems" },
   { id: "vendors", label: "AI vendors", description: "The vendors behind the providers seen in production. Each is approved through your policy's review stages; unreviewed providers become findings.", group: "Systems" },
   { id: "myqueue", label: "My queue", description: "Review tasks assigned to you. Decide them here with a rationale; the decision is recorded in the audit trail.", group: "Work" },
   { id: "reviews", label: "Reviews & owners", description: "Decide open reviews, name accountable owners, and manage accepted risks. Submitters can never decide their own work.", group: "Work" },
-  { id: "deployments", label: "Release gates", description: "Nothing ships without a gate. Gates are approved by a named reviewer with a linked prompt version and signed eval evidence, never automatically.", group: "Work" },
+  { id: "deployments", label: "Release gates", description: "Review release gates with a named reviewer, linked prompt versions and signed evaluation evidence. Connected systems also support policies that authorize routine releases and runtime actions.", group: "Work" },
   { id: "risk", label: "Risk findings", description: "Findings raised by the platform and by people. Accept a risk only with an owner, a compensating control and an expiry.", group: "Work" },
   { id: "incidents", label: "Incidents", description: "Incidents reported by guardrails, evals or people. Close one only with a root cause, impact and remediation on record.", group: "Work" },
   { id: "compliance", label: "Compliance", description: "Which requirements of NIST AI RMF, ISO 42001, the EU AI Act and OWASP you can evidence today, and the packet to hand an auditor.", group: "Evidence" },
@@ -623,7 +625,7 @@ function roleLabel(user: User): string {
   return "Member";
 }
 
-const ADMIN_ROUTES = new Set(["overview", "intake", "team", "audit", "agents", "vendors", "policy", "identity", "compliance", "guide", "docs"]);
+const ADMIN_ROUTES = new Set(["connected", "overview", "intake", "team", "audit", "agents", "vendors", "policy", "identity", "compliance", "guide", "docs"]);
 
 function isAdminRoute(active: string): boolean {
   return ADMIN_ROUTES.has(active);
@@ -631,6 +633,8 @@ function isAdminRoute(active: string): boolean {
 
 function AdminRoutes({ active, scope, user }: { active: string; scope: Scope; user: User }) {
   switch (active) {
+    case "connected":
+      return <PortableSystemsView user={user} />;
     case "overview":
       return <OrgOverview />;
     case "intake":

@@ -20,7 +20,7 @@ export function SystemHubHeader({ detail }: { detail: Row }) {
   const app: Row = detail.application || {};
   const owners: Row[] = (detail.owners || []).filter((o: Row) => o.status === "assigned");
   const unowned: Row[] = (detail.owners || []).filter((o: Row) => o.status !== "assigned");
-  const openRisks: Row[] = (detail.risks || []).filter((r: Row) => r.status === "open");
+  const openRisks: Row[] = (detail.risks || []).filter((r: Row) => ["open", "mitigation_required"].includes(r.status));
   const missingControls: Row[] = (detail.controls || []).filter((c: Row) => c.status === "missing");
   const pendingGates: Row[] = (detail.deployment_gates || []).filter((g: Row) => g.gate_status === "pending_review");
   const openReviews: Row[] = (detail.review_tasks || []).filter((t: Row) => t.status === "open");
@@ -29,6 +29,10 @@ export function SystemHubHeader({ detail }: { detail: Row }) {
 
   const blockers: string[] = [];
   if (stage === "discovered") blockers.push("not registered (no risk tier, no intake review)");
+  if (stage === "in_review") blockers.push("system purpose is waiting for review");
+  if (stage === "rejected") blockers.push("system purpose was rejected");
+  if (stage === "retired") blockers.push("system is retired and cannot be released");
+  if (pendingGates.length) blockers.push(`${pendingGates.length} release gate${pendingGates.length === 1 ? "" : "s"} awaiting review`);
   if (unowned.length) blockers.push(`${unowned.length} owner role${unowned.length === 1 ? "" : "s"} unfilled`);
   if (openRisks.length) blockers.push(`${openRisks.length} open finding${openRisks.length === 1 ? "" : "s"}`);
   if (missingControls.length) blockers.push(`${missingControls.length} missing control${missingControls.length === 1 ? "" : "s"}`);
@@ -72,7 +76,7 @@ export function SystemHubHeader({ detail }: { detail: Row }) {
           {blockers.join(" · ")}
         </Callout>
       ) : (
-        <Callout tone="success" title="Nothing is blocking this system.">Registered, owned, no open findings, controls passing, no undecided reviews.</Callout>
+        <Callout tone="success" title="Nothing is blocking this system.">Registered, owned, no open findings, controls passing, no undecided reviews or pending release gates.</Callout>
       )}
     </Stack>
   );
