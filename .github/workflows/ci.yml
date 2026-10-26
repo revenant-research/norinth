@@ -87,7 +87,7 @@ jobs:
       - name: Type check + build
         run: npm run build
       - name: Upload dashboard bundle
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: dashboard-bundle
           path: apps/platform/app/dashboard/static
@@ -252,7 +252,7 @@ jobs:
           python tests/fuzz/fuzz_sdk_privacy.py -max_total_time=45 -rss_limit_mb=1024 .fuzz-corpus/privacy
       - name: Keep the crashing input
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: fuzz-crash
           path: |
