@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import hmac
 import os
@@ -88,6 +89,24 @@ def needs_rehash(stored: str | None) -> bool:
         return algorithm != _PBKDF2_ALGORITHM or int(iterations) < _PBKDF2_ITERATIONS
     except ValueError:
         return True
+
+
+@functools.lru_cache(maxsize=1)
+def _decoy_hash() -> str:
+    """a hash of a password nobody knows, verified against when there is no
+    account to verify, so the verifier's cost does not reveal whether an
+    email names an active account"""
+    return hash_password(secrets.token_urlsafe(32))
+
+
+def spend_verification_time() -> None:
+    """take as long as verify_password takes for a real account
+
+    a login attempt against an unknown or inactive account must not return
+    faster than one against an active account with the wrong password, or
+    response time becomes an oracle for which emails exist
+    """
+    verify_password("not-the-password", _decoy_hash())
 
 
 def _hash_token(token: str) -> str:

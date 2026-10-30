@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
@@ -280,7 +281,7 @@ def metrics(request: Request):
 
     token = os.getenv("NORINTH_METRICS_TOKEN")
     supplied = request.headers.get("authorization", "")
-    if token and supplied == f"Bearer {token}":
+    if token and hmac.compare_digest(supplied.encode("utf-8"), f"Bearer {token}".encode()):
         return PlainTextResponse(render_metrics(), media_type="text/plain; version=0.0.4")
     user_ref = resolve_session(request.cookies.get(SESSION_COOKIE))
     if user_ref:

@@ -313,3 +313,27 @@ def test_two_workers_never_deliver_the_same_row(super_admin_client):
     ids_a = {row["id"] for row in first}
     ids_b = {row["id"] for row in second}
     assert len(ids_a) == 10 and len(ids_b) == 10 and not (ids_a & ids_b)
+
+
+def test_a_suspended_invitee_does_not_burn_the_invite(super_admin_client, smtp):
+    """the token is single-use and cannot be reissued, so the status check
+    runs before the token is consumed; once reactivated the link still works"""
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    org = _org(super_admin_client)
+    created = org.post("/api/org/users", json={"email": "late@acme.test", "display_name": "Late"}).json()
+    token = created["invite_url"].rsplit("/", 1)[1]
+    assert org.post("/api/org/users/late@acme.test/status", json={"status": "suspended"}).status_code == 200
+
+    with TestClient(app) as visitor:
+        refused = visitor.post("/api/auth/accept-invite", json={"token": token, "password": "a-chosen-password-123"})
+        assert refused.status_code == 403, refused.text
+        assert visitor.get(f"/api/auth/invite/{token}").status_code == 200  # still pending
+
+    assert org.post("/api/org/users/late@acme.test/status", json={"status": "active"}).status_code == 200
+    with TestClient(app) as visitor:
+        accepted = visitor.post("/api/auth/accept-invite", json={"token": token, "password": "a-chosen-password-123"})
+        assert accepted.status_code == 200, accepted.text
+        assert visitor.post("/api/auth/accept-invite", json={"token": token, "password": "another-password-123"}).status_code == 404
+    org.close()
