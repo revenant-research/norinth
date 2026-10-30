@@ -20,6 +20,12 @@ Semantic Versioning.
   current reference replaces it or the expired one is withdrawn. A reference
   inside 30 days of expiry is announced once. Every change is audited and the
   audit packet lists the references. Migration 30. (#157)
+- **A policy cannot put in force approval stages nobody can decide.**
+  Activation refuses a version when a stage list it changes cannot be given a
+  different active person per stage, each holding a role with at least the
+  stage role's authority. Stage lists the version leaves unchanged are not
+  checked. The policy diff endpoint lists the gaps, and the policy page saves
+  such a version as a draft and names the roles to assign.
 - **Connected-system governance workspace.** A standalone, reusable workspace
   for systems that execute outside the platform, with scoped read-only
   snapshots for server adapters, the distinction between an absent human
