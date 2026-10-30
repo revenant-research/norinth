@@ -107,12 +107,13 @@ def _verify_signed(root: etree._Element, certificate_pem: str) -> etree._Element
     return verified.signed_xml
 
 
-def process_response(saml_response_b64: str, base_url: str, expected_request_id: str | None = None) -> dict[str, Any]:
+def process_response(saml_response_b64: str, base_url: str, expected_request_id: str) -> dict[str, Any]:
     """verify a saml Response (http-post binding) and return the provisioned user
 
     ``expected_request_id`` is the AuthnRequest id this browser was issued at
-    /start (from a cookie); when set, the response's InResponseTo must match it,
-    binding the login to the browser that began it"""
+    /start (from a cookie); the response's InResponseTo must match it, binding
+    the login to the browser that began it. a response with no such id to
+    compare against is refused before this is called"""
     try:
         raw = base64.b64decode(saml_response_b64)
         root = etree.fromstring(raw, parser=_PARSER)
@@ -123,7 +124,7 @@ def process_response(saml_response_b64: str, base_url: str, expected_request_id:
     in_response_to = root.get("InResponseTo")
     if not in_response_to:
         raise SamlError("SAML Response lacks InResponseTo; unsolicited responses are not accepted")
-    if expected_request_id is not None and in_response_to != expected_request_id:
+    if in_response_to != expected_request_id:
         raise SamlError("SAML Response does not match the login request from this browser")
     request = consume_saml_request(in_response_to)
     if request is None:

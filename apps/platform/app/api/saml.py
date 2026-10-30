@@ -137,7 +137,14 @@ def saml_start(tenant_id: str, request: Request):
 
 @router.post("/api/auth/saml/acs")
 def saml_acs(request: Request, SAMLResponse: str = Form(...), RelayState: str | None = Form(default=None)):  # noqa: N803 - SAML field names
+    # the response must come back through the browser that started the login.
+    # without the cookie an attacker could complete their own IdP login and post
+    # the signed response from a victim's browser, signing the victim in as the
+    # attacker (login csrf). the pending request is left unconsumed, so the
+    # browser that did start the login can still finish it
     expected_request_id = request.cookies.get(_SAML_REQUEST_COOKIE)
+    if not expected_request_id:
+        raise HTTPException(status_code=401, detail="SAML login was not started from this browser")
     try:
         user = process_response(SAMLResponse, _base_url(request), expected_request_id=expected_request_id)
     except SamlError as error:
