@@ -104,24 +104,38 @@ def test_password_floor_is_consistent_across_set_paths(super_admin_client):
     # creating an org admin below the floor is refused
     short = super_admin_client.post(
         "/api/admin/organizations",
-        json={"tenant_id": "acme", "name": "Acme", "admin_email": "oa@acme.test",
-              "admin_display_name": "OA", "admin_password": "short-pw-1"},
+        json={
+            "tenant_id": "acme",
+            "name": "Acme",
+            "admin_email": "oa@acme.test",
+            "admin_display_name": "OA",
+            "admin_password": "short-pw-1",
+        },
     )
     assert short.status_code == 422, short.text
 
     # a valid org, then a change-password to a sub-floor value is refused too
     super_admin_client.post(
         "/api/admin/organizations",
-        json={"tenant_id": "acme", "name": "Acme", "admin_email": "oa@acme.test",
-              "admin_display_name": "OA", "admin_password": "oa-strong-pw-1"},
+        json={
+            "tenant_id": "acme",
+            "name": "Acme",
+            "admin_email": "oa@acme.test",
+            "admin_display_name": "OA",
+            "admin_password": "oa-strong-pw-1",
+        },
     )
     with TestClient(app) as org:
         login_and_activate(org, "oa@acme.test", "oa-strong-pw-1")
-        weak = org.post("/api/auth/change-password",
-                        json={"current_password": "oa-strong-pw-1-rotated-1", "new_password": "eleven-char"})
+        weak = org.post(
+            "/api/auth/change-password",
+            json={"current_password": "oa-strong-pw-1-rotated-1", "new_password": "eleven-char"},
+        )
         assert weak.status_code == 422, weak.text
-        ok = org.post("/api/auth/change-password",
-                      json={"current_password": "oa-strong-pw-1-rotated-1", "new_password": "twelve-chars-1"})
+        ok = org.post(
+            "/api/auth/change-password",
+            json={"current_password": "oa-strong-pw-1-rotated-1", "new_password": "twelve-chars-1"},
+        )
         assert ok.status_code == 200, ok.text
 
 
@@ -170,9 +184,14 @@ def test_login_rehash_does_not_clear_forced_password_change(client):
     derived = hashlib.pbkdf2_hmac("sha256", b"temp-password-1", salt, weak_rounds)
     weak_hash = f"pbkdf2_sha256${weak_rounds}${salt.hex()}${derived.hex()}"
     create_platform_user(
-        user_ref="temp@acme.test", display_name="Temp", email="temp@acme.test",
-        password_hash=weak_hash, status="active", platform_role=None,
-        tenant_id="acme", must_change_password=True,
+        user_ref="temp@acme.test",
+        display_name="Temp",
+        email="temp@acme.test",
+        password_hash=weak_hash,
+        status="active",
+        platform_role=None,
+        tenant_id="acme",
+        must_change_password=True,
     )
     assert auth.needs_rehash(weak_hash)
 

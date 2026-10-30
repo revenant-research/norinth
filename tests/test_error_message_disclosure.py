@@ -47,9 +47,7 @@ def test_domain_error_message_reaches_the_caller(super_admin_client):
     resp = org.post("/api/retention-policy", json={"retention_days": 3})
     assert resp.status_code == 400, resp.text
     # written for whoever sent the request, so it is returned verbatim
-    assert resp.json()["detail"] == (
-        "retention_days must be at least 7, or null to keep everything"
-    )
+    assert resp.json()["detail"] == ("retention_days must be at least 7, or null to keep everything")
     org.close()
 
 

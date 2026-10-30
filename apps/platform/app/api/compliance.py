@@ -39,11 +39,14 @@ def _collect_events(event_type: str, tenant_id, project, environment) -> tuple[l
         offset += _AIBOM_PAGE
     return collected, True
 
+
 router = APIRouter()
 
 
 @router.get("/api/compliance/aibom")
-def aibom(actor: ActorContext = Depends(current_actor), scope: ScopeFilter = Depends(scoped_dependency)) -> dict[str, Any]:
+def aibom(
+    actor: ActorContext = Depends(current_actor), scope: ScopeFilter = Depends(scoped_dependency)
+) -> dict[str, Any]:
     # an export is evidence leaving the system; audited like the audit packet
     record_audit(
         actor_ref=actor.user_ref,
@@ -65,7 +68,9 @@ def framework_coverage(scope: ScopeFilter = Depends(scoped_dependency)) -> dict[
 
 
 @router.get("/api/compliance/audit-packet")
-def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilter = Depends(scoped_dependency)) -> dict[str, Any]:
+def audit_packet(
+    actor: ActorContext = Depends(current_actor), scope: ScopeFilter = Depends(scoped_dependency)
+) -> dict[str, Any]:
     """assemble a self-contained audit evidence packet for the tenant"""
     # imported here to avoid a circular import at module load
     from app.services.governance import (
@@ -128,9 +133,7 @@ def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilte
         "vendor_coverage": vendor_coverage(scope.tenant_id or ""),
         "agent_registry": list_registered_agents(scope.tenant_id or ""),
         "agent_posture": public_posture(compute_agent_posture(scope.tenant_id or "")),
-        "aibom": generate_aibom(
-            tenant_id=scope.tenant_id, project=scope.project, environment=scope.environment
-        ),
+        "aibom": generate_aibom(tenant_id=scope.tenant_id, project=scope.project, environment=scope.environment),
         "audit_trail": {
             "recent_entries": list_audit_logs(tenant_id=scope.tenant_id, limit=500),
             "tenant_entries": count_audit_logs(tenant_id=scope.tenant_id),
@@ -148,7 +151,9 @@ def audit_packet(actor: ActorContext = Depends(current_actor), scope: ScopeFilte
     }
 
 
-def generate_aibom(tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> dict[str, Any]:
+def generate_aibom(
+    tenant_id: str | None = None, project: str | None = None, environment: str | None = None
+) -> dict[str, Any]:
     # events that indicate ai usage
     model_calls, t1 = _collect_events("model.call", tenant_id, project, environment)
     retrievals, t2 = _collect_events("retrieval.call", tenant_id, project, environment)
@@ -181,9 +186,9 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
                 "providers": set(),
                 "guardrails": set(),
                 "retrievers": set(),
-                "agents": set()
+                "agents": set(),
             }
-        
+
         # store the pair the event actually carried; attributing a model to an
         # arbitrary member of a per-system provider set makes the vendor column
         # depend on set iteration order, which changes with the hash seed
@@ -196,7 +201,7 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
         app_name = metadata.get("application_name", "unknown")
         workflow = metadata.get("workflow_name", "unknown")
         retriever = attrs.get("retriever", "unknown")
-        
+
         sys_key = f"{app_name}:{workflow}"
         if sys_key in systems:
             systems[sys_key]["retrievers"].add(retriever)
@@ -207,18 +212,18 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
         app_name = metadata.get("application_name", "unknown")
         workflow = metadata.get("workflow_name", "unknown")
         guardrail_name = attrs.get("guardrail_name", "unknown")
-        
+
         sys_key = f"{app_name}:{workflow}"
         if sys_key in systems:
             systems[sys_key]["guardrails"].add(guardrail_name)
-            
+
     for event in agent_runs:
         attrs = event.get("attributes", {})
         metadata = attrs.get("metadata", {})
         app_name = metadata.get("application_name", "unknown")
         workflow = metadata.get("workflow_name", "unknown")
         agent_name = attrs.get("agent_name", "unknown")
-        
+
         sys_key = f"{app_name}:{workflow}"
         if sys_key in systems:
             systems[sys_key]["agents"].add(agent_name)
@@ -235,12 +240,14 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
         return f"provider:{provider}"
 
     for provider in sorted(providers_in_use):
-        components.append({
-            "type": "platform",
-            "bom-ref": _provider_ref(provider),
-            "name": provider,
-            "description": "Model provider observed in runtime telemetry",
-        })
+        components.append(
+            {
+                "type": "platform",
+                "bom-ref": _provider_ref(provider),
+                "name": provider,
+                "description": "Model provider observed in runtime telemetry",
+            }
+        )
 
     seen_models: set[str] = set()
     for _, data in sorted(systems.items()):
@@ -249,15 +256,17 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
             if ref in seen_models:
                 continue
             seen_models.add(ref)
-            components.append({
-                "type": "machine-learning-model",
-                "bom-ref": ref,
-                "name": model,
-                "publisher": provider,
-                "modelCard": {
-                    "modelParameters": {"task": "text-generation"},
-                },
-            })
+            components.append(
+                {
+                    "type": "machine-learning-model",
+                    "bom-ref": ref,
+                    "name": model,
+                    "publisher": provider,
+                    "modelCard": {
+                        "modelParameters": {"task": "text-generation"},
+                    },
+                }
+            )
 
     for sys_key, data in sorted(systems.items()):
         properties = [{"name": "norinth:workflow", "value": data["workflow"]}]
@@ -269,13 +278,15 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
             properties.append({"name": "norinth:retriever", "value": retriever})
         for agent in sorted(data["agents"]):
             properties.append({"name": "norinth:agent", "value": agent})
-        components.append({
-            "type": "application",
-            "bom-ref": f"system:{sys_key}",
-            "name": data["application"],
-            "description": data["purpose"] or data["use_case"] or "AI system observed in runtime telemetry",
-            "properties": properties,
-        })
+        components.append(
+            {
+                "type": "application",
+                "bom-ref": f"system:{sys_key}",
+                "name": data["application"],
+                "description": data["purpose"] or data["use_case"] or "AI system observed in runtime telemetry",
+                "properties": properties,
+            }
+        )
         depends_on = sorted({_model_ref(provider, model) for provider, model in data["models"]})
         depends_on += sorted(_provider_ref(p) for p in data["providers"])
         dependencies.append({"ref": f"system:{sys_key}", "dependsOn": depends_on})
@@ -289,11 +300,7 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
             "name": "norinth-ai-portfolio",
             "description": "AI Bill of Materials generated from runtime telemetry",
         },
-        "tools": {
-            "components": [
-                {"type": "application", "name": "Norinth", "publisher": "Revenant Research"}
-            ]
-        },
+        "tools": {"components": [{"type": "application", "name": "Norinth", "publisher": "Revenant Research"}]},
     }
     if truncated:
         # disclose that the ceiling was reached
@@ -301,10 +308,12 @@ def generate_aibom(tenant_id: str | None = None, project: str | None = None, env
             {"name": "norinth:truncated", "value": "true"},
             {"name": "norinth:max_events_scanned", "value": str(_AIBOM_MAX_EVENTS)},
         ]
-    dependencies.append({
-        "ref": portfolio_ref,
-        "dependsOn": [f"system:{sys_key}" for sys_key in sorted(systems)],
-    })
+    dependencies.append(
+        {
+            "ref": portfolio_ref,
+            "dependsOn": [f"system:{sys_key}" for sys_key in sorted(systems)],
+        }
+    )
 
     serial = uuid.uuid5(_AIBOM_NAMESPACE, f"{tenant_id}|{project}|{environment}")
     return {

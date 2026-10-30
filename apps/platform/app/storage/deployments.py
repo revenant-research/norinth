@@ -95,9 +95,15 @@ def init_deployments() -> None:
                 connection.execute(statement)
             except db.OperationalError:
                 pass
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_governance_deployments_scope ON governance_deployments(tenant_id, project, environment)")
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_deployment_versions_scope ON deployment_versions(tenant_id, project, environment)")
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_deployment_approval_gates_scope ON deployment_approval_gates(tenant_id, project, environment)")
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_governance_deployments_scope ON governance_deployments(tenant_id, project, environment)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_deployment_versions_scope ON deployment_versions(tenant_id, project, environment)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_deployment_approval_gates_scope ON deployment_approval_gates(tenant_id, project, environment)"
+        )
 
 
 def process_deployment_events(events: list[dict[str, Any]]) -> None:
@@ -191,12 +197,20 @@ def upsert_deployment_event(connection, event: dict[str, Any]) -> None:
 def refresh_deployment_gates(scopes: list[dict[str, Any]] | None = None) -> None:
     """recompute gate evidence; scopes limits to the apps an ingest touched,
     None does every version"""
-    wanted = None if scopes is None else {(s.get("tenant_id"), s["project"], s["environment"], s["application_name"]) for s in scopes}
+    wanted = (
+        None
+        if scopes is None
+        else {(s.get("tenant_id"), s["project"], s["environment"], s["application_name"]) for s in scopes}
+    )
     with connect() as connection:
         versions = connection.execute("SELECT * FROM deployment_versions ORDER BY observed_at DESC").fetchall()
         for version in versions:
             record = dict(version)
-            if wanted is not None and (record.get("tenant_id"), record["project"], record["environment"], record["application_name"]) not in wanted:
+            if (
+                wanted is not None
+                and (record.get("tenant_id"), record["project"], record["environment"], record["application_name"])
+                not in wanted
+            ):
                 continue
             upsert_deployment_gate(connection, record)
 
@@ -210,8 +224,7 @@ def gate_required_reason(connection, evidence: dict[str, Any], tenant_id: str | 
         parts.append(f"{evidence['missing_control_count']} missing controls")
     if evidence.get("undercovered_control_count"):
         parts.append(
-            f"{evidence['undercovered_control_count']} controls below "
-            f"{evidence['min_control_coverage']:g}% coverage"
+            f"{evidence['undercovered_control_count']} controls below {evidence['min_control_coverage']:g}% coverage"
         )
     if evidence["material_change_count"] > int(evidence.get("max_open_material_changes") or 0):
         parts.append(f"{evidence['material_change_count']} material changes")
@@ -221,9 +234,7 @@ def gate_required_reason(connection, evidence: dict[str, Any], tenant_id: str | 
         require_attested = evidence.get("require_attested_evals")
         if require_attested is None:
             require_attested = tenant_requires_attestation(tenant_id, connection)
-        parts.append(
-            "missing attested passing eval evidence" if require_attested else "missing passing eval evidence"
-        )
+        parts.append("missing attested passing eval evidence" if require_attested else "missing passing eval evidence")
     return "; ".join(parts) if parts else "No blocking governance evidence detected"
 
 
@@ -474,9 +485,13 @@ def set_deployment_gate_status(gate_id: str, status: str, actor_ref: str, ration
                         "deployment gate requires a linked prompt version and attested passing eval evidence "
                         "bound to this version (the governance policy requires attestation for this environment)"
                     )
-                raise DomainError("deployment gate requires a linked prompt version and passing eval evidence bound to this version")
+                raise DomainError(
+                    "deployment gate requires a linked prompt version and passing eval evidence bound to this version"
+                )
             if int(evidence["risk_count"] or 0) > 0:
-                raise DomainError("deployment gate cannot be approved while risk findings are open; mitigate or accept them first")
+                raise DomainError(
+                    "deployment gate cannot be approved while risk findings are open; mitigate or accept them first"
+                )
             if int(evidence["missing_control_count"] or 0) > 0:
                 raise DomainError("deployment gate cannot be approved while controls are missing evidence")
             if int(evidence["undercovered_control_count"] or 0) > 0:
@@ -486,7 +501,9 @@ def set_deployment_gate_status(gate_id: str, status: str, actor_ref: str, ration
                     "(the governance policy sets this minimum for this environment)"
                 )
             if int(evidence["material_change_count"] or 0) > int(evidence.get("max_open_material_changes") or 0):
-                raise DomainError("deployment gate cannot be approved while material changes are unreviewed; review or accept them first")
+                raise DomainError(
+                    "deployment gate cannot be approved while material changes are unreviewed; review or accept them first"
+                )
         if not (rationale or "").strip():
             raise DomainError("a decision rationale is required")
         if evidence is not None:
@@ -523,13 +540,17 @@ def set_deployment_gate_status(gate_id: str, status: str, actor_ref: str, ration
             """,
             (status, actor_ref, rationale, gate_id),
         )
-        return dict(connection.execute("SELECT * FROM deployment_approval_gates WHERE gate_id = ?", (gate_id,)).fetchone())
+        return dict(
+            connection.execute("SELECT * FROM deployment_approval_gates WHERE gate_id = ?", (gate_id,)).fetchone()
+        )
 
 
 def gate_deployer(version_id: str) -> str | None:
     """user who deployed the gated version; maker-checker: they can't approve it"""
     with connect() as connection:
-        row = connection.execute("SELECT deployed_by FROM deployment_versions WHERE version_id = ?", (version_id,)).fetchone()
+        row = connection.execute(
+            "SELECT deployed_by FROM deployment_versions WHERE version_id = ?", (version_id,)
+        ).fetchone()
     return None if row is None else row["deployed_by"]
 
 
@@ -541,14 +562,20 @@ def load_deployment_gate(gate_id: str) -> dict[str, Any]:
     return dict(row)
 
 
+def list_deployments(
+    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
+) -> list[dict[str, Any]]:
+    return scoped_rows(
+        "governance_deployments", tenant_id=tenant_id, project=project, environment=environment, order_by="last_seen"
+    )
 
 
-def list_deployments(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
-    return scoped_rows("governance_deployments", tenant_id=tenant_id, project=project, environment=environment, order_by="last_seen")
-
-
-def list_deployment_versions(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
-    return scoped_rows("deployment_versions", tenant_id=tenant_id, project=project, environment=environment, order_by="observed_at")
+def list_deployment_versions(
+    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
+) -> list[dict[str, Any]]:
+    return scoped_rows(
+        "deployment_versions", tenant_id=tenant_id, project=project, environment=environment, order_by="observed_at"
+    )
 
 
 def list_deployment_gates(
@@ -582,7 +609,7 @@ def list_deployment_gates(
             SELECT g.*, v.version AS version, v.artifact_ref AS artifact_ref
             FROM deployment_approval_gates g
             LEFT JOIN deployment_versions v ON v.version_id = g.version_id
-            WHERE {' AND '.join(clauses)}
+            WHERE {" AND ".join(clauses)}
             ORDER BY g.updated_at DESC{window}
             """,
             params,
@@ -612,7 +639,7 @@ def find_gate_for_release(
             SELECT g.*, v.version, v.artifact_ref
             FROM deployment_approval_gates g
             JOIN deployment_versions v ON v.version_id = g.version_id
-            WHERE {' AND '.join(clauses)}
+            WHERE {" AND ".join(clauses)}
             LIMIT 2
             """,
             params,

@@ -18,14 +18,20 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "apps" / "platform"))
 
-KEY = 'YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE='
+KEY = "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE="
 
 
 def _write(actor: str = "ceo@corp", target: str = "g1") -> None:
     from app.storage.audit import record_audit
 
-    record_audit(actor_ref=actor, tenant_id="t1", action="gate.approve",
-                 target_type="gate", target_id=target, detail={"n": target})
+    record_audit(
+        actor_ref=actor,
+        tenant_id="t1",
+        action="gate.approve",
+        target_type="gate",
+        target_id=target,
+        detail={"n": target},
+    )
 
 
 def _execute(sql: str, params: dict | None = None) -> None:
@@ -51,8 +57,15 @@ def _rewrite_chain() -> None:
     prev = GENESIS_HASH
     for row in _rows():
         row_hash = _compute_row_hash(
-            CURRENT_HASH_VERSION, prev, row["created_at"], row["actor_ref"], row["tenant_id"],
-            row["action"], row["target_type"], row["target_id"], row["detail"],
+            CURRENT_HASH_VERSION,
+            prev,
+            row["created_at"],
+            row["actor_ref"],
+            row["tenant_id"],
+            row["action"],
+            row["target_type"],
+            row["target_id"],
+            row["detail"],
         )
         _execute(
             "UPDATE audit_logs SET prev_hash = :prev, row_hash = :hash WHERE id = :id",

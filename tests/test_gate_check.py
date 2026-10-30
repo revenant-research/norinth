@@ -17,26 +17,75 @@ BASE = {"schema_version": "2026-01", "service": "svc", "environment": "prod", "p
 
 
 def _deployment(version: str) -> dict:
-    return {**BASE, "type": "deployment.event", "trace_id": f"trc_{version}", "span_id": f"spn_{version}", "timestamp": "2026-08-22T00:00:02Z",
-            "attributes": {"deployment_id": "dep-1", "version": version, "artifact_ref": f"img:{version}", "provider": "openai", "model": "gpt-4o",
-                           "prompt_version": "p1", "deployment_status": "pending", "metadata": META}}
+    return {
+        **BASE,
+        "type": "deployment.event",
+        "trace_id": f"trc_{version}",
+        "span_id": f"spn_{version}",
+        "timestamp": "2026-08-22T00:00:02Z",
+        "attributes": {
+            "deployment_id": "dep-1",
+            "version": version,
+            "artifact_ref": f"img:{version}",
+            "provider": "openai",
+            "model": "gpt-4o",
+            "prompt_version": "p1",
+            "deployment_status": "pending",
+            "metadata": META,
+        },
+    }
 
 
 def _prompt() -> dict:
-    return {**BASE, "type": "prompt.event", "trace_id": "trc_prompt", "span_id": "spn_prompt", "timestamp": "2026-08-22T00:00:01Z",
-            "attributes": {"prompt_id": "p", "version": "p1", "artifact_ref": "prompt:p1", "template": {"t": "x"}, "metadata": META}}
+    return {
+        **BASE,
+        "type": "prompt.event",
+        "trace_id": "trc_prompt",
+        "span_id": "spn_prompt",
+        "timestamp": "2026-08-22T00:00:01Z",
+        "attributes": {
+            "prompt_id": "p",
+            "version": "p1",
+            "artifact_ref": "prompt:p1",
+            "template": {"t": "x"},
+            "metadata": META,
+        },
+    }
 
 
 def _eval() -> dict:
-    return {**BASE, "type": "eval.result", "trace_id": "trc_eval", "span_id": "spn_eval", "timestamp": "2026-08-22T00:00:03Z", "status": "success",
-            "attributes": {"eval_id": "safety", "passed": True, "score": 0.9, "prompt_version": "p1", "artifact_ref": "img:v1", "metadata": META}}
+    return {
+        **BASE,
+        "type": "eval.result",
+        "trace_id": "trc_eval",
+        "span_id": "spn_eval",
+        "timestamp": "2026-08-22T00:00:03Z",
+        "status": "success",
+        "attributes": {
+            "eval_id": "safety",
+            "passed": True,
+            "score": 0.9,
+            "prompt_version": "p1",
+            "artifact_ref": "img:v1",
+            "metadata": META,
+        },
+    }
 
 
 def _org(super_admin_client, tenant: str, email: str):
     from app.main import app
     from fastapi.testclient import TestClient
 
-    super_admin_client.post("/api/admin/organizations", json={"tenant_id": tenant, "name": tenant, "admin_email": email, "admin_display_name": "A", "admin_password": "oa-password-1"})
+    super_admin_client.post(
+        "/api/admin/organizations",
+        json={
+            "tenant_id": tenant,
+            "name": tenant,
+            "admin_email": email,
+            "admin_display_name": "A",
+            "admin_password": "oa-password-1",
+        },
+    )
     client = TestClient(app)
     login_and_activate(client, email, "oa-password-1")
     token = client.post("/api/ingestion-keys", json={"name": "ci"}).json()["token"]
@@ -55,12 +104,22 @@ def test_gate_check_is_tenant_bound_and_reflects_human_approval(super_admin_clie
     h = {"Authorization": f"Bearer {acme_key}"}
     assert acme.get("/v1/gates/check", params={"deployment_id": "dep-1", "version": "v1"}, headers=h).status_code == 404
 
-    assert acme.post("/v1/events/batch", json={"events": [_prompt(), _deployment("v1"), _eval()]}, headers=h).status_code == 200
+    assert (
+        acme.post("/v1/events/batch", json={"events": [_prompt(), _deployment("v1"), _eval()]}, headers=h).status_code
+        == 200
+    )
     pending = acme.get("/v1/gates/check", params={"deployment_id": "dep-1", "version": "v1"}, headers=h).json()
     assert pending["approved"] is False and pending["status"] == "pending_review"
 
     # another org's key cannot see acme's gate
-    assert acme.get("/v1/gates/check", params={"deployment_id": "dep-1", "version": "v1"}, headers={"Authorization": f"Bearer {beta_key}"}).status_code == 404
+    assert (
+        acme.get(
+            "/v1/gates/check",
+            params={"deployment_id": "dep-1", "version": "v1"},
+            headers={"Authorization": f"Bearer {beta_key}"},
+        ).status_code
+        == 404
+    )
 
     # governance admin (not the org admin) approves; ci then sees approved + who decided
     acme.post("/api/org/users", json={"email": "gov@acme.test", "display_name": "Gov", "password": "gov-password-1"})
@@ -77,9 +136,15 @@ def test_gate_check_is_tenant_bound_and_reflects_human_approval(super_admin_clie
     failed_eval = _eval()
     failed_eval["span_id"] = "spn_failed"
     failed_eval["attributes"] = {**failed_eval["attributes"], "passed": False, "score": 0.1}
-    model_call = {**BASE, "type": "model.call", "trace_id": "runtime", "span_id": "model_call",
-                  "timestamp": "2026-08-22T00:00:04Z", "status": "success",
-                  "attributes": {"provider": "openai", "model": "gpt-4o", "metadata": META}}
+    model_call = {
+        **BASE,
+        "type": "model.call",
+        "trace_id": "runtime",
+        "span_id": "model_call",
+        "timestamp": "2026-08-22T00:00:04Z",
+        "status": "success",
+        "attributes": {"provider": "openai", "model": "gpt-4o", "metadata": META},
+    }
     assert acme.post("/v1/events/batch", json={"events": [model_call, failed_eval]}, headers=h).status_code == 200
     check = acme.get("/v1/gates/check", params={"deployment_id": "dep-1", "version": "v1"}, headers=h)
     blocked = check.json()
@@ -91,18 +156,36 @@ def test_gate_check_is_tenant_bound_and_reflects_human_approval(super_admin_clie
     from app.storage.raw_events import connect
 
     with connect() as connection:
-        findings = connection.execute("SELECT finding_id FROM risk_findings WHERE tenant_id = 'acme' AND status = 'open'").fetchall()
-        missing = connection.execute("SELECT assessment_id FROM control_assessments WHERE tenant_id = 'acme' AND status = 'missing'").fetchall()
+        findings = connection.execute(
+            "SELECT finding_id FROM risk_findings WHERE tenant_id = 'acme' AND status = 'open'"
+        ).fetchall()
+        missing = connection.execute(
+            "SELECT assessment_id FROM control_assessments WHERE tenant_id = 'acme' AND status = 'missing'"
+        ).fetchall()
     assert findings
     with TestClient(app) as gov:
         login_and_activate(gov, "gov@acme.test", "gov-password-1-rotated-1")
         for finding in findings:
-            result = gov.post("/api/decisions", json={"target_type": "risk_finding", "target_id": finding["finding_id"],
-                                                     "decision": "accept_risk", "rationale": "Risk owner reviewed compensating controls"})
+            result = gov.post(
+                "/api/decisions",
+                json={
+                    "target_type": "risk_finding",
+                    "target_id": finding["finding_id"],
+                    "decision": "accept_risk",
+                    "rationale": "Risk owner reviewed compensating controls",
+                },
+            )
             assert result.status_code == 200, result.text
         for assessment in missing:
-            result = gov.post("/api/decisions", json={"target_type": "control_assessment", "target_id": assessment["assessment_id"],
-                                                     "decision": "waive", "rationale": "Risk owner recorded compensating controls"})
+            result = gov.post(
+                "/api/decisions",
+                json={
+                    "target_type": "control_assessment",
+                    "target_id": assessment["assessment_id"],
+                    "decision": "waive",
+                    "rationale": "Risk owner recorded compensating controls",
+                },
+            )
             assert result.status_code == 200, result.text
     restored = acme.get("/v1/gates/check", params={"deployment_id": "dep-1", "version": "v1"}, headers=h).json()
     assert restored["current_eligibility"]["eligible"] is True
@@ -113,16 +196,24 @@ def test_gate_check_is_tenant_bound_and_reflects_human_approval(super_admin_clie
     unfolded = _eval()
     unfolded["span_id"] = "awaiting_projection"
     insert_events([unfolded])
-    pending_projection = acme.get("/v1/gates/check", params={"deployment_id": "dep-1", "version": "v1"}, headers=h).json()
+    pending_projection = acme.get(
+        "/v1/gates/check", params={"deployment_id": "dep-1", "version": "v1"}, headers=h
+    ).json()
     assert "pending_evidence" in pending_projection["current_eligibility"]["blockers"]
     assert pending_projection["current_eligibility"]["eligible"] is False
     from app.storage.fold import fold_pending
 
     fold_pending("acme")
     # A policy tightening must be visible immediately, without further events.
-    draft = acme.post("/api/governance-policy/draft", json={"body": {
-        "schema": "governance-policy/v1", "gates": {"environments": {"prod": {"require_attested_evals": True}}},
-    }})
+    draft = acme.post(
+        "/api/governance-policy/draft",
+        json={
+            "body": {
+                "schema": "governance-policy/v1",
+                "gates": {"environments": {"prod": {"require_attested_evals": True}}},
+            }
+        },
+    )
     assert draft.status_code == 200, draft.text
     policy_version = draft.json()["policy"]["version"]
     assert acme.post(f"/api/governance-policy/versions/{policy_version}/activate").status_code == 200
@@ -159,8 +250,12 @@ def test_cli_current_check_fails_closed_and_forwards_scope(monkeypatch):
     from norinth_logger import cli
 
     urls = []
-    body = {"approved": True, "gate_id": "gate1", "status": "approved",
-            "current_eligibility": {"eligible": False, "blockers": ["open_risks"]}}
+    body = {
+        "approved": True,
+        "gate_id": "gate1",
+        "status": "approved",
+        "current_eligibility": {"eligible": False, "blockers": ["open_risks"]},
+    }
 
     def fake_http(method, url, **kwargs):
         urls.append(url)
@@ -224,7 +319,21 @@ def test_cli_init_writes_env_and_scan_compat(tmp_path, monkeypatch):
     (tmp_path / "app.py").write_text("import openai\nclient = openai.OpenAI()\n")
     out = io.StringIO()
     with redirect_stdout(out):
-        rc = cli.main(["init", "--endpoint", "https://n.example/", "--api-key", "nrk_x", "--project", "p", "--environment", "prod", "--service", "s"])
+        rc = cli.main(
+            [
+                "init",
+                "--endpoint",
+                "https://n.example/",
+                "--api-key",
+                "nrk_x",
+                "--project",
+                "p",
+                "--environment",
+                "prod",
+                "--service",
+                "s",
+            ]
+        )
     assert rc == 0
     env = (tmp_path / ".env").read_text()
     assert "NORINTH_ENDPOINT=https://n.example\n" in env and "NORINTH_API_KEY=nrk_x" in env
@@ -232,7 +341,21 @@ def test_cli_init_writes_env_and_scan_compat(tmp_path, monkeypatch):
     # re-running keeps other lines and replaces NORINTH_* ones
     (tmp_path / ".env").write_text("OTHER=1\n" + env)
     with redirect_stdout(io.StringIO()):
-        cli.main(["init", "--endpoint", "https://n2.example", "--api-key", "nrk_y", "--project", "p", "--environment", "prod", "--service", "s"])
+        cli.main(
+            [
+                "init",
+                "--endpoint",
+                "https://n2.example",
+                "--api-key",
+                "nrk_y",
+                "--project",
+                "p",
+                "--environment",
+                "prod",
+                "--service",
+                "s",
+            ]
+        )
     env2 = (tmp_path / ".env").read_text()
     assert env2.startswith("OTHER=1\n") and env2.count("NORINTH_API_KEY=") == 1 and "nrk_y" in env2
     # legacy positional form still runs the scanner

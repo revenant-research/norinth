@@ -40,7 +40,9 @@ def init_intake() -> None:
             )
             """
         )
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_ai_use_cases_scope ON ai_use_cases(tenant_id, project, environment)")
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ai_use_cases_scope ON ai_use_cases(tenant_id, project, environment)"
+        )
         connection.execute("CREATE INDEX IF NOT EXISTS idx_ai_use_cases_status ON ai_use_cases(status)")
 
 
@@ -115,7 +117,9 @@ def create_intake(record: dict[str, Any]) -> dict[str, Any]:
             ),
         )
         _seed_intake_review_task(connection, intake_id, record, risk_tier)
-        return _decode_intake(connection.execute("SELECT * FROM ai_use_cases WHERE intake_id = ?", (intake_id,)).fetchone())
+        return _decode_intake(
+            connection.execute("SELECT * FROM ai_use_cases WHERE intake_id = ?", (intake_id,)).fetchone()
+        )
 
 
 def _decode_intake(row: Any) -> dict[str, Any]:
@@ -169,7 +173,9 @@ def _seed_intake_review_task(connection, intake_id: str, record: dict[str, Any],
     materialize_intake_stages(connection, task_id, record, risk_tier)
 
 
-def list_intake(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
+def list_intake(
+    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
+) -> list[dict[str, Any]]:
     clauses: list[str] = []
     params: dict[str, Any] = {}
     if tenant_id:
@@ -215,4 +221,6 @@ def set_intake_status(intake_id: str, status: str) -> dict[str, Any]:
             from .policy_engine import close_recertification_tasks
 
             close_recertification_tasks(connection, intake_id)
-        return _decode_intake(connection.execute("SELECT * FROM ai_use_cases WHERE intake_id = ?", (intake_id,)).fetchone())
+        return _decode_intake(
+            connection.execute("SELECT * FROM ai_use_cases WHERE intake_id = ?", (intake_id,)).fetchone()
+        )

@@ -39,7 +39,10 @@ def test_concurrent_audit_writes_do_not_fork(fresh_db, tmp_path, monkeypatch):
     from app.storage.raw_events import connect
 
     with connect() as connection:
-        prevs = [r["prev_hash"] for r in connection.execute("SELECT prev_hash FROM audit_logs WHERE prev_hash IS NOT NULL").fetchall()]
+        prevs = [
+            r["prev_hash"]
+            for r in connection.execute("SELECT prev_hash FROM audit_logs WHERE prev_hash IS NOT NULL").fetchall()
+        ]
     assert len(prevs) == len(set(prevs)), "duplicate prev_hash means the chain forked"
 
 
@@ -65,9 +68,25 @@ def test_hmac_anchor_detects_rewrite_without_the_key(fresh_db, monkeypatch):
         expected_prev = GENESIS_HASH
         for idx, row in enumerate(rows):
             action = "PRIVILEGE-GRANTED" if idx == 2 else row["action"]
-            payload = json.dumps([expected_prev, row["created_at"], row["actor_ref"], row["tenant_id"], action, row["target_type"], row["target_id"], row["detail"]], separators=(",", ":"), ensure_ascii=True)
+            payload = json.dumps(
+                [
+                    expected_prev,
+                    row["created_at"],
+                    row["actor_ref"],
+                    row["tenant_id"],
+                    action,
+                    row["target_type"],
+                    row["target_id"],
+                    row["detail"],
+                ],
+                separators=(",", ":"),
+                ensure_ascii=True,
+            )
             new_hash = hashlib.sha256(payload.encode()).hexdigest()
-            connection.execute("UPDATE audit_logs SET action = ?, prev_hash = ?, row_hash = ? WHERE id = ?", (action, expected_prev, new_hash, row["id"]))
+            connection.execute(
+                "UPDATE audit_logs SET action = ?, prev_hash = ?, row_hash = ? WHERE id = ?",
+                (action, expected_prev, new_hash, row["id"]),
+            )
             expected_prev = new_hash
 
     result = verify_audit_chain()

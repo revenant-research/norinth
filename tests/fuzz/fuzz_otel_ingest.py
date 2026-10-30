@@ -32,6 +32,7 @@ with atheris.instrument_imports():
     from app.ingestion.otel import OtelPayloadError, otel_spans_to_events
 
 EVENT_TYPES = {"model.call", "tool.call", "agent.run", "retrieval.call"}
+SCALAR_TYPES = (str, bool, int, float)
 
 ATTRIBUTE_KEYS = [
     "gen_ai.operation.name",
@@ -142,6 +143,18 @@ def _check(payload) -> None:
     for event in events:
         assert event["type"] in EVENT_TYPES, event
         assert isinstance(event["timestamp"], str), event
+        # every event column is bound straight into sql; a container that
+        # slipped through the mapper would fail there, after the 200 was earned
+        for field in ("trace_id", "span_id", "parent_span_id", "service", "environment", "project", "name"):
+            assert event[field] is None or isinstance(event[field], str), (field, event)
+        for key, value in event["attributes"].items():
+            if key in ("usage", "metadata"):
+                assert all(v is None or isinstance(v, SCALAR_TYPES) for v in value.values()), (key, event)
+            elif key == "step_count":
+                assert isinstance(value, SCALAR_TYPES), (key, event)
+            else:
+                # names land in text columns; a sender's number or bool is text by here
+                assert value is None or isinstance(value, str), (key, event)
 
 
 def test_one_input(data: bytes) -> None:

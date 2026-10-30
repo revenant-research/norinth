@@ -32,26 +32,43 @@ def test_platform_surfaces_the_description_on_the_incident(super_admin_client):
 
     super_admin_client.post(
         "/api/admin/organizations",
-        json={"tenant_id": "acme", "name": "Acme", "admin_email": "oa@acme.test",
-              "admin_display_name": "OA", "admin_password": "oa-password-1"},
+        json={
+            "tenant_id": "acme",
+            "name": "Acme",
+            "admin_email": "oa@acme.test",
+            "admin_display_name": "OA",
+            "admin_password": "oa-password-1",
+        },
     )
     with TestClient(app) as org:
         login_and_activate(org, "oa@acme.test", "oa-password-1")
         token = org.post("/api/ingestion-keys", json={"name": "ci"}).json()["token"]
         reported = "Adjusters report the summary omitted an escalation flag on three claims."
         event = {
-            "type": "incident.event", "schema_version": "2026-01", "trace_id": "trc_i", "span_id": "spn_i",
-            "timestamp": "2026-08-22T00:00:00Z", "service": "svc", "environment": "prod", "project": "p1",
+            "type": "incident.event",
+            "schema_version": "2026-01",
+            "trace_id": "trc_i",
+            "span_id": "spn_i",
+            "timestamp": "2026-08-22T00:00:00Z",
+            "service": "svc",
+            "environment": "prod",
+            "project": "p1",
             "status": "error",
             "attributes": {
-                "incident_id": "inc-1", "title": "Copilot omitted an escalation flag",
-                "severity": "High", "incident_status": "open",
+                "incident_id": "inc-1",
+                "title": "Copilot omitted an escalation flag",
+                "severity": "High",
+                "incident_status": "open",
                 "description": summarize_value(reported, True, None),
                 "metadata": {"tenant_id": "acme", "application_name": "PayApp", "workflow_name": "wf"},
             },
         }
-        assert org.post("/v1/events/batch", json={"events": [event]},
-                        headers={"Authorization": f"Bearer {token}"}).status_code == 200
+        assert (
+            org.post(
+                "/v1/events/batch", json={"events": [event]}, headers={"Authorization": f"Bearer {token}"}
+            ).status_code
+            == 200
+        )
 
         incidents = org.get("/api/incidents").json()["incidents"]
         assert len(incidents) == 1, incidents
@@ -70,23 +87,41 @@ def test_a_hash_only_description_does_not_break_the_record(super_admin_client):
 
     super_admin_client.post(
         "/api/admin/organizations",
-        json={"tenant_id": "acme", "name": "Acme", "admin_email": "oa@acme.test",
-              "admin_display_name": "OA", "admin_password": "oa-password-1"},
+        json={
+            "tenant_id": "acme",
+            "name": "Acme",
+            "admin_email": "oa@acme.test",
+            "admin_display_name": "OA",
+            "admin_password": "oa-password-1",
+        },
     )
     with TestClient(app) as org:
         login_and_activate(org, "oa@acme.test", "oa-password-1")
         token = org.post("/api/ingestion-keys", json={"name": "ci"}).json()["token"]
         event = {
-            "type": "incident.event", "schema_version": "2026-01", "trace_id": "trc_h", "span_id": "spn_h",
-            "timestamp": "2026-08-22T00:00:00Z", "service": "svc", "environment": "prod", "project": "p1",
+            "type": "incident.event",
+            "schema_version": "2026-01",
+            "trace_id": "trc_h",
+            "span_id": "spn_h",
+            "timestamp": "2026-08-22T00:00:00Z",
+            "service": "svc",
+            "environment": "prod",
+            "project": "p1",
             "status": "error",
             "attributes": {
-                "incident_id": "inc-2", "title": "Older client", "severity": "Low", "incident_status": "open",
+                "incident_id": "inc-2",
+                "title": "Older client",
+                "severity": "Low",
+                "incident_status": "open",
                 "description": summarize_value("hashed only", False, None),
                 "metadata": {"tenant_id": "acme", "application_name": "PayApp", "workflow_name": "wf"},
             },
         }
-        assert org.post("/v1/events/batch", json={"events": [event]},
-                        headers={"Authorization": f"Bearer {token}"}).status_code == 200
+        assert (
+            org.post(
+                "/v1/events/batch", json={"events": [event]}, headers={"Authorization": f"Bearer {token}"}
+            ).status_code
+            == 200
+        )
         incidents = org.get("/api/incidents").json()["incidents"]
         assert incidents[0]["description"] is None

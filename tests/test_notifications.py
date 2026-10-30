@@ -129,7 +129,16 @@ def _org(super_admin_client):
     from app.main import app
     from fastapi.testclient import TestClient
 
-    super_admin_client.post("/api/admin/organizations", json={"tenant_id": "acme", "name": "Acme Health", "admin_email": "oa@acme.test", "admin_display_name": "OA", "admin_password": "oa-password-1"})
+    super_admin_client.post(
+        "/api/admin/organizations",
+        json={
+            "tenant_id": "acme",
+            "name": "Acme Health",
+            "admin_email": "oa@acme.test",
+            "admin_display_name": "OA",
+            "admin_password": "oa-password-1",
+        },
+    )
     client = TestClient(app)
     login_and_activate(client, "oa@acme.test", "oa-password-1")
     return client
@@ -166,11 +175,21 @@ def test_invite_is_emailed_and_sets_password_once(super_admin_client, smtp):
         # signed in straight away, no forced rotation
         assert visitor.get("/api/auth/me").status_code == 200
         # single use
-        assert visitor.post("/api/auth/accept-invite", json={"token": token, "password": "another-password-123"}).status_code == 404
+        assert (
+            visitor.post(
+                "/api/auth/accept-invite", json={"token": token, "password": "another-password-123"}
+            ).status_code
+            == 404
+        )
         assert visitor.get(f"/api/auth/invite/{token}").status_code == 404
     # chosen password works for a normal login
     with TestClient(app) as again:
-        assert again.post("/api/auth/login", json={"email": "rev@acme.test", "password": "a-chosen-password-123"}).status_code == 200
+        assert (
+            again.post(
+                "/api/auth/login", json={"email": "rev@acme.test", "password": "a-chosen-password-123"}
+            ).status_code
+            == 200
+        )
     logs = org.get("/api/audit-logs", params={"action": "auth.accept_invite"}).json()
     assert logs["page"]["total"] == 1
     org.close()
@@ -183,7 +202,9 @@ def test_without_smtp_invite_is_returned_and_logged_not_lost(super_admin_client,
     assert created["invite_emailed"] is False and "invite_url" in created and created["temporary_password"]
     log = org.get("/api/org/notifications").json()
     assert log["smtp_configured"] is False
-    assert log["notifications"][0]["status"] == "skipped_no_smtp" and log["notifications"][0]["target"] == "rev@acme.test"
+    assert (
+        log["notifications"][0]["status"] == "skipped_no_smtp" and log["notifications"][0]["target"] == "rev@acme.test"
+    )
     org.close()
 
 
@@ -198,7 +219,14 @@ def test_signed_webhooks_receive_gate_and_incident_events(super_admin_client, mo
     monkeypatch.setenv("NORINTH_PUBLIC_BASE_URL", "https://norinth.example.test")
     receiver = _HookReceiver()
     org = _org(super_admin_client)
-    hook = org.post("/api/org/webhooks", json={"name": "siem", "url": f"http://127.0.0.1:{receiver.port}/hook", "events": ["gate.approved", "gate.rejected", "incident.opened", "test"]})
+    hook = org.post(
+        "/api/org/webhooks",
+        json={
+            "name": "siem",
+            "url": f"http://127.0.0.1:{receiver.port}/hook",
+            "events": ["gate.approved", "gate.rejected", "incident.opened", "test"],
+        },
+    )
     assert hook.status_code == 201, hook.text
     secret = hook.json()["secret"]
     webhook_id = hook.json()["webhook"]["webhook_id"]
@@ -221,9 +249,38 @@ def test_signed_webhooks_receive_gate_and_incident_events(super_admin_client, mo
     token = org.post("/api/ingestion-keys", json={"name": "k"}).json()["token"]
     h = {"Authorization": f"Bearer {token}"}
     events = [
-        {**BASE, "type": "prompt.event", "trace_id": "t_p", "span_id": "s_p", "timestamp": "2026-08-22T00:00:01Z", "attributes": {"prompt_id": "p", "version": "p1", "artifact_ref": "pr:1", "metadata": META}},
-        {**BASE, "type": "deployment.event", "trace_id": "t_d", "span_id": "s_d", "timestamp": "2026-08-22T00:00:02Z", "attributes": {"deployment_id": "dep-1", "version": "v1", "artifact_ref": "img:1", "prompt_version": "p1", "deployment_status": "pending", "metadata": META}},
-        {**BASE, "type": "incident.event", "trace_id": "t_i", "span_id": "s_i", "timestamp": "2026-08-22T00:00:03Z", "name": "PHI leak", "attributes": {"title": "PHI in output", "severity": "high", "metadata": META}},
+        {
+            **BASE,
+            "type": "prompt.event",
+            "trace_id": "t_p",
+            "span_id": "s_p",
+            "timestamp": "2026-08-22T00:00:01Z",
+            "attributes": {"prompt_id": "p", "version": "p1", "artifact_ref": "pr:1", "metadata": META},
+        },
+        {
+            **BASE,
+            "type": "deployment.event",
+            "trace_id": "t_d",
+            "span_id": "s_d",
+            "timestamp": "2026-08-22T00:00:02Z",
+            "attributes": {
+                "deployment_id": "dep-1",
+                "version": "v1",
+                "artifact_ref": "img:1",
+                "prompt_version": "p1",
+                "deployment_status": "pending",
+                "metadata": META,
+            },
+        },
+        {
+            **BASE,
+            "type": "incident.event",
+            "trace_id": "t_i",
+            "span_id": "s_i",
+            "timestamp": "2026-08-22T00:00:03Z",
+            "name": "PHI leak",
+            "attributes": {"title": "PHI in output", "severity": "high", "metadata": META},
+        },
     ]
     assert org.post("/v1/events/batch", json={"events": events}, headers=h).status_code == 200
     gate_id = org.get("/api/deployment-gates").json()["deployment_gates"][0]["gate_id"]
@@ -231,15 +288,25 @@ def test_signed_webhooks_receive_gate_and_incident_events(super_admin_client, mo
     org.post("/api/org/role-assignments", json={"user_ref": "gov@acme.test", "role": "governance_admin"})
     with TestClient(app) as gov:
         login_and_activate(gov, "gov@acme.test", "gov-password-1")
-        assert gov.post(f"/api/deployment-gates/{gate_id}/reject", json={"rationale": "missing prompt evidence"}).status_code == 200
+        assert (
+            gov.post(
+                f"/api/deployment-gates/{gate_id}/reject", json={"rationale": "missing prompt evidence"}
+            ).status_code
+            == 200
+        )
     deliver_pending()
     types = [r["headers"]["X-Norinth-Event"] for r in receiver.received]
     assert "incident.opened" in types and "gate.rejected" in types
-    rejected = json.loads(next(r["body"] for r in receiver.received if r["headers"]["X-Norinth-Event"] == "gate.rejected"))
+    rejected = json.loads(
+        next(r["body"] for r in receiver.received if r["headers"]["X-Norinth-Event"] == "gate.rejected")
+    )
     assert rejected["data"]["decided_by"] == "gov@acme.test" and rejected["link"].endswith(f"#gate/{gate_id}")
     # delivery log shows both sent
     log = org.get("/api/org/notifications").json()["notifications"]
-    assert {e["event_type"] for e in log if e["channel"] == "webhook" and e["status"] == "sent"} >= {"incident.opened", "gate.rejected"}
+    assert {e["event_type"] for e in log if e["channel"] == "webhook" and e["status"] == "sent"} >= {
+        "incident.opened",
+        "gate.rejected",
+    }
     org.close()
 
 
@@ -252,16 +319,48 @@ def test_review_assignment_and_escalation_notify_once(super_admin_client, smtp):
     org.post("/api/org/users", json={"email": "rev@acme.test", "display_name": "Rev", "password": "rev-password-1"})
     org.post("/api/org/role-assignments", json={"user_ref": "rev@acme.test", "role": "governance_reviewer"})
     # route intake reviews to reviewers, due in 2 days, escalate 1 day later
-    assert org.post("/api/review-queue-policies", json={"policy_id": "intake", "task_type": "intake_review", "assigned_role": "governance_reviewer", "due_days": 2, "escalation_days": 1}).status_code == 200
+    assert (
+        org.post(
+            "/api/review-queue-policies",
+            json={
+                "policy_id": "intake",
+                "task_type": "intake_review",
+                "assigned_role": "governance_reviewer",
+                "due_days": 2,
+                "escalation_days": 1,
+            },
+        ).status_code
+        == 200
+    )
     deliver_pending()
     smtp.messages.clear()
 
     # high-risk use case through intake creates an intake review routed to a reviewer
-    submitted = org.post("/api/intake", json={"application_name": "Claims", "use_case": "Claims triage", "description": "Triage inbound claims", "intended_purpose": "prioritise claims", "data_sensitivity": "restricted", "autonomy_level": "assistive", "affects_individuals": True, "project": "p1", "environment": "prod"})
+    submitted = org.post(
+        "/api/intake",
+        json={
+            "application_name": "Claims",
+            "use_case": "Claims triage",
+            "description": "Triage inbound claims",
+            "intended_purpose": "prioritise claims",
+            "data_sensitivity": "restricted",
+            "autonomy_level": "assistive",
+            "affects_individuals": True,
+            "project": "p1",
+            "environment": "prod",
+        },
+    )
     assert submitted.status_code in (200, 201), submitted.text
     token = org.post("/api/ingestion-keys", json={"name": "k"}).json()["token"]
     h = {"Authorization": f"Bearer {token}"}
-    ping = {**BASE, "type": "sdk.health", "trace_id": "t1", "span_id": "s1", "timestamp": "2026-08-22T00:00:00Z", "attributes": {"mode": "observe", "fail_open": True, "failed_sends": 0, "metadata": META}}
+    ping = {
+        **BASE,
+        "type": "sdk.health",
+        "trace_id": "t1",
+        "span_id": "s1",
+        "timestamp": "2026-08-22T00:00:00Z",
+        "attributes": {"mode": "observe", "fail_open": True, "failed_sends": 0, "metadata": META},
+    }
     org.post("/v1/events/batch", json={"events": [ping]}, headers=h)  # queue refresh -> assignment
     deliver_pending()
     assigned = [m for m in smtp.messages if "Review assigned to you" in m["raw"]]
@@ -292,7 +391,15 @@ def test_two_workers_never_deliver_the_same_row(super_admin_client):
 
     with connect() as connection:
         for i in range(20):
-            store.enqueue(connection, tenant_id="acme", channel="email", event_type="test", target=f"user{i}@acme.test", subject="s", payload={"text": "t"})
+            store.enqueue(
+                connection,
+                tenant_id="acme",
+                channel="email",
+                event_type="test",
+                target=f"user{i}@acme.test",
+                subject="s",
+                payload={"text": "t"},
+            )
 
     a = store.claim_pending(limit=50, worker_id="replica-a")
     b = store.claim_pending(limit=50, worker_id="replica-b")
@@ -301,7 +408,9 @@ def test_two_workers_never_deliver_the_same_row(super_admin_client):
 
     # replica-a dies without finishing; after the stale window replica-b reclaims
     with connect() as connection:
-        connection.execute("UPDATE notification_outbox SET claimed_at = '2020-01-01 00:00:00' WHERE claimed_by = 'replica-a'")
+        connection.execute(
+            "UPDATE notification_outbox SET claimed_at = '2020-01-01 00:00:00' WHERE claimed_by = 'replica-a'"
+        )
     reclaimed = store.claim_pending(limit=50, worker_id="replica-b")
     assert len(reclaimed) == 20 and {row["claimed_by"] for row in reclaimed} == {"replica-b"}
 
@@ -313,3 +422,32 @@ def test_two_workers_never_deliver_the_same_row(super_admin_client):
     ids_a = {row["id"] for row in first}
     ids_b = {row["id"] for row in second}
     assert len(ids_a) == 10 and len(ids_b) == 10 and not (ids_a & ids_b)
+
+
+def test_a_suspended_invitee_does_not_burn_the_invite(super_admin_client, smtp):
+    """the token is single-use and cannot be reissued, so the status check
+    runs before the token is consumed; once reactivated the link still works"""
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    org = _org(super_admin_client)
+    created = org.post("/api/org/users", json={"email": "late@acme.test", "display_name": "Late"}).json()
+    token = created["invite_url"].rsplit("/", 1)[1]
+    assert org.post("/api/org/users/late@acme.test/status", json={"status": "suspended"}).status_code == 200
+
+    with TestClient(app) as visitor:
+        refused = visitor.post("/api/auth/accept-invite", json={"token": token, "password": "a-chosen-password-123"})
+        assert refused.status_code == 403, refused.text
+        assert visitor.get(f"/api/auth/invite/{token}").status_code == 200  # still pending
+
+    assert org.post("/api/org/users/late@acme.test/status", json={"status": "active"}).status_code == 200
+    with TestClient(app) as visitor:
+        accepted = visitor.post("/api/auth/accept-invite", json={"token": token, "password": "a-chosen-password-123"})
+        assert accepted.status_code == 200, accepted.text
+        assert (
+            visitor.post(
+                "/api/auth/accept-invite", json={"token": token, "password": "another-password-123"}
+            ).status_code
+            == 404
+        )
+    org.close()

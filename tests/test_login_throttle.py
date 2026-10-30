@@ -24,9 +24,7 @@ def test_concurrent_failures_are_all_counted(client):
     from app.storage.raw_events import connect
 
     with connect() as connection:
-        row = connection.execute(
-            "SELECT failed_count FROM login_throttle WHERE subject = ?", (subject,)
-        ).fetchone()
+        row = connection.execute("SELECT failed_count FROM login_throttle WHERE subject = ?", (subject,)).fetchone()
     # exactly one increment per failure, and over threshold so locked
     assert row["failed_count"] == 40
     assert la.is_locked(subject)

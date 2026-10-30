@@ -45,7 +45,13 @@ def _agent_run(agent: str, trace: str, tools: list[str]) -> list[dict]:
             **base,
             "type": "agent.run",
             "span_id": f"spn_{trace}_run",
-            "attributes": {"agent_name": agent, "steps": [{"tool": t} for t in tools], "step_count": len(tools), "outcome": "ok", "metadata": meta},
+            "attributes": {
+                "agent_name": agent,
+                "steps": [{"tool": t} for t in tools],
+                "step_count": len(tools),
+                "outcome": "ok",
+                "metadata": meta,
+            },
         }
     ]
     for index, tool in enumerate(tools):
@@ -156,7 +162,9 @@ def test_registry_requires_config_write_and_is_tenant_scoped(super_admin_client)
     )
     assert resp.status_code == 403
     # retire works for the org, 404 for unknown id
-    created = org.post("/api/agent-registry", json={"agent_name": "tmp", "owner_ref": "o", "autonomy_level": 1}).json()["agent"]
+    created = org.post("/api/agent-registry", json={"agent_name": "tmp", "owner_ref": "o", "autonomy_level": 1}).json()[
+        "agent"
+    ]
     assert org.post(f"/api/agent-registry/{created['agent_id']}/retire").status_code == 200
     assert org.post("/api/agent-registry/nope/retire").status_code == 404
     org.close()

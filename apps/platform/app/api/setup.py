@@ -47,7 +47,9 @@ def setup_state() -> dict[str, Any]:
 
 
 @router.post("/api/setup/organization", status_code=201)
-def setup_organization(payload: SetupOrganizationRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
+def setup_organization(
+    payload: SetupOrganizationRequest, actor: ActorContext = Depends(current_actor)
+) -> dict[str, Any]:
     try:
         require_super_admin(actor)
     except AuthorizationError as error:
@@ -78,7 +80,14 @@ def setup_organization(payload: SetupOrganizationRequest, actor: ActorContext = 
         must_change_password=False,  # operator just chose this password
     )
     upsert_role_assignment(
-        {"user_ref": email, "role": ORG_ADMIN, "status": "active", "tenant_id": tenant_id, "project": None, "environment": None}
+        {
+            "user_ref": email,
+            "role": ORG_ADMIN,
+            "status": "active",
+            "tenant_id": tenant_id,
+            "project": None,
+            "environment": None,
+        }
     )
     record_audit(
         actor_ref=actor.user_ref,

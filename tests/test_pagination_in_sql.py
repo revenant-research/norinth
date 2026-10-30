@@ -57,11 +57,26 @@ def _seed(org, token):
     events = []
     for index in range(SEEDED):
         meta = {"tenant_id": "acme", "application_name": "app", "workflow_name": "wf"}
-        events.append({**BASE, "type": "tool.call", "trace_id": f"t{index}", "span_id": f"s{index}",
-                       "name": f"tool-{index}", "attributes": {"tool_name": f"tool-{index}", "metadata": meta}})
-        events.append({**BASE, "type": "retrieval.call", "trace_id": f"r{index}", "span_id": f"rs{index}",
-                       "name": f"kb-{index}", "attributes": {"retriever": f"kb-{index}",
-                                                             "document_count": 1, "metadata": meta}})
+        events.append(
+            {
+                **BASE,
+                "type": "tool.call",
+                "trace_id": f"t{index}",
+                "span_id": f"s{index}",
+                "name": f"tool-{index}",
+                "attributes": {"tool_name": f"tool-{index}", "metadata": meta},
+            }
+        )
+        events.append(
+            {
+                **BASE,
+                "type": "retrieval.call",
+                "trace_id": f"r{index}",
+                "span_id": f"rs{index}",
+                "name": f"kb-{index}",
+                "attributes": {"retriever": f"kb-{index}", "document_count": 1, "metadata": meta},
+            }
+        )
     resp = org.post("/v1/events/batch", json={"events": events}, headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200, resp.text
 
@@ -148,10 +163,18 @@ def test_offset_past_the_end_is_an_empty_page(super_admin_client):
 
 @pytest.mark.parametrize(
     "path,key",
-    [("/api/tools", "tools"), ("/api/retrievals", "retrievals"), ("/api/risk-register", "risks"),
-     ("/api/control-evidence", "controls"), ("/api/incidents", "incidents"), ("/api/decisions", "decisions"),
-     ("/api/exceptions", "exceptions"), ("/api/owner-assignments", "owners"),
-     ("/api/review-tasks", "review_tasks"), ("/api/deployment-gates", "deployment_gates")],
+    [
+        ("/api/tools", "tools"),
+        ("/api/retrievals", "retrievals"),
+        ("/api/risk-register", "risks"),
+        ("/api/control-evidence", "controls"),
+        ("/api/incidents", "incidents"),
+        ("/api/decisions", "decisions"),
+        ("/api/exceptions", "exceptions"),
+        ("/api/owner-assignments", "owners"),
+        ("/api/review-tasks", "review_tasks"),
+        ("/api/deployment-gates", "deployment_gates"),
+    ],
 )
 def test_every_paged_endpoint_reports_a_page(super_admin_client, path, key):
     org, token = _org(super_admin_client)

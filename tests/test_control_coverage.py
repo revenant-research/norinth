@@ -71,13 +71,21 @@ def _model_call(trace: str, **kwargs) -> dict:
     return _event(
         "model.call",
         trace,
-        {"provider": "openai", "model": "gpt-4o", "operation": "chat", "prompt": {"hash": "h"}, "response": {"hash": "h"}},
+        {
+            "provider": "openai",
+            "model": "gpt-4o",
+            "operation": "chat",
+            "prompt": {"hash": "h"},
+            "response": {"hash": "h"},
+        },
         **kwargs,
     )
 
 
 def _guardrail(trace: str, **kwargs) -> dict:
-    return _event("guardrail.decision", trace, {"guardrail_name": "pii", "decision": "allow", "matched_rules": ["r1"]}, **kwargs)
+    return _event(
+        "guardrail.decision", trace, {"guardrail_name": "pii", "decision": "allow", "matched_rules": ["r1"]}, **kwargs
+    )
 
 
 def _send(client, headers, events: list[dict]) -> None:
@@ -103,7 +111,9 @@ def _second_admin(client):
     from app.main import app
     from fastapi.testclient import TestClient
 
-    client.post("/api/org/users", json={"email": f"b@{TENANT}.test", "display_name": "B", "password": "b-password-1234"})
+    client.post(
+        "/api/org/users", json={"email": f"b@{TENANT}.test", "display_name": "B", "password": "b-password-1234"}
+    )
     client.post("/api/org/role-assignments", json={"user_ref": f"b@{TENANT}.test", "role": "org_admin"})
     second = TestClient(app)
     login_and_activate(second, f"b@{TENANT}.test", "b-password-1234")

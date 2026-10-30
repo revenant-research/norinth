@@ -155,20 +155,29 @@ def test_phi_in_structured_channels_never_reaches_storage(super_admin_client, fr
 
     super_admin_client.post(
         "/api/admin/organizations",
-        json={"tenant_id": "acme", "name": "Acme", "admin_email": "oa@acme.test",
-              "admin_display_name": "OA", "admin_password": "oa-password-1"},
+        json={
+            "tenant_id": "acme",
+            "name": "Acme",
+            "admin_email": "oa@acme.test",
+            "admin_display_name": "OA",
+            "admin_password": "oa-password-1",
+        },
     )
     with TestClient(app) as org:
         login_and_activate(org, "oa@acme.test", "oa-password-1")
         token = org.post("/api/ingestion-keys", json={"name": "ci"}).json()["token"]
 
-        client = NorinthClient(NorinthConfig(api_key=token, async_transport=False, project="claims",
-                                             environment="prod", service="claims-api"))
+        client = NorinthClient(
+            NorinthConfig(
+                api_key=token, async_transport=False, project="claims", environment="prod", service="claims-api"
+            )
+        )
         ingest = TestClient(app)
 
         def _send(events: list[dict]) -> None:
-            resp = ingest.post("/v1/events/batch", json={"events": events},
-                               headers={"Authorization": f"Bearer {token}"})
+            resp = ingest.post(
+                "/v1/events/batch", json={"events": events}, headers={"Authorization": f"Bearer {token}"}
+            )
             assert resp.status_code == 200, resp.text
 
         client.transport.send_batch = _send  # type: ignore[method-assign]

@@ -32,7 +32,10 @@ flow, adversaries, controls, and residual risk.
 - `NORINTH_SUPER_ADMIN_EMAIL` / `NORINTH_SUPER_ADMIN_PASSWORD` — set these; the
   documented dev default (`admin@norinth.local` / `norinth-admin`) is for local
   use only.
-- `NORINTH_SIGNING_SECRET` — required to authenticate SDK ingestion batches.
+- `NORINTH_SIGNING_SECRET` — optional shared HMAC secret. Per-tenant
+  ingestion keys authenticate SDK batches on their own; when this is also
+  set, every ingest request must additionally carry a valid
+  `X-Norinth-Signature`.
 - `NORINTH_SECRET_KEY` — 32-byte base64 master key used to encrypt stored
   secrets (SSO client secrets, webhook secrets) with AES-256-GCM. Secret storage
   fails closed without it, so set it; `NORINTH_ALLOW_PLAINTEXT_SECRETS=1` is a

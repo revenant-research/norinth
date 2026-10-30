@@ -175,8 +175,18 @@ def test_valid_otlp_span_survives_one_odd_attribute(super_admin_client):
 @pytest.mark.parametrize(
     "value,expected",
     [
-        (10, 10), ("12", 12), (1.5, 1), (None, 0), ("", 0), ("nope", 0),
-        ([1, 2], 0), ({"a": 1}, 0), (float("inf"), 0), (float("nan"), 0), (True, 0), (-3, -3),
+        (10, 10),
+        ("12", 12),
+        (1.5, 1),
+        (None, 0),
+        ("", 0),
+        ("nope", 0),
+        ([1, 2], 0),
+        ({"a": 1}, 0),
+        (float("inf"), 0),
+        (float("nan"), 0),
+        (True, 0),
+        (-3, -3),
     ],
 )
 def test_as_int_never_raises(value, expected):

@@ -28,6 +28,7 @@ from app.storage.agents import (
     retire_agent,
 )
 from app.storage.audit import record_audit
+from app.storage.unit_of_work import atomic
 
 router = APIRouter()
 
@@ -64,6 +65,7 @@ def agent_registry(scope: ScopeFilter = Depends(scoped_dependency)) -> dict[str,
 
 
 @router.post("/api/agent-registry")
+@atomic
 def register(payload: AgentRegistrationRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _tenant(actor, PERM_CONFIG_WRITE)
     agent = register_agent(
@@ -96,12 +98,15 @@ def register(payload: AgentRegistrationRequest, actor: ActorContext = Depends(cu
 
 
 @router.post("/api/agent-registry/{agent_id}/retire")
+@atomic
 def retire(agent_id: str, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _tenant(actor, PERM_LIFECYCLE_MANAGE)
     if load_registered_agent(agent_id, tenant_id) is None:
         raise HTTPException(status_code=404, detail="agent not found in this organization")
     agent = retire_agent(agent_id, tenant_id)
-    record_audit(actor_ref=actor.user_ref, action="agent.retire", tenant_id=tenant_id, target_type="agent", target_id=agent_id)
+    record_audit(
+        actor_ref=actor.user_ref, action="agent.retire", tenant_id=tenant_id, target_type="agent", target_id=agent_id
+    )
     return {"agent": agent}
 
 

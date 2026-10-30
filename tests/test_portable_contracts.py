@@ -665,13 +665,14 @@ def test_public_contract_can_be_consumed_by_the_independent_python_client(setup)
 def test_portable_client_does_not_fail_open_or_follow_redirects():
     import urllib.error
 
-    from norinth_logger.portable import PortableClient, PortableError, _NoRedirect
+    from norinth_logger.portable import PortableClient, PortableError
+    from norinth_logger.transport import NoRedirectHandler
 
     with pytest.raises(ValueError):
         PortableClient("http://example.test", "nri_example")
     with pytest.raises(ValueError):
         PortableClient("https://example.test", "nrk_telemetry")
-    assert _NoRedirect().redirect_request(None, None, 302, "redirect", {}, "https://other.test") is None
+    assert NoRedirectHandler().redirect_request(None, None, 302, "redirect", {}, "https://other.test") is None
 
     def unavailable(path, payload):
         raise urllib.error.URLError("offline")

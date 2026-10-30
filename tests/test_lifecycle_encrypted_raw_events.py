@@ -15,9 +15,20 @@ META = {"tenant_id": "acme", "application_name": "Claims", "workflow_name": "tri
 
 def _model_call(model: str, span: str) -> dict:
     return {
-        "type": "model.call", "schema_version": "2026-01", "trace_id": f"t_{span}", "span_id": span,
-        "timestamp": "2026-08-22T00:00:00Z", "service": "svc", "environment": "prod", "project": "p1",
-        "attributes": {"provider": "openai", "model": model, "usage": {"input_tokens": 1, "output_tokens": 1}, "metadata": META},
+        "type": "model.call",
+        "schema_version": "2026-01",
+        "trace_id": f"t_{span}",
+        "span_id": span,
+        "timestamp": "2026-08-22T00:00:00Z",
+        "service": "svc",
+        "environment": "prod",
+        "project": "p1",
+        "attributes": {
+            "provider": "openai",
+            "model": model,
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+            "metadata": META,
+        },
     }
 
 
@@ -28,9 +39,16 @@ def test_material_change_detected_with_encrypted_raw_events(super_admin_client, 
     from app.storage.raw_events import connect
     from fastapi.testclient import TestClient
 
-    super_admin_client.post("/api/admin/organizations", json={
-        "tenant_id": "acme", "name": "Acme", "admin_email": "oa@acme.test",
-        "admin_display_name": "OA", "admin_password": "oa-password-1"})
+    super_admin_client.post(
+        "/api/admin/organizations",
+        json={
+            "tenant_id": "acme",
+            "name": "Acme",
+            "admin_email": "oa@acme.test",
+            "admin_display_name": "OA",
+            "admin_password": "oa-password-1",
+        },
+    )
     org = TestClient(app)
     login_and_activate(org, "oa@acme.test", "oa-password-1")
     token = org.post("/api/ingestion-keys", json={"name": "k"}).json()["token"]
@@ -38,7 +56,9 @@ def test_material_change_detected_with_encrypted_raw_events(super_admin_client, 
 
     # baseline model surface, then a change to it
     assert org.post("/v1/events/batch", json={"events": [_model_call("gpt-4o", "s1")]}, headers=h).status_code == 200
-    assert org.post("/v1/events/batch", json={"events": [_model_call("gpt-4o-mini", "s2")]}, headers=h).status_code == 200
+    assert (
+        org.post("/v1/events/batch", json={"events": [_model_call("gpt-4o-mini", "s2")]}, headers=h).status_code == 200
+    )
 
     with connect() as connection:
         # premise: the raw events really are encrypted at rest

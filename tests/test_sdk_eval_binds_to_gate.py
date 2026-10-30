@@ -24,13 +24,13 @@ def _sdk_client_posting_to(app, token: str):
     from norinth_logger.client import NorinthClient
     from norinth_logger.config import NorinthConfig
 
-    client = NorinthClient(NorinthConfig(api_key=token, async_transport=False, project="claims",
-                                         environment="prod", service="claims-api"))
+    client = NorinthClient(
+        NorinthConfig(api_key=token, async_transport=False, project="claims", environment="prod", service="claims-api")
+    )
     ingest = TestClient(app)
 
     def _send_batch(events: list[dict]) -> None:
-        resp = ingest.post("/v1/events/batch", json={"events": events},
-                           headers={"Authorization": f"Bearer {token}"})
+        resp = ingest.post("/v1/events/batch", json={"events": events}, headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 200, resp.text
 
     client.transport.send_batch = _send_batch  # type: ignore[method-assign]
@@ -43,8 +43,13 @@ def test_sdk_eval_result_binds_to_the_deployment_gate(super_admin_client):
 
     super_admin_client.post(
         "/api/admin/organizations",
-        json={"tenant_id": "acme", "name": "Acme", "admin_email": "oa@acme.test",
-              "admin_display_name": "OA", "admin_password": "oa-password-1"},
+        json={
+            "tenant_id": "acme",
+            "name": "Acme",
+            "admin_email": "oa@acme.test",
+            "admin_display_name": "OA",
+            "admin_password": "oa-password-1",
+        },
     )
     with TestClient(app) as org:
         login_and_activate(org, "oa@acme.test", "oa-password-1")
@@ -52,13 +57,37 @@ def test_sdk_eval_result_binds_to_the_deployment_gate(super_admin_client):
 
         client = _sdk_client_posting_to(app, token)
         # a deployed build, its prompt, and an eval that names the same build
-        client.deployment(deployment_id="dep-1", version="v3", application_name="Claims Copilot",
-                          workflow_name="triage", artifact_ref="sha256:abc", status="pending",
-                          provider="openai", model="gpt-4o", prompt_version="v3", metadata=META)
-        client.prompt(prompt_id="pr-1", version="v3", template="Summarize: {x}", artifact_ref="sha256:abc",
-                      status="active", application_name="Claims Copilot", workflow_name="triage", metadata=META)
-        client.eval_result(eval_name="safety", score=0.97, threshold=0.6, passed=True,
-                           prompt_version="v3", artifact_ref="sha256:abc", metadata=META)
+        client.deployment(
+            deployment_id="dep-1",
+            version="v3",
+            application_name="Claims Copilot",
+            workflow_name="triage",
+            artifact_ref="sha256:abc",
+            status="pending",
+            provider="openai",
+            model="gpt-4o",
+            prompt_version="v3",
+            metadata=META,
+        )
+        client.prompt(
+            prompt_id="pr-1",
+            version="v3",
+            template="Summarize: {x}",
+            artifact_ref="sha256:abc",
+            status="active",
+            application_name="Claims Copilot",
+            workflow_name="triage",
+            metadata=META,
+        )
+        client.eval_result(
+            eval_name="safety",
+            score=0.97,
+            threshold=0.6,
+            passed=True,
+            prompt_version="v3",
+            artifact_ref="sha256:abc",
+            metadata=META,
+        )
 
         gates = org.get("/api/deployment-gates").json()["deployment_gates"]
         assert len(gates) == 1, gates

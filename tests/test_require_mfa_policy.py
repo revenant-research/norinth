@@ -119,9 +119,7 @@ def test_accounts_without_a_local_password_are_exempt(super_admin_client):
     # simulate an idp-provisioned account: no local password (scim creates
     # users with password_hash="")
     with connect() as connection:
-        connection.execute(
-            "UPDATE platform_users SET password_hash = '' WHERE user_ref = ?", ("sso@delta.test",)
-        )
+        connection.execute("UPDATE platform_users SET password_hash = '' WHERE user_ref = ?", ("sso@delta.test",))
 
     assert org.post("/api/org/security-policy", json={"require_mfa": True}).status_code == 200
     assert member.get("/api/systems").status_code == 200

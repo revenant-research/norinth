@@ -29,8 +29,10 @@ from app.storage.scim import (
     set_user_external_id,
 )
 from app.storage.sso import load_sso_configuration
+from app.storage.unit_of_work import atomic
 from app.storage.workflow import (
     create_platform_user,
+    get_user_by_email,
     list_platform_users,
     load_platform_user,
     set_user_status,
@@ -192,9 +194,10 @@ def _display_name(payload: ScimUserIn) -> str:
 
 
 @router.post("/scim/v2/Users", status_code=201)
+@atomic
 def create_user(payload: ScimUserIn, tenant_id: str = Depends(scim_tenant)):
     email = payload.userName.strip().lower()
-    existing = load_platform_user(email)
+    existing = get_user_by_email(email)  # finds accounts created before addresses were normalised
     if existing is not None:
         if existing.get("tenant_id") != tenant_id:
             return _scim_error(409, "userName belongs to another organization", "uniqueness")
@@ -241,6 +244,7 @@ def _apply_active(user_ref: str, tenant_id: str, active: bool) -> dict[str, Any]
 
 
 @router.put("/scim/v2/Users/{user_ref}")
+@atomic
 def replace_user(user_ref: str, payload: ScimUserIn, tenant_id: str = Depends(scim_tenant)):
     user = _load_tenant_user(user_ref, tenant_id)
     if user is None:
@@ -252,7 +256,9 @@ def replace_user(user_ref: str, payload: ScimUserIn, tenant_id: str = Depends(sc
         set_user_external_id(user_ref, payload.externalId)
     if payload.active != (user.get("status") == "active"):
         _apply_active(user_ref, tenant_id, payload.active)
-    record_audit(actor_ref="scim", action="scim.user.replace", tenant_id=tenant_id, target_type="user", target_id=user_ref)
+    record_audit(
+        actor_ref="scim", action="scim.user.replace", tenant_id=tenant_id, target_type="user", target_id=user_ref
+    )
     return JSONResponse(media_type=SCIM_CONTENT_TYPE, content=_to_scim_user(load_platform_user(user_ref) or user))
 
 
@@ -262,6 +268,7 @@ class ScimPatch(BaseModel):
 
 
 @router.patch("/scim/v2/Users/{user_ref}")
+@atomic
 def patch_user(user_ref: str, payload: ScimPatch, tenant_id: str = Depends(scim_tenant)):
     user = _load_tenant_user(user_ref, tenant_id)
     if user is None:
@@ -285,7 +292,13 @@ def patch_user(user_ref: str, payload: ScimPatch, tenant_id: str = Depends(scim_
             elif key == "displayname":
                 from app.storage.workflow import upsert_platform_user
 
-                upsert_platform_user({"user_ref": user_ref, "display_name": str(val), "status": (load_platform_user(user_ref) or user)["status"]})
+                upsert_platform_user(
+                    {
+                        "user_ref": user_ref,
+                        "display_name": str(val),
+                        "status": (load_platform_user(user_ref) or user)["status"],
+                    }
+                )
             elif key == "externalid":
                 set_user_external_id(user_ref, None if val is None else str(val))
             # other attributes accepted and ignored (scim allows partial support)
@@ -293,6 +306,7 @@ def patch_user(user_ref: str, payload: ScimPatch, tenant_id: str = Depends(scim_
 
 
 @router.delete("/scim/v2/Users/{user_ref}", status_code=204)
+@atomic
 def delete_user(user_ref: str, tenant_id: str = Depends(scim_tenant)):
     user = _load_tenant_user(user_ref, tenant_id)
     if user is None:
@@ -326,20 +340,33 @@ def org_scim_tokens(actor: ActorContext = Depends(current_actor)) -> dict[str, A
 
 
 @router.post("/api/org/scim-tokens")
+@atomic
 def create_org_scim_token(payload: ScimTokenRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _require_tenant_admin(actor)
     token, record = create_scim_token(tenant_id, payload.name, actor.user_ref)
-    record_audit(actor_ref=actor.user_ref, action="scim_token.create", tenant_id=tenant_id, target_type="scim_token", target_id=record["token_id"])
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="scim_token.create",
+        tenant_id=tenant_id,
+        target_type="scim_token",
+        target_id=record["token_id"],
+    )
     return {"scim_token": record, "token": token}
 
 
 @router.post("/api/org/scim-tokens/{token_id}/revoke")
+@atomic
 def revoke_org_scim_token(token_id: str, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _require_tenant_admin(actor)
     try:
         record = revoke_scim_token(token_id, tenant_id)
     except DomainError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
-    record_audit(actor_ref=actor.user_ref, action="scim_token.revoke", tenant_id=tenant_id, target_type="scim_token", target_id=token_id)
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="scim_token.revoke",
+        tenant_id=tenant_id,
+        target_type="scim_token",
+        target_id=token_id,
+    )
     return {"scim_token": record}
-

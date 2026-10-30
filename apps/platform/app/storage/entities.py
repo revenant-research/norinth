@@ -179,7 +179,9 @@ def init_entities() -> None:
             "governance_risks",
             "governance_controls",
         ):
-            connection.execute(f"CREATE INDEX IF NOT EXISTS idx_{table}_scope ON {table}(tenant_id, project, environment)")
+            connection.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{table}_scope ON {table}(tenant_id, project, environment)"
+            )
 
 
 # event types that show the application ran; any of them creates its inventory
@@ -437,7 +439,9 @@ def upsert_workflow(
     )
 
 
-def upsert_model(connection, event: dict[str, Any], attrs: dict[str, Any], metadata: dict[str, Any], usage: dict[str, Any]) -> None:
+def upsert_model(
+    connection, event: dict[str, Any], attrs: dict[str, Any], metadata: dict[str, Any], usage: dict[str, Any]
+) -> None:
     provider = attrs.get("provider") or "unknown"
     model = attrs.get("model") or "unknown"
     key = entity_id("model", metadata.get("tenant_id"), event["project"], event["environment"], provider, model)
@@ -525,7 +529,15 @@ def upsert_observed_event(connection, event: dict[str, Any], attrs: dict[str, An
         or event.get("name")
         or "unknown"
     )
-    key = entity_id(event["type"], metadata.get("tenant_id") or "", event["project"], event["environment"], event["trace_id"], event["span_id"], name)
+    key = entity_id(
+        event["type"],
+        metadata.get("tenant_id") or "",
+        event["project"],
+        event["environment"],
+        event["trace_id"],
+        event["span_id"],
+        name,
+    )
     connection.execute(
         """
         INSERT OR REPLACE INTO governance_observed_events (
@@ -552,7 +564,9 @@ def upsert_observed_event(connection, event: dict[str, Any], attrs: dict[str, An
     )
 
 
-def upsert_model_risks(connection, event: dict[str, Any], attrs: dict[str, Any], metadata: dict[str, Any], usage: dict[str, Any]) -> None:
+def upsert_model_risks(
+    connection, event: dict[str, Any], attrs: dict[str, Any], metadata: dict[str, Any], usage: dict[str, Any]
+) -> None:
     application_name = metadata.get("application_name")
     if not application_name:
         return
@@ -641,7 +655,9 @@ def upsert_risk(
     source: str,
 ) -> None:
     application_name = metadata.get("application_name") or "unknown"
-    key = entity_id("risk", metadata.get("tenant_id"), event["project"], event["environment"], application_name, risk, source)
+    key = entity_id(
+        "risk", metadata.get("tenant_id"), event["project"], event["environment"], application_name, risk, source
+    )
     row = fetch_one(connection, "governance_risks", key)
     existing_ids = decode_json(row["evidence_trace_ids"], []) if row else []
     if len(existing_ids) >= _RISK_EVIDENCE_CAP:
@@ -694,7 +710,9 @@ def upsert_risk(
     )
 
 
-def upsert_control(connection, event: dict[str, Any], metadata: dict[str, Any], control: str, evidence_event_type: str) -> None:
+def upsert_control(
+    connection, event: dict[str, Any], metadata: dict[str, Any], control: str, evidence_event_type: str
+) -> None:
     key = entity_id("control", metadata.get("tenant_id"), event["project"], event["environment"], control)
     row = fetch_one(connection, "governance_controls", key)
     count = int(row["evidence_count"]) + 1 if row else 1
@@ -742,16 +760,18 @@ def merge_sets(row, values: dict[str, Any]) -> dict[str, list[str]]:
     return merged
 
 
-
-
 STAGE_ORDER = ["retired", "rejected", "approved", "recertified", "in_review", "discovered"]
 
 
-def _lifecycle_by_application(tenant_id: str | None, project: str | None, environment: str | None) -> dict[str, dict[str, Any]]:
+def _lifecycle_by_application(
+    tenant_id: str | None, project: str | None, environment: str | None
+) -> dict[str, dict[str, Any]]:
     """governance stage per application from its intake records: none ->
     discovered, submitted -> in_review, else the decided status; also its
     highest declared risk tier"""
-    rows = scoped_rows("ai_use_cases", tenant_id=tenant_id, project=project, environment=environment, order_by="updated_at")
+    rows = scoped_rows(
+        "ai_use_cases", tenant_id=tenant_id, project=project, environment=environment, order_by="updated_at"
+    )
     out: dict[str, dict[str, Any]] = {}
     tier_rank = {"low": 0, "medium": 1, "high": 2, "critical": 3}
     for row in rows:
@@ -774,7 +794,9 @@ def _lifecycle_by_application(tenant_id: str | None, project: str | None, enviro
     return out
 
 
-def list_applications(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
+def list_applications(
+    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
+) -> list[dict[str, Any]]:
     lifecycle = _lifecycle_by_application(tenant_id, project, environment)
     return [
         {
@@ -787,11 +809,19 @@ def list_applications(*, tenant_id: str | None = None, project: str | None = Non
             "risk_tier": lifecycle.get(row["application_name"], {}).get("risk_tier"),
             "intake_ids": lifecycle.get(row["application_name"], {}).get("intake_ids", []),
         }
-        for row in scoped_rows("governance_applications", tenant_id=tenant_id, project=project, environment=environment, order_by="last_seen")
+        for row in scoped_rows(
+            "governance_applications",
+            tenant_id=tenant_id,
+            project=project,
+            environment=environment,
+            order_by="last_seen",
+        )
     ]
 
 
-def list_workflows(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
+def list_workflows(
+    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
+) -> list[dict[str, Any]]:
     return [
         {
             **row,
@@ -799,29 +829,39 @@ def list_workflows(*, tenant_id: str | None = None, project: str | None = None, 
             "providers": decode_json(row["providers"], []),
             "models": decode_json(row["models"], []),
         }
-        for row in scoped_rows("governance_workflows", tenant_id=tenant_id, project=project, environment=environment, order_by="last_seen")
+        for row in scoped_rows(
+            "governance_workflows", tenant_id=tenant_id, project=project, environment=environment, order_by="last_seen"
+        )
     ]
 
 
-def list_models(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
+def list_models(
+    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
+) -> list[dict[str, Any]]:
     return [
         {
             **row,
             "operations": decode_json(row["operations"], []),
             "applications": decode_json(row["applications"], []),
         }
-        for row in scoped_rows("governance_models", tenant_id=tenant_id, project=project, environment=environment, order_by="last_seen")
+        for row in scoped_rows(
+            "governance_models", tenant_id=tenant_id, project=project, environment=environment, order_by="last_seen"
+        )
     ]
 
 
-def list_providers(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
+def list_providers(
+    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
+) -> list[dict[str, Any]]:
     return [
         {
             **row,
             "models": decode_json(row["models"], []),
             "applications": decode_json(row["applications"], []),
         }
-        for row in scoped_rows("governance_providers", tenant_id=tenant_id, project=project, environment=environment, order_by="last_seen")
+        for row in scoped_rows(
+            "governance_providers", tenant_id=tenant_id, project=project, environment=environment, order_by="last_seen"
+        )
     ]
 
 
@@ -853,15 +893,23 @@ def list_observed_events(
     return [{**row, "attributes": decode_json(row["attributes"], {})} for row in rows]
 
 
-def list_risks(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
+def list_risks(
+    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
+) -> list[dict[str, Any]]:
     return [
         {**row, "evidence_trace_ids": decode_json(row["evidence_trace_ids"], [])}
-        for row in scoped_rows("governance_risks", tenant_id=tenant_id, project=project, environment=environment, order_by="last_seen")
+        for row in scoped_rows(
+            "governance_risks", tenant_id=tenant_id, project=project, environment=environment, order_by="last_seen"
+        )
     ]
 
 
-def list_controls(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
-    return scoped_rows("governance_controls", tenant_id=tenant_id, project=project, environment=environment, order_by="last_seen")
+def list_controls(
+    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
+) -> list[dict[str, Any]]:
+    return scoped_rows(
+        "governance_controls", tenant_id=tenant_id, project=project, environment=environment, order_by="last_seen"
+    )
 
 
 def tenant_application_stats() -> dict[str, dict[str, Any]]:
@@ -876,7 +924,9 @@ def tenant_application_stats() -> dict[str, dict[str, Any]]:
             GROUP BY tenant_id
             """
         ).fetchall()
-    return {row["tenant_id"]: {"app_count": int(row["app_count"]), "last_activity": row["last_activity"]} for row in rows}
+    return {
+        row["tenant_id"]: {"app_count": int(row["app_count"]), "last_activity": row["last_activity"]} for row in rows
+    }
 
 
 def count_observed_events(

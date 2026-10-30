@@ -46,7 +46,9 @@ def init_incidents() -> None:
             )
             """
         )
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_governance_incidents_scope ON governance_incidents(tenant_id, project, environment)")
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_governance_incidents_scope ON governance_incidents(tenant_id, project, environment)"
+        )
         connection.execute("CREATE INDEX IF NOT EXISTS idx_governance_incidents_status ON governance_incidents(status)")
 
 
@@ -78,10 +80,13 @@ def upsert_incident_event(connection, event: dict[str, Any]) -> None:
     incident_tenant = scope["tenant_id"] or ""
     description_summary = json.dumps(as_object(attrs.get("description")), sort_keys=True)
     status = attrs.get("incident_status") or event.get("status", "open")
-    is_new = connection.execute(
-        "SELECT 1 FROM governance_incidents WHERE incident_id = ? AND tenant_id = ? AND project = ? AND environment = ?",
-        (incident_id, incident_tenant, event["project"], event["environment"]),
-    ).fetchone() is None
+    is_new = (
+        connection.execute(
+            "SELECT 1 FROM governance_incidents WHERE incident_id = ? AND tenant_id = ? AND project = ? AND environment = ?",
+            (incident_id, incident_tenant, event["project"], event["environment"]),
+        ).fetchone()
+        is None
+    )
     connection.execute(
         """
         INSERT INTO governance_incidents (
@@ -144,7 +149,12 @@ def upsert_incident_event(connection, event: dict[str, Any]) -> None:
             event_type="incident.opened",
             subject=f"Incident opened: {attrs.get('title') or event.get('name') or incident_id}",
             text=f"Severity {attrs.get('severity') or 'unclassified'} incident on {application_name} / {workflow_name}, reported by {attrs.get('detected_by') or 'the SDK'}.",
-            data={"incident_id": incident_id, "application_name": application_name, "workflow_name": workflow_name, "severity": attrs.get("severity")},
+            data={
+                "incident_id": incident_id,
+                "application_name": application_name,
+                "workflow_name": workflow_name,
+                "severity": attrs.get("severity"),
+            },
             to_roles=["org_admin", "risk_owner", "governance_admin"],
             link=f"{public_base_url()}/#incident/{incident_id}",
         )
@@ -199,25 +209,44 @@ def incident_evidence_counts(connection, scope: dict[str, Any]) -> dict[str, int
     return {"risk_count": int(risk_row["count"]), "missing_control_count": int(control_row["count"])}
 
 
-def set_incident_status(incident_id: str, status: str, actor_ref: str, rationale: str) -> dict[str, Any]:
+def _incident_row(connection, incident_id: str, tenant_id: str | None):
+    """the tenant's incident, or None
+
+    incident_id is chosen by the reporting client and is only unique within
+    (tenant, project, environment), so a lookup by id alone can land on another
+    organization's incident that happens to carry the same id. every read or
+    write of one incident binds the tenant; a caller with no tenant (the
+    platform operator) sees nothing, as for every other tenant record
+    """
+    if not tenant_id:
+        return None
+    return connection.execute(
+        "SELECT * FROM governance_incidents WHERE tenant_id = ? AND incident_id = ? ORDER BY last_seen DESC LIMIT 1",
+        (tenant_id, incident_id),
+    ).fetchone()
+
+
+def set_incident_status(
+    incident_id: str, status: str, actor_ref: str, rationale: str, *, tenant_id: str | None
+) -> dict[str, Any]:
     with connect() as connection:
-        row = connection.execute("SELECT * FROM governance_incidents WHERE incident_id = ?", (incident_id,)).fetchone()
+        row = _incident_row(connection, incident_id, tenant_id)
         if row is None:
             raise RecordNotFound("incident not found")
         connection.execute(
             """
             UPDATE governance_incidents
             SET status = ?, actor_ref = ?, resolution_rationale = ?, closed_at = CASE WHEN ? = 'closed' THEN datetime('now') ELSE closed_at END, last_seen = datetime('now')
-            WHERE incident_id = ?
+            WHERE tenant_id = ? AND incident_id = ?
             """,
-            (status, actor_ref, rationale, status, incident_id),
+            (status, actor_ref, rationale, status, tenant_id, incident_id),
         )
-        return dict(connection.execute("SELECT * FROM governance_incidents WHERE incident_id = ?", (incident_id,)).fetchone())
+        return dict(_incident_row(connection, incident_id, tenant_id))
 
 
-def load_incident(incident_id: str) -> dict[str, Any]:
+def load_incident(incident_id: str, *, tenant_id: str | None) -> dict[str, Any]:
     with connect() as connection:
-        row = connection.execute("SELECT * FROM governance_incidents WHERE incident_id = ?", (incident_id,)).fetchone()
+        row = _incident_row(connection, incident_id, tenant_id)
     if row is None:
         raise RecordNotFound("incident not found")
     return readable_description(dict(row))
@@ -237,6 +266,15 @@ def readable_description(record: dict[str, Any]) -> dict[str, Any]:
         summary = {}
     record["description"] = summary.get("content") if isinstance(summary, dict) else None
     return record
+
+
+# an owner assignment belongs to the incident that shares its tenant, project and
+# environment, not to every incident with the same client-chosen id
+_OWNER_SCOPE_MATCH = (
+    "COALESCE(owner_assignments.tenant_id, '') = governance_incidents.tenant_id "
+    "AND owner_assignments.project = governance_incidents.project "
+    "AND owner_assignments.environment = governance_incidents.environment"
+)
 
 
 def list_incidents(
@@ -273,6 +311,7 @@ def list_incidents(
                     FROM owner_assignments
                     WHERE owner_assignments.subject_type = 'incident'
                       AND owner_assignments.subject_name = governance_incidents.incident_id
+                      AND {_OWNER_SCOPE_MATCH}
                     ORDER BY updated_at DESC
                     LIMIT 1
                 ) AS owner_ref,
@@ -281,6 +320,7 @@ def list_incidents(
                     FROM owner_assignments
                     WHERE owner_assignments.subject_type = 'incident'
                       AND owner_assignments.subject_name = governance_incidents.incident_id
+                      AND {_OWNER_SCOPE_MATCH}
                     ORDER BY updated_at DESC
                     LIMIT 1
                 ) AS owner_status
@@ -297,7 +337,5 @@ def row_to_dict(row) -> dict[str, Any] | None:
     return None if row is None else readable_description(dict(row))
 
 
-def count_incidents(
-    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
-) -> int:
+def count_incidents(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> int:
     return count_scoped_rows("governance_incidents", tenant_id=tenant_id, project=project, environment=environment)

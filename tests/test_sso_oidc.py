@@ -47,7 +47,15 @@ class FakeIdP:
             "jwks_uri": f"{ISSUER}/jwks",
         }
 
-    def mint_id_token(self, nonce: str, *, issuer: str = ISSUER, audience: str = CLIENT_ID, email: str | None = None, email_verified=...) -> str:
+    def mint_id_token(
+        self,
+        nonce: str,
+        *,
+        issuer: str = ISSUER,
+        audience: str = CLIENT_ID,
+        email: str | None = None,
+        email_verified=...,
+    ) -> str:
         now = int(time.time())
         claims = {
             "iss": issuer,
@@ -147,9 +155,7 @@ def test_callback_without_matching_state_cookie_is_rejected(super_admin_client, 
     # complete it even with a valid state value; login-csrf
     with TestClient(app) as starter, TestClient(app) as victim:
         state = _start_and_capture(starter, idp)
-        resp = victim.get(
-            f"/api/auth/sso/callback?code=good-code&state={state}", follow_redirects=False
-        )
+        resp = victim.get(f"/api/auth/sso/callback?code=good-code&state={state}", follow_redirects=False)
         assert resp.status_code == 401, resp.text
 
 
@@ -209,10 +215,18 @@ def test_state_is_single_use_and_unknown_state_rejected(super_admin_client, idp)
     _configure(org)
     with TestClient(app) as browser:
         state = _start_and_capture(browser, idp)
-        assert browser.get(f"/api/auth/sso/callback?code=good-code&state={state}", follow_redirects=False).status_code == 302
+        assert (
+            browser.get(f"/api/auth/sso/callback?code=good-code&state={state}", follow_redirects=False).status_code
+            == 302
+        )
         # replaying the same state must fail (consumed)
-        assert browser.get(f"/api/auth/sso/callback?code=good-code&state={state}", follow_redirects=False).status_code == 401
-        assert browser.get("/api/auth/sso/callback?code=good-code&state=forged", follow_redirects=False).status_code == 401
+        assert (
+            browser.get(f"/api/auth/sso/callback?code=good-code&state={state}", follow_redirects=False).status_code
+            == 401
+        )
+        assert (
+            browser.get("/api/auth/sso/callback?code=good-code&state=forged", follow_redirects=False).status_code == 401
+        )
     org.close()
 
 
@@ -298,13 +312,21 @@ def test_unverified_email_cannot_take_over_an_existing_account(super_admin_clien
     org = _org_admin(super_admin_client)
     _configure(org)
     # a pre-existing password account in the same tenant
-    assert org.post("/api/org/users", json={
-        "email": "alice@acme.test", "display_name": "Alice", "password": "alice-password-1",
-    }).status_code in (200, 201)
+    assert org.post(
+        "/api/org/users",
+        json={
+            "email": "alice@acme.test",
+            "display_name": "Alice",
+            "password": "alice-password-1",
+        },
+    ).status_code in (200, 201)
 
     def token_for(email_verified):
         def post_form(url, data, timeout=10.0):
-            return {"id_token": idp.mint_id_token(idp.pending_nonce, email="alice@acme.test", email_verified=email_verified)}
+            return {
+                "id_token": idp.mint_id_token(idp.pending_nonce, email="alice@acme.test", email_verified=email_verified)
+            }
+
         return post_form
 
     import app.services.sso as sso_service
@@ -334,9 +356,14 @@ def test_verified_email_may_bind_to_an_existing_account(super_admin_client, idp)
 
     org = _org_admin(super_admin_client)
     _configure(org)
-    assert org.post("/api/org/users", json={
-        "email": "alice@acme.test", "display_name": "Alice", "password": "alice-password-1",
-    }).status_code in (200, 201)
+    assert org.post(
+        "/api/org/users",
+        json={
+            "email": "alice@acme.test",
+            "display_name": "Alice",
+            "password": "alice-password-1",
+        },
+    ).status_code in (200, 201)
 
     def post_form(url, data, timeout=10.0):
         return {"id_token": idp.mint_id_token(idp.pending_nonce, email="alice@acme.test", email_verified=True)}
@@ -354,9 +381,7 @@ def test_verified_email_may_bind_to_an_existing_account(super_admin_client, idp)
 
 def test_sso_config_requires_org_admin(super_admin_client, idp):
     # super admin has no tenant and can't configure tenant sso
-    resp = super_admin_client.put(
-        "/api/org/sso", json={"issuer": ISSUER, "client_id": CLIENT_ID, "client_secret": "x"}
-    )
+    resp = super_admin_client.put("/api/org/sso", json={"issuer": ISSUER, "client_id": CLIENT_ID, "client_secret": "x"})
     assert resp.status_code == 403
 
 
@@ -436,7 +461,6 @@ def test_state_cookie_is_secure_behind_a_tls_terminating_proxy(super_admin_clien
     org = _org_admin(super_admin_client)
     _configure(org)
 
-    start = org.get("/api/auth/sso/acme/start", follow_redirects=False,
-                    headers={"x-forwarded-proto": "https"})
+    start = org.get("/api/auth/sso/acme/start", follow_redirects=False, headers={"x-forwarded-proto": "https"})
     assert start.status_code == 302
     assert "secure" in start.headers["set-cookie"].lower()

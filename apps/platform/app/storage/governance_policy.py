@@ -202,7 +202,6 @@ DEFAULT_RISK_RULES = [
 ]
 
 
-
 def _preserve_decided_status(
     connection,
     table: str,
@@ -216,9 +215,7 @@ def _preserve_decided_status(
     if the existing status is not one of the recomputed values it was set by a
     reviewer (accepted, waived, ...) and is kept; otherwise use the computed one
     """
-    existing = connection.execute(
-        f"SELECT status FROM {table} WHERE {id_column} = ?", (row_id,)
-    ).fetchone()
+    existing = connection.execute(f"SELECT status FROM {table} WHERE {id_column} = ?", (row_id,)).fetchone()
     if existing and existing["status"] and existing["status"] not in computed_statuses:
         return existing["status"]
     return computed_status
@@ -299,8 +296,12 @@ def init_governance_policy() -> None:
             )
             """
         )
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_control_assessments_scope ON control_assessments(tenant_id, project, environment)")
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_risk_findings_scope ON risk_findings(tenant_id, project, environment)")
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_control_assessments_scope ON control_assessments(tenant_id, project, environment)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_risk_findings_scope ON risk_findings(tenant_id, project, environment)"
+        )
 
         # seed default controls
         for ctrl in DEFAULT_CONTROLS:
@@ -316,8 +317,8 @@ def init_governance_policy() -> None:
                     encode_json(ctrl["framework_refs"]),
                     encode_json(ctrl["evidence_event_types"]),
                     encode_json(ctrl["required_fields"]),
-                    ctrl["rationale"]
-                )
+                    ctrl["rationale"],
+                ),
             )
 
         # seed default risk rules, including the agentic and vendor ones
@@ -337,9 +338,10 @@ def init_governance_policy() -> None:
                     rule["signal"],
                     rule["severity"],
                     encode_json(rule["framework_refs"]),
-                    rule["rationale"]
-                )
+                    rule["rationale"],
+                ),
             )
+
 
 def refresh_governance_assessments(scopes: list[dict[str, Any]] | None = None) -> None:
     from .lifecycle import _applications_in_scope
@@ -384,9 +386,7 @@ def list_control_library(connection, tenant_id: str | None = None) -> list[dict[
 
 def list_risk_rules(connection, tenant_id: str | None = None) -> list[dict[str, Any]]:
     tid = tenant_id or ""
-    rows = connection.execute(
-        "SELECT * FROM risk_rules WHERE tenant_id IN ('', ?) ORDER BY rule_id", (tid,)
-    ).fetchall()
+    rows = connection.execute("SELECT * FROM risk_rules WHERE tenant_id IN ('', ?) ORDER BY rule_id", (tid,)).fetchall()
     merged: dict[str, dict[str, Any]] = {}
     for row in rows:
         record = dict(row)
@@ -447,7 +447,9 @@ def _assessment_id(app_context: dict[str, Any], control: dict[str, Any]) -> str:
     )
 
 
-def assess_controls(connection, app_context: dict[str, Any], controls: list[dict[str, Any]], events: list[dict[str, Any]]) -> None:
+def assess_controls(
+    connection, app_context: dict[str, Any], controls: list[dict[str, Any]], events: list[dict[str, Any]]
+) -> None:
     for control in controls:
         evidence = [
             event
@@ -483,7 +485,7 @@ def _write_assessment(
         connection, "control_assessments", "assessment_id", assessment_id, computed_status, {"passing", "missing"}
     )
     connection.execute(
-            """
+        """
             INSERT OR REPLACE INTO control_assessments (
                 assessment_id, tenant_id, project, environment, application_name, control_id, control_name,
                 status, framework_refs, evidence_event_types, required_fields, evidence_trace_ids,
@@ -491,23 +493,23 @@ def _write_assessment(
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
             """,
-            (
-                assessment_id,
-                app_context.get("tenant_id"),
-                app_context["project"],
-                app_context["environment"],
-                app_context["application_name"],
-                control["control_id"],
-                control["name"],
-                status,
-                encode_json(control["framework_refs"]),
-                encode_json(control["evidence_event_types"]),
-                encode_json(control["required_fields"]),
-                encode_json(trace_ids[:_EVIDENCE_TRACE_CAP]),
-                evidence_count,
-                control["rationale"],
-            ),
-        )
+        (
+            assessment_id,
+            app_context.get("tenant_id"),
+            app_context["project"],
+            app_context["environment"],
+            app_context["application_name"],
+            control["control_id"],
+            control["name"],
+            status,
+            encode_json(control["framework_refs"]),
+            encode_json(control["evidence_event_types"]),
+            encode_json(control["required_fields"]),
+            encode_json(trace_ids[:_EVIDENCE_TRACE_CAP]),
+            evidence_count,
+            control["rationale"],
+        ),
+    )
 
 
 def event_satisfies_required_fields(event: dict[str, Any], required_fields: list[str]) -> bool:
@@ -543,9 +545,20 @@ def event_satisfies_required_fields(event: dict[str, Any], required_fields: list
     return all(values.get(field) not in (None, "", []) for field in required_fields)
 
 
-def assess_risk_rules(connection, app_context: dict[str, Any], rules: list[dict[str, Any]], events: list[dict[str, Any]]) -> None:
-    by_type = {event_type: [event for event in events if event.get("type") == event_type] for event_type in {event.get("type") for event in events}}
-    providers = sorted({p for event in by_type.get("model.call", []) if isinstance(p := (event.get("attributes") or {}).get("provider"), str)})
+def assess_risk_rules(
+    connection, app_context: dict[str, Any], rules: list[dict[str, Any]], events: list[dict[str, Any]]
+) -> None:
+    by_type = {
+        event_type: [event for event in events if event.get("type") == event_type]
+        for event_type in {event.get("type") for event in events}
+    }
+    providers = sorted(
+        {
+            p
+            for event in by_type.get("model.call", [])
+            if isinstance(p := (event.get("attributes") or {}).get("provider"), str)
+        }
+    )
     app_text = " ".join(
         [
             app_context["application_name"],
@@ -561,12 +574,26 @@ def assess_risk_rules(connection, app_context: dict[str, Any], rules: list[dict[
     for rule in rules:
         signal = rule["signal"]
         if signal == "provider_dependency" and providers:
-            evidence = [event for event in by_type.get("model.call", []) if (event.get("attributes") or {}).get("provider")]
+            evidence = [
+                event for event in by_type.get("model.call", []) if (event.get("attributes") or {}).get("provider")
+            ]
             upsert_rule_finding(connection, app_context, rule, evidence, f"Observed providers: {', '.join(providers)}")
         if signal == "missing_guardrail" and by_type.get("model.call") and not by_type.get("guardrail.decision"):
-            upsert_rule_finding(connection, app_context, rule, by_type["model.call"], "Model calls observed without guardrail decision evidence")
+            upsert_rule_finding(
+                connection,
+                app_context,
+                rule,
+                by_type["model.call"],
+                "Model calls observed without guardrail decision evidence",
+            )
         if signal == "missing_eval" and by_type.get("model.call") and not by_type.get("eval.result"):
-            upsert_rule_finding(connection, app_context, rule, by_type["model.call"], "Model calls observed without evaluation result evidence")
+            upsert_rule_finding(
+                connection,
+                app_context,
+                rule,
+                by_type["model.call"],
+                "Model calls observed without evaluation result evidence",
+            )
         if signal == "missing_agent_run" and not by_type.get("agent.run"):
             # primary signal: real tool-call telemetry; secondary: a whole-word
             # agentic term in the app name/use-case
@@ -580,7 +607,9 @@ def assess_risk_rules(connection, app_context: dict[str, Any], rules: list[dict[
                 )
                 upsert_rule_finding(connection, app_context, rule, events, reason)
         if signal == "operational_errors" and error_events:
-            upsert_rule_finding(connection, app_context, rule, error_events, f"{len(error_events)} error events observed")
+            upsert_rule_finding(
+                connection, app_context, rule, error_events, f"{len(error_events)} error events observed"
+            )
         if signal == "failed_eval" and failed_evals:
             upsert_rule_finding(connection, app_context, rule, failed_evals, _failed_eval_summary(len(failed_evals)))
         if signal == "retired_system_telemetry":
@@ -789,7 +818,9 @@ def _count_after(connection, app_context: dict[str, Any], timestamp: str) -> int
     return int(row["n"])
 
 
-def _fold_controls(connection, app_context: dict[str, Any], controls: list[dict[str, Any]], batch: list[dict[str, Any]]) -> None:
+def _fold_controls(
+    connection, app_context: dict[str, Any], controls: list[dict[str, Any]], batch: list[dict[str, Any]]
+) -> None:
     """control evidence from the batch alone, persisted monotonically
 
     evidence needs event attributes, which only exist in (possibly encrypted)
@@ -872,9 +903,7 @@ def _assess_rules_from_columns(
                     if has_tool_calls
                     else "Agentic term in the application name or use-case without agent run evidence"
                 )
-                write_rule_finding(
-                    connection, app_context, rule, _recent_trace_ids(connection, app_context), reason
-                )
+                write_rule_finding(connection, app_context, rule, _recent_trace_ids(connection, app_context), reason)
         if signal == "operational_errors" and errors_total:
             write_rule_finding(
                 connection,
@@ -1091,8 +1120,6 @@ def upsert_risk_rule(rule: dict[str, Any], tenant_id: str) -> dict[str, Any]:
     return {**rule, "mode": mode, "previous_mode": previous_mode, "reopened_findings": reopened, "tenant_id": tenant_id}
 
 
-
-
 # --- coverage and freshness ---------------------------------------------------------
 #
 # an assessment says whether evidence for a control has ever arrived. coverage
@@ -1174,7 +1201,9 @@ def control_coverage(
     in the window: there was nothing to cover, which is not a shortfall
     """
     moment = now or datetime.now(UTC)
-    basis_types = [control["coverage_basis"]] if control.get("coverage_basis") else list(control["evidence_event_types"])
+    basis_types = (
+        [control["coverage_basis"]] if control.get("coverage_basis") else list(control["evidence_event_types"])
+    )
     placeholders = ", ".join(f":basis_{index}" for index in range(len(basis_types)))
     params: dict[str, Any] = {
         "project": app_context["project"],
@@ -1312,8 +1341,15 @@ def list_control_assessments(
             "required_fields": decode_json(row["required_fields"], []),
             "evidence_trace_ids": decode_json(row["evidence_trace_ids"], []),
         }
-        for row in scoped_rows("control_assessments", tenant_id=tenant_id, project=project, environment=environment,
-                    order_by=_ASSESSMENT_ORDER, limit=limit, offset=offset)
+        for row in scoped_rows(
+            "control_assessments",
+            tenant_id=tenant_id,
+            project=project,
+            environment=environment,
+            order_by=_ASSESSMENT_ORDER,
+            limit=limit,
+            offset=offset,
+        )
     ]
 
 
@@ -1331,8 +1367,15 @@ def list_risk_findings(
             "framework_refs": decode_json(row["framework_refs"], []),
             "evidence_trace_ids": decode_json(row["evidence_trace_ids"], []),
         }
-        for row in scoped_rows("risk_findings", tenant_id=tenant_id, project=project, environment=environment,
-                    order_by=_ASSESSMENT_ORDER, limit=limit, offset=offset)
+        for row in scoped_rows(
+            "risk_findings",
+            tenant_id=tenant_id,
+            project=project,
+            environment=environment,
+            order_by=_ASSESSMENT_ORDER,
+            limit=limit,
+            offset=offset,
+        )
     ]
 
 

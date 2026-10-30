@@ -22,8 +22,14 @@ def test_audit_chain_survives_concurrent_writers(fresh_db):
 
     def worker(t: int) -> None:
         for i in range(per_thread):
-            record_audit(actor_ref=f"t{t}", action="concurrent.write", tenant_id="acme",
-                         target_type="thing", target_id=f"{t}-{i}", detail={"t": t, "i": i})
+            record_audit(
+                actor_ref=f"t{t}",
+                action="concurrent.write",
+                tenant_id="acme",
+                target_type="thing",
+                target_id=f"{t}-{i}",
+                detail={"t": t, "i": i},
+            )
 
     with cf.ThreadPoolExecutor(max_workers=threads) as ex:
         list(ex.map(worker, range(threads)))
@@ -42,26 +48,44 @@ def test_duplicate_delivery_is_deduped_under_concurrency(super_admin_client):
 
     super_admin_client.post(
         "/api/admin/organizations",
-        json={"tenant_id": "acme", "name": "Acme", "admin_email": "oa@acme.test",
-              "admin_display_name": "OA", "admin_password": "oa-password-1"},
+        json={
+            "tenant_id": "acme",
+            "name": "Acme",
+            "admin_email": "oa@acme.test",
+            "admin_display_name": "OA",
+            "admin_password": "oa-password-1",
+        },
     )
     with TestClient(app) as org:
         login_and_activate(org, "oa@acme.test", "oa-password-1")
         token = org.post("/api/ingestion-keys", json={"name": "ci"}).json()["token"]
 
     meta = {"tenant_id": "acme", "application_name": "App", "workflow_name": "wf"}
-    batch = {"events": [{
-        "type": "model.call", "schema_version": "2026-01", "trace_id": "dup-trace", "span_id": "dup-span",
-        "timestamp": "2026-08-24T00:00:00Z", "service": "svc", "environment": "prod", "project": "p1",
-        "status": "success",
-        "attributes": {"provider": "openai", "model": "gpt-4o", "usage": {"input_tokens": 5, "output_tokens": 5},
-                       "metadata": meta},
-    }]}
+    batch = {
+        "events": [
+            {
+                "type": "model.call",
+                "schema_version": "2026-01",
+                "trace_id": "dup-trace",
+                "span_id": "dup-span",
+                "timestamp": "2026-08-24T00:00:00Z",
+                "service": "svc",
+                "environment": "prod",
+                "project": "p1",
+                "status": "success",
+                "attributes": {
+                    "provider": "openai",
+                    "model": "gpt-4o",
+                    "usage": {"input_tokens": 5, "output_tokens": 5},
+                    "metadata": meta,
+                },
+            }
+        ]
+    }
 
     def send(_: int) -> int:
         client = TestClient(app)
-        return client.post("/v1/events/batch", json=batch,
-                           headers={"Authorization": f"Bearer {token}"}).status_code
+        return client.post("/v1/events/batch", json=batch, headers={"Authorization": f"Bearer {token}"}).status_code
 
     with cf.ThreadPoolExecutor(max_workers=8) as ex:
         codes = list(ex.map(send, range(8)))
@@ -71,9 +95,9 @@ def test_duplicate_delivery_is_deduped_under_concurrency(super_admin_client):
         events = connection.execute(
             "SELECT COUNT(*) AS n FROM sdk_events WHERE trace_id = 'dup-trace' AND span_id = 'dup-span'"
         ).fetchone()["n"]
-        models = connection.execute(
-            "SELECT COUNT(*) AS n FROM governance_models WHERE tenant_id = 'acme'"
-        ).fetchone()["n"]
+        models = connection.execute("SELECT COUNT(*) AS n FROM governance_models WHERE tenant_id = 'acme'").fetchone()[
+            "n"
+        ]
         apps = connection.execute(
             "SELECT COUNT(*) AS n FROM governance_applications WHERE tenant_id = 'acme'"
         ).fetchone()["n"]

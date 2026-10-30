@@ -32,7 +32,13 @@ FIELDS_POLICY = {
     "schema": "governance-policy/v1",
     "intake": {
         "fields": [
-            {"key": "dpia_ref", "label": "DPIA reference", "type": "string", "max_length": 40, "required_tiers": ["high"]},
+            {
+                "key": "dpia_ref",
+                "label": "DPIA reference",
+                "type": "string",
+                "max_length": 40,
+                "required_tiers": ["high"],
+            },
             {"key": "vendor_count", "label": "Vendors involved", "type": "number"},
             {"key": "phi_reviewed", "label": "PHI exposure reviewed", "type": "boolean"},
         ]

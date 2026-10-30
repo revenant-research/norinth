@@ -135,8 +135,9 @@ def append_checkpoint(count: int, head_hash: str, key_id: str, key: bytes, keyri
         os.fsync(journal.fileno())
 
 
-def reconcile_checkpoint(count: int, head_hash: str, reason: str, expected_seal: str,
-                         key_id: str, key: bytes, keyring: dict[str, bytes]) -> None:
+def reconcile_checkpoint(
+    count: int, head_hash: str, reason: str, expected_seal: str, key_id: str, key: bytes, keyring: dict[str, bytes]
+) -> None:
     """Explicitly start a new epoch after an authorized backup restore.
 
     The old journal is retained and linked, never removed or overwritten.

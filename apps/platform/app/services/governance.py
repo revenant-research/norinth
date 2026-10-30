@@ -289,17 +289,16 @@ def build_resource_graph(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
 
     return {
         "nodes": list(nodes.values()),
-        "edges": [{"source": source, "relationship": relationship, "target": target} for source, relationship, target in sorted(edges)],
+        "edges": [
+            {"source": source, "relationship": relationship, "target": target}
+            for source, relationship, target in sorted(edges)
+        ],
     }
 
 
 def build_resource_graph_neighborhood(scope: ScopeFilter, node_id: str) -> dict[str, Any]:
     graph = build_resource_graph(scope)
-    edges = [
-        edge
-        for edge in graph["edges"]
-        if edge["source"] == node_id or edge["target"] == node_id
-    ]
+    edges = [edge for edge in graph["edges"] if edge["source"] == node_id or edge["target"] == node_id]
     connected_ids = {node_id}
     for edge in edges:
         connected_ids.add(edge["source"])
@@ -343,26 +342,20 @@ def build_application_detail(scope: ScopeFilter, application_id: str) -> dict[st
             for workflow in list_workflows(**scope_kwargs)
             if application_name in workflow.get("applications", [])
         ],
-        "models": [
-            model
-            for model in list_models(**scope_kwargs)
-            if application_name in model.get("applications", [])
-        ],
+        "models": [model for model in list_models(**scope_kwargs) if application_name in model.get("applications", [])],
         "risks": [
-            risk
-            for risk in list_risk_findings(**scope_kwargs)
-            if risk.get("application_name") == application_name
+            risk for risk in list_risk_findings(**scope_kwargs) if risk.get("application_name") == application_name
         ],
         "runtime_risks": [
-            risk
-            for risk in list_risks(**scope_kwargs)
-            if risk.get("application_name") == application_name
+            risk for risk in list_risks(**scope_kwargs) if risk.get("application_name") == application_name
         ],
-        "controls": with_coverage([
-            control
-            for control in list_control_assessments(**scope_kwargs)
-            if control.get("application_name") == application_name
-        ]),
+        "controls": with_coverage(
+            [
+                control
+                for control in list_control_assessments(**scope_kwargs)
+                if control.get("application_name") == application_name
+            ]
+        ),
         "runtime_controls": list_controls(**scope_kwargs),
         "changes": [
             change
@@ -370,9 +363,7 @@ def build_application_detail(scope: ScopeFilter, application_id: str) -> dict[st
             if change.get("application_name") == application_name
         ],
         "review_tasks": [
-            task
-            for task in list_review_tasks(**scope_kwargs)
-            if task.get("application_name") == application_name
+            task for task in list_review_tasks(**scope_kwargs) if task.get("application_name") == application_name
         ],
         "deployments": [
             deployment
@@ -380,9 +371,7 @@ def build_application_detail(scope: ScopeFilter, application_id: str) -> dict[st
             if deployment.get("application_name") == application_name
         ],
         "deployment_gates": [
-            gate
-            for gate in list_deployment_gates(**scope_kwargs)
-            if gate.get("application_name") == application_name
+            gate for gate in list_deployment_gates(**scope_kwargs) if gate.get("application_name") == application_name
         ],
         "prompt_templates": [
             prompt
@@ -496,18 +485,24 @@ def build_deployment_gate_detail(scope: ScopeFilter, gate_id: str) -> dict[str, 
     return {
         "deployment_gate": gate,
         "deployment": find_record(list_deployments(**scope_kwargs), "deployment_id", gate.get("deployment_id")),
-        "deployment_version": find_record(list_deployment_versions(**scope_kwargs), "version_id", gate.get("version_id")),
-        "prompt_version": find_record(list_prompt_versions(**scope_kwargs), "prompt_version_id", gate.get("prompt_version_id")),
+        "deployment_version": find_record(
+            list_deployment_versions(**scope_kwargs), "version_id", gate.get("version_id")
+        ),
+        "prompt_version": find_record(
+            list_prompt_versions(**scope_kwargs), "prompt_version_id", gate.get("prompt_version_id")
+        ),
         "risks": [
             risk
             for risk in list_risk_findings(**scope_kwargs)
             if risk.get("application_name") == gate.get("application_name")
         ],
-        "controls": with_coverage([
-            control
-            for control in list_control_assessments(**scope_kwargs)
-            if control.get("application_name") == gate.get("application_name")
-        ]),
+        "controls": with_coverage(
+            [
+                control
+                for control in list_control_assessments(**scope_kwargs)
+                if control.get("application_name") == gate.get("application_name")
+            ]
+        ),
         "review_tasks": [
             task
             for task in list_review_tasks(**scope_kwargs)
@@ -540,13 +535,17 @@ def build_incident_detail(scope: ScopeFilter, incident_id: str) -> dict[str, Any
             for risk in list_risk_findings(**scope_kwargs)
             if risk.get("application_name") == incident.get("application_name")
         ],
-        "controls": with_coverage([
-            control
-            for control in list_control_assessments(**scope_kwargs)
-            if control.get("application_name") == incident.get("application_name")
-        ]),
+        "controls": with_coverage(
+            [
+                control
+                for control in list_control_assessments(**scope_kwargs)
+                if control.get("application_name") == incident.get("application_name")
+            ]
+        ),
         "deployment": find_record(list_deployments(**scope_kwargs), "deployment_id", incident.get("deployment_id")),
-        "deployment_gate": find_record(list_deployment_gates(**scope_kwargs), "gate_id", incident.get("deployment_gate_id")),
+        "deployment_gate": find_record(
+            list_deployment_gates(**scope_kwargs), "gate_id", incident.get("deployment_gate_id")
+        ),
         "owners": [
             owner
             for owner in list_owner_assignments(**scope_kwargs)
@@ -611,8 +610,8 @@ def build_risk_rules(tenant_id: str | None = None) -> dict[str, list[dict[str, A
     return {"risk_rules": list_configured_risk_rules(tenant_id)}
 
 
-def build_owner_policies() -> dict[str, list[dict[str, Any]]]:
-    return {"owner_policies": list_configured_owner_policies()}
+def build_owner_policies(tenant_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
+    return {"owner_policies": list_configured_owner_policies(tenant_id)}
 
 
 def build_platform_users(tenant_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
@@ -623,8 +622,8 @@ def build_role_assignments(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]
     return {"role_assignments": list_role_assignments(**scope.model_dump())}
 
 
-def build_review_queue_policies() -> dict[str, list[dict[str, Any]]]:
-    return {"review_queue_policies": list_review_queue_policies()}
+def build_review_queue_policies(tenant_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
+    return {"review_queue_policies": list_review_queue_policies(tenant_id)}
 
 
 def build_deployments(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:
@@ -724,7 +723,11 @@ def _recent_rule_observations(scope: ScopeFilter) -> dict[tuple[str, str, str], 
             key = (row["project"], row["environment"], row["application_name"])
             fresh_types.setdefault(key, set()).add(row["event_type"])
     return {
-        key: {signal for signal, event_types in _RULE_EVENT_TYPES.items() if event_types and set(event_types) & event_types_seen}
+        key: {
+            signal
+            for signal, event_types in _RULE_EVENT_TYPES.items()
+            if event_types and set(event_types) & event_types_seen
+        }
         for key, event_types_seen in fresh_types.items()
     }
 
@@ -776,7 +779,10 @@ def build_framework_coverage(scope: ScopeFilter) -> dict[str, Any]:
     observed_signals_by_app = _recent_rule_observations(scope)
     for ref, signals in monitored_refs.items():
         family = _framework_family(ref)
-        if any(signals <= observed_signals for observed_signals in observed_signals_by_app.values()) and by_family[family][ref] == "unknown":
+        if (
+            any(signals <= observed_signals for observed_signals in observed_signals_by_app.values())
+            and by_family[family][ref] == "unknown"
+        ):
             by_family[family][ref] = "satisfied"
     # An open violation outranks any passing assessment or quiet rule.
     open_refs: set[str] = set()
@@ -902,11 +908,19 @@ def build_summary(scope: ScopeFilter) -> dict[str, Any]:
         "deployment_gates": len(deployment_gates),
         "prompt_templates": len(prompt_templates),
         "prompt_versions": len(prompt_versions),
-        "prompt_ready_gates": sum(1 for gate in deployment_gates if gate.get("prompt_evidence_status") == "linked" and int(gate.get("passing_eval_count") or 0) > 0),
+        "prompt_ready_gates": sum(
+            1
+            for gate in deployment_gates
+            if gate.get("prompt_evidence_status") == "linked" and int(gate.get("passing_eval_count") or 0) > 0
+        ),
         "pending_deployment_gates": sum(1 for gate in deployment_gates if gate["gate_status"] == "pending_review"),
         "blocked_deployments": sum(1 for gate in deployment_gates if gate["gate_status"] == "rejected"),
         "open_incidents": sum(1 for incident in incidents if incident["status"] != "closed"),
-        "critical_incidents": sum(1 for incident in incidents if incident["severity"].lower() in {"critical", "high"} and incident["status"] != "closed"),
+        "critical_incidents": sum(
+            1
+            for incident in incidents
+            if incident["severity"].lower() in {"critical", "high"} and incident["status"] != "closed"
+        ),
         "overdue_reviews": sum(1 for task in review_tasks if task.get("escalation_status") in {"overdue", "escalated"}),
         "escalated_reviews": sum(1 for task in review_tasks if task.get("escalation_status") == "escalated"),
         "unassigned_owners": sum(1 for owner in owners if owner["status"] == "unassigned"),

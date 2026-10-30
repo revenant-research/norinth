@@ -52,7 +52,9 @@ def _client_for(email, password):
 
 def _add_user(org_client, email, role=None, password=None):
     password = password or "user-pw-123456"
-    resp = org_client.post("/api/org/users", json={"email": email, "display_name": email.split("@")[0], "password": password})
+    resp = org_client.post(
+        "/api/org/users", json={"email": email, "display_name": email.split("@")[0], "password": password}
+    )
     assert resp.status_code == 200, resp.text
     if role:
         granted = org_client.post("/api/org/role-assignments", json={"user_ref": email, "role": role})
@@ -103,17 +105,70 @@ def test_validation_rejects_malformed_documents(fresh_db):
     assert any("schema" in e for e in errors_of({"schema": "governance-policy/v9"}))
     assert any("unknown top-level" in e for e in errors_of({"schema": "governance-policy/v1", "webhooks": {}}))
     # unknown tier names, empty stages, unknown stage keys
-    assert any("unknown risk tier" in e for e in errors_of({"schema": "governance-policy/v1", "intake": {"tiers": {"critical": {"stages": [{"role": "governance_reviewer"}]}}}}))
-    assert any("non-empty" in e for e in errors_of({"schema": "governance-policy/v1", "intake": {"tiers": {"high": {"stages": []}}}}))
-    assert any("unknown keys" in e for e in errors_of({"schema": "governance-policy/v1", "intake": {"tiers": {"high": {"stages": [{"role": "governance_reviewer", "webhook": "x"}]}}}}))
+    assert any(
+        "unknown risk tier" in e
+        for e in errors_of(
+            {
+                "schema": "governance-policy/v1",
+                "intake": {"tiers": {"critical": {"stages": [{"role": "governance_reviewer"}]}}},
+            }
+        )
+    )
+    assert any(
+        "non-empty" in e
+        for e in errors_of({"schema": "governance-policy/v1", "intake": {"tiers": {"high": {"stages": []}}}})
+    )
+    assert any(
+        "unknown keys" in e
+        for e in errors_of(
+            {
+                "schema": "governance-policy/v1",
+                "intake": {"tiers": {"high": {"stages": [{"role": "governance_reviewer", "webhook": "x"}]}}},
+            }
+        )
+    )
     # roles must exist and hold review.decide
-    assert any("does not exist" in e for e in errors_of({"schema": "governance-policy/v1", "intake": {"tiers": {"high": {"stages": [{"role": "wizard"}]}}}}))
-    assert any("review.decide" in e for e in errors_of({"schema": "governance-policy/v1", "intake": {"tiers": {"high": {"stages": [{"role": "org_admin"}]}}}}))
+    assert any(
+        "does not exist" in e
+        for e in errors_of(
+            {"schema": "governance-policy/v1", "intake": {"tiers": {"high": {"stages": [{"role": "wizard"}]}}}}
+        )
+    )
+    assert any(
+        "review.decide" in e
+        for e in errors_of(
+            {"schema": "governance-policy/v1", "intake": {"tiers": {"high": {"stages": [{"role": "org_admin"}]}}}}
+        )
+    )
     # mode and recertification floor
-    assert any("mode" in e for e in errors_of({"schema": "governance-policy/v1", "intake": {"tiers": {"high": {"stages": [{"role": "governance_reviewer"}], "mode": "vote"}}}}))
-    assert any("recertify_days" in e for e in errors_of({"schema": "governance-policy/v1", "intake": {"tiers": {"high": {"stages": [{"role": "governance_reviewer"}], "recertify_days": 5}}}}))
+    assert any(
+        "mode" in e
+        for e in errors_of(
+            {
+                "schema": "governance-policy/v1",
+                "intake": {"tiers": {"high": {"stages": [{"role": "governance_reviewer"}], "mode": "vote"}}},
+            }
+        )
+    )
+    assert any(
+        "recertify_days" in e
+        for e in errors_of(
+            {
+                "schema": "governance-policy/v1",
+                "intake": {"tiers": {"high": {"stages": [{"role": "governance_reviewer"}], "recertify_days": 5}}},
+            }
+        )
+    )
     # gates can only tighten: the material-change ceiling is the shipped floor
-    assert any("cannot exceed" in e for e in errors_of({"schema": "governance-policy/v1", "gates": {"environments": {"production": {"max_open_material_changes": 3}}}}))
+    assert any(
+        "cannot exceed" in e
+        for e in errors_of(
+            {
+                "schema": "governance-policy/v1",
+                "gates": {"environments": {"production": {"max_open_material_changes": 3}}},
+            }
+        )
+    )
     # field keys are identifier-shaped, unique, capped
     bad_fields = {"schema": "governance-policy/v1", "intake": {"fields": [{"key": "Bad Key!"}]}}
     assert any("key must match" in e for e in errors_of(bad_fields))
@@ -150,10 +205,19 @@ def test_draft_activate_supersede_and_audit_chain(super_admin_client):
         assert in_force["source"] == "tenant" and in_force["version"] == version
 
         # activating a second version supersedes the first in the same step
-        second = org.post("/api/governance-policy/draft", json={"body": _two_stage_policy({"vendors": {"stages": [{"role": "governance_reviewer"}], "recertify_days": 180}})})
+        second = org.post(
+            "/api/governance-policy/draft",
+            json={
+                "body": _two_stage_policy(
+                    {"vendors": {"stages": [{"role": "governance_reviewer"}], "recertify_days": 180}}
+                )
+            },
+        )
         v2 = second.json()["policy"]["version"]
         assert org.post(f"/api/governance-policy/versions/{v2}/activate").status_code == 200
-        versions = {row["version"]: row["status"] for row in org.get("/api/governance-policy/versions").json()["versions"]}
+        versions = {
+            row["version"]: row["status"] for row in org.get("/api/governance-policy/versions").json()["versions"]
+        }
         assert versions[version] == "superseded" and versions[v2] == "active"
 
         # a superseded version can never come back; forward-only history

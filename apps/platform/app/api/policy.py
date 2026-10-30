@@ -62,6 +62,7 @@ from app.storage.policy_engine import (
 from app.storage.policy_engine import list_vendors as list_vendor_rows
 from app.storage.policy_engine import resolve_vendor_policy as resolve_vendor_policy_storage
 from app.storage.raw_events import connect
+from app.storage.unit_of_work import atomic
 from app.storage.workflow import record_decision, refresh_workflow_state
 
 router = APIRouter()
@@ -134,13 +135,16 @@ def governance_policy_versions(actor: ActorContext = Depends(current_actor)) -> 
 
 
 @router.post("/api/governance-policy/validate")
-def validate_governance_policy(payload: PolicyBodyRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
+def validate_governance_policy(
+    payload: PolicyBodyRequest, actor: ActorContext = Depends(current_actor)
+) -> dict[str, Any]:
     _config_tenant(actor)
     errors = validate_policy_body(payload.body)
     return {"valid": not errors, "errors": errors}
 
 
 @router.post("/api/governance-policy/draft")
+@atomic
 def draft_governance_policy(payload: PolicyBodyRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _config_tenant(actor)
     try:
@@ -159,6 +163,7 @@ def draft_governance_policy(payload: PolicyBodyRequest, actor: ActorContext = De
 
 
 @router.post("/api/governance-policy/versions/{version}/activate")
+@atomic
 def activate_governance_policy(version: int, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _config_tenant(actor)
     try:
@@ -211,14 +216,11 @@ def approval_stages(
     subject_id: str | None = None,
     scope: ScopeFilter = Depends(scoped_dependency),
 ) -> dict[str, Any]:
-    return {
-        "approval_stages": list_stages(
-            tenant_id=scope.tenant_id, subject_type=subject_type, subject_id=subject_id
-        )
-    }
+    return {"approval_stages": list_stages(tenant_id=scope.tenant_id, subject_type=subject_type, subject_id=subject_id)}
 
 
 @router.post("/api/approval-stages/{stage_id}/decide")
+@atomic
 def decide_approval_stage(
     stage_id: str, payload: StageDecisionRequest, actor: ActorContext = Depends(current_actor)
 ) -> dict[str, Any]:
@@ -339,6 +341,7 @@ def vendors(actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
 
 
 @router.post("/api/vendors")
+@atomic
 def create_vendor(payload: VendorRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _config_tenant(actor)
     try:
@@ -364,6 +367,7 @@ def create_vendor(payload: VendorRequest, actor: ActorContext = Depends(current_
 
 
 @router.post("/api/vendors/{vendor_id}/submit-review")
+@atomic
 def submit_vendor_for_review(vendor_id: str, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _config_tenant(actor)
     try:
@@ -384,6 +388,7 @@ def submit_vendor_for_review(vendor_id: str, actor: ActorContext = Depends(curre
 
 
 @router.post("/api/vendors/{vendor_id}/retire")
+@atomic
 def retire_vendor_route(vendor_id: str, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _member_tenant(actor)
     try:

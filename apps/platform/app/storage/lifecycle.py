@@ -87,9 +87,15 @@ def init_lifecycle() -> None:
             )
             """
         )
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_lifecycle_fingerprints_scope ON lifecycle_fingerprints(tenant_id, project, environment)")
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_change_events_scope ON change_events(tenant_id, project, environment)")
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_review_tasks_scope ON review_tasks(tenant_id, project, environment)")
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_lifecycle_fingerprints_scope ON lifecycle_fingerprints(tenant_id, project, environment)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_change_events_scope ON change_events(tenant_id, project, environment)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_review_tasks_scope ON review_tasks(tenant_id, project, environment)"
+        )
 
 
 def refresh_lifecycle_state(scopes: list[dict[str, Any]] | None = None) -> None:
@@ -161,10 +167,7 @@ def application_is_registered(connection, app_context: dict[str, Any]) -> bool:
 
 def _merge_payload(stored: dict[str, Any], fresh: dict[str, Any]) -> dict[str, Any]:
     """monotone union of fingerprint payloads (each key is a sorted label list)"""
-    return {
-        key: sorted(set(stored.get(key) or []) | set(fresh.get(key) or []))
-        for key in set(stored) | set(fresh)
-    }
+    return {key: sorted(set(stored.get(key) or []) | set(fresh.get(key) or [])) for key in set(stored) | set(fresh)}
 
 
 def fold_batch_fingerprints(events: list[dict[str, Any]]) -> None:
@@ -531,16 +534,14 @@ def list_review_tasks(
     offset: int = 0,
 ) -> list[dict[str, Any]]:
     return scoped_rows(
-            "review_tasks",
-            tenant_id=tenant_id,
-            project=project,
-            environment=environment,
-            order_by="updated_at",
-            limit=limit,
-            offset=offset,
-        )
-
-
+        "review_tasks",
+        tenant_id=tenant_id,
+        project=project,
+        environment=environment,
+        order_by="updated_at",
+        limit=limit,
+        offset=offset,
+    )
 
 
 def count_change_events(

@@ -50,6 +50,7 @@ New SDK primitives should add schema/event behavior in `client.py` and supportin
 - `app/storage/governance_policy.py`: configured control catalogue, risk rules, control assessments, and risk findings.
 - `app/storage/lifecycle.py`: application/workflow fingerprints, material change events, and review tasks.
 - `app/storage/workflow.py`: users, role assignments, review queue policies, owner assignments, decisions, exceptions, and workflow status updates.
+- `app/storage/unit_of_work.py`: one transaction per governance mutation. A route decorated with `atomic` runs every storage write and its audit append in one unit, so a change and the record of it commit or roll back together.
 - `app/services/authorization.py`: local actor context authorization, role/scope checks, and bootstrap rules for protected governance mutations.
 - `app/services/governance.py`: governance view services over events/entities.
 - `app/dashboard/html.py`: dashboard shell.

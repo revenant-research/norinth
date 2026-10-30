@@ -42,8 +42,14 @@ def _org(super_admin_client, tenant: str):
 def _event(tenant: str, span: str, *, event_type: str = "model.call", minutes_ago: int = 60, **attrs) -> dict:
     base_attrs: dict = {"metadata": {"tenant_id": tenant, "application_name": f"{tenant}-app", "workflow_name": "wf"}}
     if event_type == "model.call":
-        base_attrs.update({"provider": "openai", "model": "gpt-4o", "operation": "chat",
-                           "usage": {"input_tokens": 1, "output_tokens": 1}})
+        base_attrs.update(
+            {
+                "provider": "openai",
+                "model": "gpt-4o",
+                "operation": "chat",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            }
+        )
     base_attrs.update(attrs)
     return {
         "type": event_type,
@@ -76,7 +82,12 @@ def test_ingest_does_not_reread_or_decrypt_history(super_admin_client, monkeypat
         return real(payload)
 
     monkeypatch.setattr(lifecycle, "deserialize_raw_event", counting)
-    assert org.post("/v1/events/batch", json={"events": [_event("acme", "one-more", minutes_ago=1)]}, headers=headers).status_code == 200
+    assert (
+        org.post(
+            "/v1/events/batch", json={"events": [_event("acme", "one-more", minutes_ago=1)]}, headers=headers
+        ).status_code
+        == 200
+    )
     assert calls["n"] == 0, f"ingest re-read {calls['n']} stored raw events for a one-event batch"
     org.close()
 
@@ -92,12 +103,31 @@ def test_fold_result_is_a_fixed_point_of_the_full_recompute(super_admin_client):
     org, headers = _org(super_admin_client, "beta")
     batches = [
         [_event("beta", "m1", minutes_ago=50)],
-        [_event("beta", "m2", minutes_ago=40, model="claude-sonnet-5", provider="anthropic"),
-         _event("beta", "g1", event_type="guardrail.decision", minutes_ago=39,
-                guardrail_name="pii", decision="allow", matched_rules=["r1"])],
-        [_event("beta", "e1", event_type="eval.result", minutes_ago=20,
-                eval_name="safety", score=0.9, threshold=0.5, passed=True),
-         _event("beta", "err1", minutes_ago=10) | {"status": "error"}],
+        [
+            _event("beta", "m2", minutes_ago=40, model="claude-sonnet-5", provider="anthropic"),
+            _event(
+                "beta",
+                "g1",
+                event_type="guardrail.decision",
+                minutes_ago=39,
+                guardrail_name="pii",
+                decision="allow",
+                matched_rules=["r1"],
+            ),
+        ],
+        [
+            _event(
+                "beta",
+                "e1",
+                event_type="eval.result",
+                minutes_ago=20,
+                eval_name="safety",
+                score=0.9,
+                threshold=0.5,
+                passed=True,
+            ),
+            _event("beta", "err1", minutes_ago=10) | {"status": "error"},
+        ],
     ]
     for batch in batches:
         assert org.post("/v1/events/batch", json={"events": batch}, headers=headers).status_code == 200
@@ -137,7 +167,12 @@ def test_fold_result_is_a_fixed_point_of_the_full_recompute(super_admin_client):
 
 def test_new_model_still_raises_a_material_change_through_the_fold(super_admin_client):
     org, headers = _org(super_admin_client, "gamma")
-    assert org.post("/v1/events/batch", json={"events": [_event("gamma", "m1", minutes_ago=30)]}, headers=headers).status_code == 200
+    assert (
+        org.post(
+            "/v1/events/batch", json={"events": [_event("gamma", "m1", minutes_ago=30)]}, headers=headers
+        ).status_code
+        == 200
+    )
     before = org.get("/api/change-events").json()["changes"]
 
     swapped = _event("gamma", "m2", minutes_ago=5, model="grok-simulacrum-9", provider="xai")
@@ -150,13 +185,25 @@ def test_new_model_still_raises_a_material_change_through_the_fold(super_admin_c
 def test_guardrail_arriving_later_still_satisfies_its_control(super_admin_client):
     """monotone persistence: evidence in a later batch upgrades the assessment"""
     org, headers = _org(super_admin_client, "delta")
-    assert org.post("/v1/events/batch", json={"events": [_event("delta", "m1", minutes_ago=30)]}, headers=headers).status_code == 200
+    assert (
+        org.post(
+            "/v1/events/batch", json={"events": [_event("delta", "m1", minutes_ago=30)]}, headers=headers
+        ).status_code
+        == 200
+    )
 
     controls = {c["control_id"]: c for c in org.get("/api/control-evidence").json()["controls"]}
     assert controls["AI-GRD-001"]["status"] == "missing"
 
-    guardrail = _event("delta", "g1", event_type="guardrail.decision", minutes_ago=5,
-                       guardrail_name="pii", decision="allow", matched_rules=["r1"])
+    guardrail = _event(
+        "delta",
+        "g1",
+        event_type="guardrail.decision",
+        minutes_ago=5,
+        guardrail_name="pii",
+        decision="allow",
+        matched_rules=["r1"],
+    )
     assert org.post("/v1/events/batch", json={"events": [guardrail]}, headers=headers).status_code == 200
     controls = {c["control_id"]: c for c in org.get("/api/control-evidence").json()["controls"]}
     assert controls["AI-GRD-001"]["status"] == "passing"
@@ -169,11 +216,21 @@ def test_repeat_usage_of_a_known_model_is_not_a_material_change(super_admin_clie
     already-known model appended a duplicate entry and ordinary repeat usage
     read as a material change (which blocks release gates)."""
     org, headers = _org(super_admin_client, "epsilon")
-    assert org.post("/v1/events/batch", json={"events": [_event("epsilon", "m1", minutes_ago=30)]}, headers=headers).status_code == 200
+    assert (
+        org.post(
+            "/v1/events/batch", json={"events": [_event("epsilon", "m1", minutes_ago=30)]}, headers=headers
+        ).status_code
+        == 200
+    )
     before = org.get("/api/change-events").json()["changes"]
 
     # same provider, same model, new trace: routine traffic
-    assert org.post("/v1/events/batch", json={"events": [_event("epsilon", "m2", minutes_ago=5)]}, headers=headers).status_code == 200
+    assert (
+        org.post(
+            "/v1/events/batch", json={"events": [_event("epsilon", "m2", minutes_ago=5)]}, headers=headers
+        ).status_code
+        == 200
+    )
     after = org.get("/api/change-events").json()["changes"]
     assert len(after) == len(before), "repeat usage of a known model raised a material change"
     org.close()

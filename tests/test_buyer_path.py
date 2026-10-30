@@ -16,7 +16,13 @@ def test_onboarding_checklist_reflects_real_state(super_admin_client):
 
     super_admin_client.post(
         "/api/admin/organizations",
-        json={"tenant_id": "acme", "name": "Acme", "admin_email": "oa@acme.test", "admin_display_name": "OA", "admin_password": "oa-password-1"},
+        json={
+            "tenant_id": "acme",
+            "name": "Acme",
+            "admin_email": "oa@acme.test",
+            "admin_display_name": "OA",
+            "admin_password": "oa-password-1",
+        },
     )
     assert super_admin_client.get("/api/onboarding").status_code == 403  # organization view only
     with TestClient(app) as org:
@@ -30,12 +36,27 @@ def test_onboarding_checklist_reflects_real_state(super_admin_client):
 
         token = org.post("/api/ingestion-keys", json={"name": "ci"}).json()["token"]
         event = {
-            "type": "model.call", "schema_version": "2026-01", "trace_id": "t1", "span_id": "s1",
-            "timestamp": "2026-08-22T00:00:00Z", "service": "svc", "environment": "prod", "project": "p1",
-            "attributes": {"provider": "openai", "model": "gpt-4o", "usage": {"input_tokens": 1, "output_tokens": 1},
-                           "metadata": {"tenant_id": "acme", "application_name": "Claims", "workflow_name": "wf"}},
+            "type": "model.call",
+            "schema_version": "2026-01",
+            "trace_id": "t1",
+            "span_id": "s1",
+            "timestamp": "2026-08-22T00:00:00Z",
+            "service": "svc",
+            "environment": "prod",
+            "project": "p1",
+            "attributes": {
+                "provider": "openai",
+                "model": "gpt-4o",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+                "metadata": {"tenant_id": "acme", "application_name": "Claims", "workflow_name": "wf"},
+            },
         }
-        assert org.post("/v1/events/batch", json={"events": [event]}, headers={"Authorization": f"Bearer {token}"}).status_code == 200
+        assert (
+            org.post(
+                "/v1/events/batch", json={"events": [event]}, headers={"Authorization": f"Bearer {token}"}
+            ).status_code
+            == 200
+        )
         org.get("/api/compliance/audit-packet")
 
         after = org.get("/api/onboarding").json()

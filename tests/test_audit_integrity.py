@@ -42,9 +42,7 @@ def test_modifying_a_row_breaks_the_chain(super_admin_client):
         row = connection.execute("SELECT id FROM audit_logs ORDER BY id LIMIT 1").fetchone()
         target_id = row["id"]
         # change an entry's action without updating hashes
-        connection.execute(
-            "UPDATE audit_logs SET action = 'tampered' WHERE id = ?", (target_id,)
-        )
+        connection.execute("UPDATE audit_logs SET action = 'tampered' WHERE id = ?", (target_id,))
 
     result = verify_audit_chain()
     assert result["ok"] is False
@@ -173,9 +171,12 @@ def test_audit_hmac_key_rotation(client, monkeypatch):
     assert verify_audit_chain()["ok"] is True
 
     with connect() as connection:
-        kids = [r["hmac_key_id"] for r in connection.execute(
-            "SELECT hmac_key_id FROM audit_logs WHERE action IN ('first.event', 'second.event') ORDER BY id"
-        ).fetchall()]
+        kids = [
+            r["hmac_key_id"]
+            for r in connection.execute(
+                "SELECT hmac_key_id FROM audit_logs WHERE action IN ('first.event', 'second.event') ORDER BY id"
+            ).fetchall()
+        ]
     assert kids == ["legacy", "2026a"]
 
     # drop the legacy key from the ring: its rows can no longer be verified, which

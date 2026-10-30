@@ -65,9 +65,7 @@ def scoped_rows(
         window = " LIMIT :limit OFFSET :offset"
         params = {**params, "limit": limit, "offset": offset}
     with connect() as connection:
-        rows = connection.execute(
-            f"SELECT * FROM {table} {where} ORDER BY {order_by} DESC{window}", params
-        ).fetchall()
+        rows = connection.execute(f"SELECT * FROM {table} {where} ORDER BY {order_by} DESC{window}", params).fetchall()
     return [dict(row) for row in rows]
 
 

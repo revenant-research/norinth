@@ -80,7 +80,14 @@ def configure_saml(payload: SamlConfigurationRequest, actor: ActorContext = Depe
         allowed_email_domain=payload.allowed_email_domain,
         created_by=actor.user_ref,
     )
-    record_audit(actor_ref=actor.user_ref, action="saml.configure", tenant_id=tenant_id, target_type="saml", target_id=tenant_id, detail={"idp_entity_id": payload.idp_entity_id})
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="saml.configure",
+        tenant_id=tenant_id,
+        target_type="saml",
+        target_id=tenant_id,
+        detail={"idp_entity_id": payload.idp_entity_id},
+    )
     return {"saml": _public(config)}
 
 
@@ -88,7 +95,9 @@ def configure_saml(payload: SamlConfigurationRequest, actor: ActorContext = Depe
 def remove_saml(actor: ActorContext = Depends(current_actor)) -> dict[str, bool]:
     tenant_id = _require_tenant_admin(actor)
     disable_saml_configuration(tenant_id)
-    record_audit(actor_ref=actor.user_ref, action="saml.disable", tenant_id=tenant_id, target_type="saml", target_id=tenant_id)
+    record_audit(
+        actor_ref=actor.user_ref, action="saml.disable", tenant_id=tenant_id, target_type="saml", target_id=tenant_id
+    )
     return {"ok": True}
 
 
@@ -137,7 +146,14 @@ def saml_start(tenant_id: str, request: Request):
 
 @router.post("/api/auth/saml/acs")
 def saml_acs(request: Request, SAMLResponse: str = Form(...), RelayState: str | None = Form(default=None)):  # noqa: N803 - SAML field names
+    # the response must come back through the browser that started the login.
+    # without the cookie an attacker could complete their own IdP login and post
+    # the signed response from a victim's browser, signing the victim in as the
+    # attacker (login csrf). the pending request is left unconsumed, so the
+    # browser that did start the login can still finish it
     expected_request_id = request.cookies.get(_SAML_REQUEST_COOKIE)
+    if not expected_request_id:
+        raise HTTPException(status_code=401, detail="SAML login was not started from this browser")
     try:
         user = process_response(SAMLResponse, _base_url(request), expected_request_id=expected_request_id)
     except SamlError as error:

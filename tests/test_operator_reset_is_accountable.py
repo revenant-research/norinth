@@ -17,9 +17,16 @@ def test_operator_reset_notifies_the_org_and_kills_sessions(super_admin_client):
     from app.storage.raw_events import connect
     from fastapi.testclient import TestClient
 
-    super_admin_client.post("/api/admin/organizations", json={
-        "tenant_id": "acme", "name": "Acme", "admin_email": "oa@acme.test",
-        "admin_display_name": "OA", "admin_password": "oa-password-1"})
+    super_admin_client.post(
+        "/api/admin/organizations",
+        json={
+            "tenant_id": "acme",
+            "name": "Acme",
+            "admin_email": "oa@acme.test",
+            "admin_display_name": "OA",
+            "admin_password": "oa-password-1",
+        },
+    )
 
     # the org admin has a live, authenticated session
     org = TestClient(app)

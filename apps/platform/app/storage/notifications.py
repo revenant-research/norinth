@@ -192,7 +192,7 @@ def mark_result(row_id: int, *, ok: bool, error: str | None, attempts: int, max_
                 (attempts, (error or "")[:500], row_id),
             )
             return
-        backoff = timedelta(minutes=min(60, 2 ** attempts))
+        backoff = timedelta(minutes=min(60, 2**attempts))
         next_at = (datetime.now(UTC) + backoff).strftime("%Y-%m-%d %H:%M:%S")
         connection.execute(
             "UPDATE notification_outbox SET status = 'pending', attempts = ?, last_error = ?, next_attempt_at = ?, claimed_by = NULL, claimed_at = NULL WHERE id = ?",
@@ -234,7 +234,9 @@ def _public_webhook(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def create_webhook(tenant_id: str, *, name: str, url: str, events: list[str], fmt: str, created_by: str | None) -> tuple[str, dict[str, Any]]:
+def create_webhook(
+    tenant_id: str, *, name: str, url: str, events: list[str], fmt: str, created_by: str | None
+) -> tuple[str, dict[str, Any]]:
     """returns (signing secret shown once, public record)"""
     webhook_id = "whk_" + secrets.token_urlsafe(9)
     secret = "whs_" + secrets.token_urlsafe(24)
@@ -252,12 +254,16 @@ def create_webhook(tenant_id: str, *, name: str, url: str, events: list[str], fm
 
 def list_webhooks(tenant_id: str) -> list[dict[str, Any]]:
     with connect() as connection:
-        rows = connection.execute("SELECT * FROM webhooks WHERE tenant_id = ? ORDER BY created_at DESC", (tenant_id,)).fetchall()
+        rows = connection.execute(
+            "SELECT * FROM webhooks WHERE tenant_id = ? ORDER BY created_at DESC", (tenant_id,)
+        ).fetchall()
     return [_public_webhook(dict(r)) for r in rows]
 
 
 def active_webhooks_for(connection, tenant_id: str, event_type: str) -> list[dict[str, Any]]:
-    rows = connection.execute("SELECT * FROM webhooks WHERE tenant_id = ? AND status = 'active'", (tenant_id,)).fetchall()
+    rows = connection.execute(
+        "SELECT * FROM webhooks WHERE tenant_id = ? AND status = 'active'", (tenant_id,)
+    ).fetchall()
     out = []
     for row in rows:
         events = json.loads(row["events"])
@@ -275,19 +281,26 @@ def webhook_secret(row: dict[str, Any]) -> str:
 
 def load_webhook(webhook_id: str, tenant_id: str) -> dict[str, Any] | None:
     with connect() as connection:
-        row = connection.execute("SELECT * FROM webhooks WHERE webhook_id = ? AND tenant_id = ?", (webhook_id, tenant_id)).fetchone()
+        row = connection.execute(
+            "SELECT * FROM webhooks WHERE webhook_id = ? AND tenant_id = ?", (webhook_id, tenant_id)
+        ).fetchone()
     return None if row is None else dict(row)
 
 
 def delete_webhook(webhook_id: str, tenant_id: str) -> bool:
     with connect() as connection:
-        cursor = connection.execute("DELETE FROM webhooks WHERE webhook_id = ? AND tenant_id = ?", (webhook_id, tenant_id))
+        cursor = connection.execute(
+            "DELETE FROM webhooks WHERE webhook_id = ? AND tenant_id = ?", (webhook_id, tenant_id)
+        )
         return bool(cursor.rowcount)
 
 
 def record_webhook_delivery(webhook_id: str, status: str) -> None:
     with connect() as connection:
-        connection.execute("UPDATE webhooks SET last_delivery_at = datetime('now'), last_status = ? WHERE webhook_id = ?", (status, webhook_id))
+        connection.execute(
+            "UPDATE webhooks SET last_delivery_at = datetime('now'), last_status = ? WHERE webhook_id = ?",
+            (status, webhook_id),
+        )
 
 
 # --- invites ------------------------------------------------------------------------
@@ -304,7 +317,14 @@ def create_invite(user_ref: str, tenant_id: str, created_by: str | None) -> str:
         connection.execute("DELETE FROM invites WHERE user_ref = ? AND used_at IS NULL", (user_ref,))
         connection.execute(
             "INSERT INTO invites (token_hash, user_ref, tenant_id, created_by, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (_hash(token), user_ref, tenant_id, created_by, now.isoformat(), (now + timedelta(days=INVITE_TTL_DAYS)).isoformat()),
+            (
+                _hash(token),
+                user_ref,
+                tenant_id,
+                created_by,
+                now.isoformat(),
+                (now + timedelta(days=INVITE_TTL_DAYS)).isoformat(),
+            ),
         )
     return token
 
@@ -325,7 +345,8 @@ def consume_invite(token: str) -> dict[str, Any] | None:
         return None
     with connect() as connection:
         cursor = connection.execute(
-            "UPDATE invites SET used_at = ? WHERE token_hash = ? AND used_at IS NULL", (datetime.now(UTC).isoformat(), _hash(token))
+            "UPDATE invites SET used_at = ? WHERE token_hash = ? AND used_at IS NULL",
+            (datetime.now(UTC).isoformat(), _hash(token)),
         )
         if not cursor.rowcount:
             return None

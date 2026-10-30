@@ -60,7 +60,10 @@ def test_malformed_batch_writes_nothing(client):
         "service": "svc",
         "environment": "prod",
         "project": "p1",
-        "attributes": {"deployment_id": "d1", "metadata": {"tenant_id": "tenant-local"}},  # missing version, artifact_ref
+        "attributes": {
+            "deployment_id": "d1",
+            "metadata": {"tenant_id": "tenant-local"},
+        },  # missing version, artifact_ref
     }
     resp = client.post("/v1/events/batch", json={"events": [good, bad]}, headers=HEADERS)
     assert resp.status_code == 422, resp.text

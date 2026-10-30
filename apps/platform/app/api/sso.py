@@ -104,7 +104,9 @@ def configure_sso(payload: SsoConfigurationRequest, actor: ActorContext = Depend
 def remove_sso(actor: ActorContext = Depends(current_actor)) -> dict[str, bool]:
     tenant_id = _require_tenant_admin(actor)
     disable_sso_configuration(tenant_id)
-    record_audit(actor_ref=actor.user_ref, action="sso.disable", tenant_id=tenant_id, target_type="sso", target_id=tenant_id)
+    record_audit(
+        actor_ref=actor.user_ref, action="sso.disable", tenant_id=tenant_id, target_type="sso", target_id=tenant_id
+    )
     return {"ok": True}
 
 
