@@ -73,6 +73,15 @@ def _attr_value(value: dict[str, Any]) -> Any:
     return raw if isinstance(raw, _SCALARS) else None
 
 
+def _label(value: Any) -> str | None:
+    """an attribute used as a name (service, model, tool, data source) as
+    text; a sender may encode it as a number or a bool, and the columns it
+    lands in are text"""
+    if value is None or isinstance(value, bool):
+        return None if value is None else str(value).lower()
+    return str(value) if isinstance(value, _SCALARS) else None
+
+
 def _span_field(span: dict[str, Any], key: str, path: str) -> str | None:
     """a span envelope field as text, absent as None; a container is a shape
     error the collector should hear about"""
@@ -126,26 +135,27 @@ def _event_type(operation: str | None, attrs: dict[str, Any]) -> str | None:
 
 def _span_to_event(span: dict[str, Any], resource_attrs: dict[str, Any], path: str) -> dict[str, Any] | None:
     attrs = _attributes_to_dict(_as_list(span.get("attributes"), f"{path}.attributes"))
-    operation = attrs.get("gen_ai.operation.name")
+    operation = _label(attrs.get("gen_ai.operation.name"))
     event_type = _event_type(operation, attrs)
     if event_type is None:
         return None  # not a gen_ai span
 
-    provider = attrs.get("gen_ai.provider.name") or attrs.get("gen_ai.system")
+    provider = _label(attrs.get("gen_ai.provider.name")) or _label(attrs.get("gen_ai.system"))
     # Routers and aliases can resolve to a different model. Inventory and
     # approved-model rules must describe the response, not merely the request.
-    requested_model = attrs.get("gen_ai.request.model")
-    model = attrs.get("gen_ai.response.model") or requested_model
-    service = resource_attrs.get("service.name") or "otel"
+    requested_model = _label(attrs.get("gen_ai.request.model"))
+    model = _label(attrs.get("gen_ai.response.model")) or requested_model
+    service = _label(resource_attrs.get("service.name")) or "otel"
     workflow_name = _span_field(span, "name", path) or operation or "otel-span"
-    application_name = attrs.get("gen_ai.agent.name") or service
+    application_name = _label(attrs.get("gen_ai.agent.name")) or service
 
     metadata = {
         "application_name": application_name,
         "workflow_name": workflow_name,
     }
-    if attrs.get("gen_ai.conversation.id"):
-        metadata["conversation_id"] = attrs["gen_ai.conversation.id"]
+    conversation_id = _label(attrs.get("gen_ai.conversation.id"))
+    if conversation_id:
+        metadata["conversation_id"] = conversation_id
 
     event_attributes: dict[str, Any] = {
         "provider": provider,
@@ -160,16 +170,15 @@ def _span_to_event(span: dict[str, Any], resource_attrs: dict[str, Any], path: s
         "metadata": metadata,
     }
     if event_type == "tool.call":
-        event_attributes["tool_name"] = attrs.get("gen_ai.tool.name") or workflow_name
+        event_attributes["tool_name"] = _label(attrs.get("gen_ai.tool.name")) or workflow_name
     if event_type == "agent.run":
-        event_attributes["agent_name"] = attrs.get("gen_ai.agent.name") or workflow_name
-        event_attributes["outcome"] = attrs.get("gen_ai.agent.outcome") or "observed"
+        event_attributes["agent_name"] = _label(attrs.get("gen_ai.agent.name")) or workflow_name
+        event_attributes["outcome"] = _label(attrs.get("gen_ai.agent.outcome")) or "observed"
         event_attributes["step_count"] = attrs.get("gen_ai.agent.step_count") or 0
     if event_type == "retrieval.call":
-        event_attributes["retriever"] = attrs.get("gen_ai.data_source.id") or workflow_name
+        event_attributes["retriever"] = _label(attrs.get("gen_ai.data_source.id")) or workflow_name
 
-    error_type = attrs.get("error.type")
-    status = "error" if error_type else "success"
+    status = "error" if attrs.get("error.type") else "success"
 
     return {
         "type": event_type,
@@ -179,8 +188,8 @@ def _span_to_event(span: dict[str, Any], resource_attrs: dict[str, Any], path: s
         "parent_span_id": _span_field(span, "parentSpanId", path),
         "timestamp": _nanos_to_iso(span.get("endTimeUnixNano") or span.get("startTimeUnixNano")),
         "service": service,
-        "environment": resource_attrs.get("deployment.environment") or "otel",
-        "project": resource_attrs.get("service.namespace") or service,
+        "environment": _label(resource_attrs.get("deployment.environment")) or "otel",
+        "project": _label(resource_attrs.get("service.namespace")) or service,
         "name": workflow_name,
         "status": status,
         "attributes": event_attributes,

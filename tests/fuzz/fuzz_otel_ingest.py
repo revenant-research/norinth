@@ -150,8 +150,11 @@ def _check(payload) -> None:
         for key, value in event["attributes"].items():
             if key in ("usage", "metadata"):
                 assert all(v is None or isinstance(v, SCALAR_TYPES) for v in value.values()), (key, event)
+            elif key == "step_count":
+                assert isinstance(value, SCALAR_TYPES), (key, event)
             else:
-                assert value is None or isinstance(value, SCALAR_TYPES), (key, event)
+                # names land in text columns; a sender's number or bool is text by here
+                assert value is None or isinstance(value, str), (key, event)
 
 
 def test_one_input(data: bytes) -> None:

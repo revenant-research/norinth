@@ -315,3 +315,39 @@ def test_otel_endpoint_ingests_a_span_whose_attribute_values_are_containers(clie
     response = client.post("/v1/otel/traces", json=payload, headers={"Authorization": "Bearer dev"})
     assert response.status_code == 200, response.text
     assert response.json()["accepted"] == 1
+
+
+def test_otel_mapper_renders_numeric_names_as_text():
+    """a sender may encode a namespace or data-source id as a number; the
+    columns those land in are text, on both databases"""
+    from app.ingestion.otel import otel_spans_to_events
+
+    payload = _otlp_chat_span()
+    payload["resourceSpans"][0]["resource"]["attributes"].append(
+        {"key": "service.namespace", "value": {"intValue": "7813586424118473845"}}
+    )
+    span = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    span["attributes"][0] = {"key": "gen_ai.operation.name", "value": {"stringValue": "retrieval"}}
+    span["attributes"].append({"key": "gen_ai.data_source.id", "value": {"intValue": "42"}})
+    span["attributes"].append({"key": "gen_ai.response.model", "value": {"doubleValue": "1.5"}})
+
+    (event,) = otel_spans_to_events(payload)
+    assert event["project"] == "7813586424118473845"
+    assert event["attributes"]["retriever"] == "42"
+    assert event["attributes"]["model"] == "1.5"
+
+
+def test_otel_mapper_renders_a_non_string_operation_name_as_text():
+    """a bool operation name is not a gen_ai operation, but a retrieval span
+    still maps, and the name it carries must be text"""
+    from app.ingestion.otel import otel_spans_to_events
+
+    payload = _otlp_chat_span()
+    span = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    span["attributes"][0] = {"key": "gen_ai.operation.name", "value": {"boolValue": True}}
+    span["attributes"].append({"key": "gen_ai.data_source.id", "value": {"stringValue": "kb"}})
+    del span["name"]
+
+    (event,) = otel_spans_to_events(payload)
+    assert event["type"] == "retrieval.call"
+    assert event["name"] == "true" and event["attributes"]["operation"] == "true"
