@@ -850,7 +850,9 @@ def assign_owner(owner_assignment_id: str, owner_ref: str, actor_ref: str) -> di
         return dict(connection.execute("SELECT * FROM owner_assignments WHERE owner_assignment_id = ?", (owner_assignment_id,)).fetchone())
 
 
-def record_decision(target_type: str, target_id: str, decision: str, rationale: str, actor_ref: str) -> dict[str, Any]:
+def record_decision(
+    target_type: str, target_id: str, decision: str, rationale: str, actor_ref: str, *, tenant_id: str | None = None
+) -> dict[str, Any]:
     """append a governance decision; the record is immutable once written
 
     the id is derived from the decision's content, so a resubmission of the
@@ -858,8 +860,11 @@ def record_decision(target_type: str, target_id: str, decision: str, rationale: 
     created_at, which is evidence of WHEN the call was made and must not move.
     a decision is a record, not a lever: replaying one does not re-apply
     status; changing course takes a new decision (new content, new row)
+
+    tenant_id, when the caller has one, binds the target lookup to that
+    organization so the decision row is stamped with the right scope
     """
-    target = load_decision_target(target_type, target_id)
+    target = load_decision_target(target_type, target_id, tenant_id=tenant_id)
     decision_id = entity_id("governance-decision", target_type, target_id, decision, rationale, actor_ref)
     with connect() as connection:
         existing = connection.execute(
@@ -898,7 +903,14 @@ def record_decision(target_type: str, target_id: str, decision: str, rationale: 
         return dict(connection.execute("SELECT * FROM governance_decisions WHERE decision_id = ?", (decision_id,)).fetchone())
 
 
-def load_decision_target(target_type: str, target_id: str) -> dict[str, Any]:
+def load_decision_target(target_type: str, target_id: str, *, tenant_id: str | None = None) -> dict[str, Any]:
+    """the record a decision or exception is about
+
+    most target ids are platform-unique. an incident id is chosen by the
+    reporting client and unique only within its tenant, so callers acting for
+    an organization pass tenant_id and the lookup never lands on another
+    organization's record of the same name
+    """
     table_by_target = {
         "review_task": ("review_tasks", "task_id"),
         "risk_finding": ("risk_findings", "finding_id"),
@@ -913,8 +925,13 @@ def load_decision_target(target_type: str, target_id: str) -> dict[str, Any]:
     if target_type not in table_by_target:
         raise DomainError("unsupported decision target type")
     table, id_column = table_by_target[target_type]
+    query = f"SELECT * FROM {table} WHERE {id_column} = ?"
+    params: tuple[Any, ...] = (target_id,)
+    if tenant_id:
+        query += " AND tenant_id = ?"
+        params = (target_id, tenant_id)
     with connect() as connection:
-        row = connection.execute(f"SELECT * FROM {table} WHERE {id_column} = ?", (target_id,)).fetchone()
+        row = connection.execute(query, params).fetchone()
     if row is None:
         raise RecordNotFound("decision target not found")
     return dict(row)
@@ -993,8 +1010,10 @@ def create_exception(
     compensating_control: str,
     expires_at: str,
     actor_ref: str,
+    *,
+    tenant_id: str | None = None,
 ) -> dict[str, Any]:
-    target = load_decision_target(target_type, target_id)
+    target = load_decision_target(target_type, target_id, tenant_id=tenant_id)
     exception_id = entity_id("governance-exception", target_type, target_id, reason, expires_at)
     with connect() as connection:
         # replaying an identical exception must not resurrect it: the REPLACE

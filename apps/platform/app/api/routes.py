@@ -517,15 +517,21 @@ def incident_detail(incident_id: str, scope: ScopeFilter = Depends(scoped_depend
 
 @router.post("/api/incidents/{incident_id}/close")
 def close_incident(incident_id: str, payload: DeploymentGateDecisionRequest, actor: ActorContext = Depends(current_actor)):
-    incident = load_incident(incident_id)
+    # an incident id is unique only within its organization, so every step is
+    # bound to the actor's tenant: the load, the status change and the decision
+    incident = load_incident(incident_id, tenant_id=actor.tenant_id)
     incident["target_type"] = "incident"
     try:
         require_decision(actor, incident)
     except AuthorizationError as error:
         raise_forbidden(error)
     enforce_segregation_of_duties(actor, "incident", incident)
-    updated_incident = set_incident_status(incident_id, "closed", actor.user_ref, payload.rationale)
-    decision = record_decision("incident", incident_id, "close", payload.rationale, actor.user_ref)
+    updated_incident = set_incident_status(
+        incident_id, "closed", actor.user_ref, payload.rationale, tenant_id=actor.tenant_id
+    )
+    decision = record_decision(
+        "incident", incident_id, "close", payload.rationale, actor.user_ref, tenant_id=actor.tenant_id
+    )
     record_audit(actor_ref=actor.user_ref, action="incident.close", tenant_id=incident.get("tenant_id"), target_type="incident", target_id=incident_id)
     with connect() as connection:
         notify(
@@ -646,7 +652,7 @@ def create_decision(payload: DecisionRequest, actor: ActorContext = Depends(curr
             ),
         )
     try:
-        target = load_decision_target(payload.target_type, payload.target_id)
+        target = load_decision_target(payload.target_type, payload.target_id, tenant_id=actor.tenant_id)
     except RecordNotFound as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     # unsupported target_type raises ValueError -> global 400, distinct from 404
@@ -657,7 +663,9 @@ def create_decision(payload: DecisionRequest, actor: ActorContext = Depends(curr
         raise_forbidden(error)
     enforce_segregation_of_duties(actor, payload.target_type, target)
     enforce_stage_policy(actor, payload.target_type, target, payload.decision)
-    decision = record_decision(payload.target_type, payload.target_id, payload.decision, payload.rationale, actor.user_ref)
+    decision = record_decision(
+        payload.target_type, payload.target_id, payload.decision, payload.rationale, actor.user_ref, tenant_id=actor.tenant_id
+    )
     record_audit(actor_ref=actor.user_ref, action="review.decide", tenant_id=target.get("tenant_id"), target_type=payload.target_type, target_id=payload.target_id, detail={"decision": payload.decision})
     # these targets are gate blockers; without this the gate keeps reporting the
     # findings the reviewer just cleared until the next batch of telemetry
@@ -699,7 +707,7 @@ def _validate_future_date(value: str) -> None:
 @router.post("/api/exceptions")
 def create_exception_route(payload: ExceptionRequest, actor: ActorContext = Depends(current_actor)):
     _validate_future_date(payload.expires_at)
-    target = load_decision_target(payload.target_type, payload.target_id)
+    target = load_decision_target(payload.target_type, payload.target_id, tenant_id=actor.tenant_id)
     target["target_type"] = payload.target_type
     try:
         require_exception(actor, target)
@@ -712,6 +720,7 @@ def create_exception_route(payload: ExceptionRequest, actor: ActorContext = Depe
         payload.compensating_control,
         payload.expires_at,
         actor.user_ref,
+        tenant_id=actor.tenant_id,
     )
     record_audit(actor_ref=actor.user_ref, action="risk.accept", tenant_id=target.get("tenant_id"), target_type=payload.target_type, target_id=payload.target_id)
     return {"exception": exception}
