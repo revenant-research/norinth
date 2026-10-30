@@ -14,6 +14,7 @@ from app.dependencies import ActorContext, current_actor
 from app.schemas.events import ScopeFilter
 from app.services.auth import MIN_PASSWORD_LENGTH, end_all_sessions, hash_password
 from app.services.authorization import (
+    DECISION_ROLES,
     ORG_ADMIN,
     PERM_ROLE_ASSIGN,
     PERM_USER_MANAGE,
@@ -57,6 +58,7 @@ from app.storage.workflow import (
     list_platform_users,
     list_role_assignments,
     load_platform_user,
+    normalize_email,
     reset_user_password,
     set_role_permission,
     set_user_status,
@@ -195,7 +197,8 @@ def organizations(actor: ActorContext = Depends(current_actor)) -> dict[str, lis
 @router.post("/api/admin/organizations")
 def provision_organization(payload: CreateOrganizationRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     _guard_super_admin(actor)
-    if get_user_by_email(payload.admin_email) is not None:
+    admin_email = normalize_email(payload.admin_email)
+    if get_user_by_email(admin_email) is not None:
         raise HTTPException(status_code=409, detail="A user with that email already exists")
     try:
         organization = create_organization(payload.tenant_id, payload.name, actor.user_ref)
@@ -203,9 +206,9 @@ def provision_organization(payload: CreateOrganizationRequest, actor: ActorConte
         raise HTTPException(status_code=409, detail=str(error)) from error
     generated_password = payload.admin_password or _temp_password()
     admin_user = create_platform_user(
-        user_ref=payload.admin_email,
+        user_ref=admin_email,
         display_name=payload.admin_display_name,
-        email=payload.admin_email,
+        email=admin_email,
         password_hash=hash_password(generated_password),
         status="active",
         platform_role=None,
@@ -214,7 +217,7 @@ def provision_organization(payload: CreateOrganizationRequest, actor: ActorConte
     )
     assignment = upsert_role_assignment(
         {
-            "user_ref": payload.admin_email,
+            "user_ref": admin_email,
             "role": ORG_ADMIN,
             "status": "active",
             "tenant_id": payload.tenant_id,
@@ -228,7 +231,7 @@ def provision_organization(payload: CreateOrganizationRequest, actor: ActorConte
         tenant_id=payload.tenant_id,
         target_type="organization",
         target_id=payload.tenant_id,
-        detail={"name": payload.name, "org_admin": payload.admin_email},
+        detail={"name": payload.name, "org_admin": admin_email},
     )
     return {
         "organization": organization,
@@ -540,13 +543,14 @@ def create_org_user(payload: CreateUserRequest, actor: ActorContext = Depends(cu
         _raise_forbidden(error)
     if payload.status not in {"active", "suspended"}:
         raise HTTPException(status_code=400, detail="status must be 'active' or 'suspended'")
-    if get_user_by_email(payload.email) is not None:
+    email = normalize_email(payload.email)
+    if get_user_by_email(email) is not None:
         raise HTTPException(status_code=409, detail="A user with that email already exists")
     generated_password = payload.password or _temp_password()
     user = create_platform_user(
-        user_ref=payload.email,
+        user_ref=email,
         display_name=payload.display_name,
-        email=payload.email,
+        email=email,
         password_hash=hash_password(generated_password),
         status=payload.status,
         platform_role=None,
@@ -558,10 +562,10 @@ def create_org_user(payload: CreateUserRequest, actor: ActorContext = Depends(cu
         action="user.create",
         tenant_id=tenant_id,
         target_type="user",
-        target_id=payload.email,
+        target_id=email,
     )
     # invite link: user sets own password; emailed if smtp, else returned to admin
-    token = create_invite(payload.email, tenant_id, actor.user_ref)
+    token = create_invite(email, tenant_id, actor.user_ref)
     invite_url = f"{public_base_url()}/#invite/{token}"
     organization = load_organization(tenant_id) or {}
     with connect() as connection:
@@ -574,8 +578,8 @@ def create_org_user(payload: CreateUserRequest, actor: ActorContext = Depends(cu
                 f"{actor.user_ref} invited you to {organization.get('name') or tenant_id}'s AI governance workspace.\n\n"
                 f"Set your password and sign in with this link (valid for {INVITE_TTL_DAYS} days):"
             ),
-            data={"user_ref": payload.email, "invited_by": actor.user_ref},
-            to_users=[payload.email],
+            data={"user_ref": email, "invited_by": actor.user_ref},
+            to_users=[email],
             link=invite_url,
         )
     return {
@@ -627,13 +631,57 @@ def reset_org_user_password(user_ref: str, actor: ActorContext = Depends(current
         raise HTTPException(status_code=404, detail="User not found in this organization")
     temp_password = _temp_password()
     reset_user_password(user_ref, hash_password(temp_password))
+    # a reset is a clean break: the target's live sessions end, so the reset
+    # cannot ride an existing login, and the target hears about it
+    end_all_sessions(user_ref)
+    decision_roles = sorted(
+        {
+            assignment["role"]
+            for assignment in list_role_assignments(tenant_id=tenant_id)
+            if assignment["user_ref"] == user_ref and assignment["status"] == "active" and assignment["role"] in DECISION_ROLES
+        }
+    )
     record_audit(
         actor_ref=actor.user_ref,
         action="user.reset_password",
         tenant_id=tenant_id,
         target_type="user",
         target_id=user_ref,
+        detail={"decision_roles": decision_roles, "sessions_ended": True},
     )
+    with connect() as connection:
+        notify(
+            connection,
+            tenant_id=tenant_id,
+            event_type="account.reset_by_admin",
+            subject="Your Norinth password was reset by an administrator",
+            text=(
+                f"{actor.user_ref} issued a one-time password for your account and ended your open sessions. "
+                "If you did not ask for this, tell another administrator before signing in again."
+            ),
+            data={"user_ref": user_ref, "reset_by": actor.user_ref},
+            to_users=[user_ref],
+            link=f"{public_base_url()}/#login",
+        )
+        if decision_roles:
+            # an administrator cannot hold a decision role, so a reset of a
+            # decision holder's credentials is the one way an administrator
+            # could come to act with that authority. the other administrators
+            # see it as it happens, not when the audit log is next read
+            notify(
+                connection,
+                tenant_id=tenant_id,
+                event_type="account.decision_holder_reset",
+                subject=f"{actor.user_ref} reset the password of {user_ref} ({', '.join(decision_roles)})",
+                text=(
+                    f"{actor.user_ref} issued a one-time password for {user_ref}, who holds "
+                    f"{', '.join(decision_roles)}. Until {user_ref} signs in and changes it, the administrator "
+                    "holds that account's credentials. If this was not expected, review the account."
+                ),
+                data={"user_ref": user_ref, "reset_by": actor.user_ref, "decision_roles": decision_roles},
+                to_roles=["org_admin"],
+                link=f"{public_base_url()}/#users",
+            )
     return {"user_ref": user_ref, "temporary_password": temp_password}
 
 
