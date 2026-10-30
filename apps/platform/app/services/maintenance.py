@@ -28,6 +28,7 @@ from app.storage.audit import record_audit
 from app.storage.policy_engine import age_recertifications, age_vendor_recertifications
 from app.storage.raw_events import connect
 from app.storage.retention import purge_events_older_than, tenants_with_retention_window
+from app.storage.vendor_evidence import age_evidence_references
 from app.storage.workflow import expire_due_exceptions, refresh_workflow_state
 
 log = logging.getLogger(__name__)
@@ -79,6 +80,9 @@ def _pass() -> dict[str, Any]:
     # queue refresh below routes the new tasks
     recertifications_opened = age_recertifications()
     vendors_due = age_vendor_recertifications()
+    # a vendor's agreements and certificates lapse on their own dates; an
+    # expired one drops the vendor to recertify_due the same way
+    evidence = age_evidence_references()
     # recomputes review queue due/overdue/escalated state, which also raises the
     # overdue and escalation notifications
     refresh_workflow_state()
@@ -86,7 +90,9 @@ def _pass() -> dict[str, Any]:
         "skipped": False,
         "expired_exceptions": expired,
         "recertifications_opened": recertifications_opened,
-        "vendor_recertifications_due": vendors_due,
+        "vendor_recertifications_due": vendors_due + evidence["vendors_due"],
+        "vendor_evidence_expired": evidence["expired"],
+        "vendor_evidence_expiring": evidence["warned"],
         "purged_events": _enforce_retention(),
     }
 

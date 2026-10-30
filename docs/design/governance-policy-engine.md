@@ -272,6 +272,16 @@ Vendor review runs through the same stage machinery
 (`subject_type = "vendor_review"`, stages from `policy.vendors`). Recertification
 is aged by the existing maintenance worker like exceptions are.
 
+Vendor evidence references (shipped after the registry) are the vendor's
+claims as dated, typed rows in `vendor_evidence_references`: kind, name,
+identifier, issue and expiry dates, an optional SHA-256 of the document, and
+a status (`current`, `expired`, `superseded`, `withdrawn`). The document body
+is never stored. A new reference supersedes the earlier one of its kind. The
+maintenance worker expires references on their dates; an expired reference
+drops an approved vendor to `recertify_due` and runs the vendor posture rule
+at once, and `submit_vendor_review` and the final stage roll-up refuse while
+one stands. A reference within 30 days of expiry is announced once.
+
 The evidence-engine tie-in, and the reason vendors belong in this product at
 all: the registry joins **telemetry**. `sdk_events.provider` names every vendor
 actually in production, so a new detection rule (`RISK-VND-001`, signal

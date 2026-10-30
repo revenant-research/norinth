@@ -1234,6 +1234,11 @@ def _roll_up_subject(connection, stage: dict[str, Any], decision: str) -> None:
         apply_decision_status(connection, "review_task", stage["subject_id"], decision)
     elif stage["subject_type"] == "vendor_review":
         status = "approved" if decision == "approve" else "rejected"
+        if status == "approved":
+            # a reference can lapse while the review is in progress
+            from .vendor_evidence import require_no_expired_evidence
+
+            require_no_expired_evidence(connection, stage["subject_id"], stage.get("application_name") or "vendor")
         connection.execute(
             """
             UPDATE vendor_registry
@@ -1501,6 +1506,11 @@ def submit_vendor_review(vendor_id: str, tenant_id: str, actor_ref: str) -> dict
             return vendor
         if vendor["status"] == "retired":
             raise ValueError("a retired vendor cannot be submitted for review")
+        # a review cannot restore coverage while a lapsed agreement or
+        # certificate stands; the renewed reference is recorded first
+        from .vendor_evidence import require_no_expired_evidence
+
+        require_no_expired_evidence(connection, vendor_id, vendor["name"])
         vendor_policy = resolve_vendor_policy(connection, tenant_id)
         review_round = int(vendor["review_round"]) + 1
         connection.execute(
