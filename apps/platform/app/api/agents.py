@@ -28,6 +28,7 @@ from app.storage.agents import (
     retire_agent,
 )
 from app.storage.audit import record_audit
+from app.storage.unit_of_work import atomic
 
 router = APIRouter()
 
@@ -64,6 +65,7 @@ def agent_registry(scope: ScopeFilter = Depends(scoped_dependency)) -> dict[str,
 
 
 @router.post("/api/agent-registry")
+@atomic
 def register(payload: AgentRegistrationRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _tenant(actor, PERM_CONFIG_WRITE)
     agent = register_agent(
@@ -96,6 +98,7 @@ def register(payload: AgentRegistrationRequest, actor: ActorContext = Depends(cu
 
 
 @router.post("/api/agent-registry/{agent_id}/retire")
+@atomic
 def retire(agent_id: str, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _tenant(actor, PERM_LIFECYCLE_MANAGE)
     if load_registered_agent(agent_id, tenant_id) is None:

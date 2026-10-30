@@ -22,6 +22,7 @@ from app.storage.attestation_keys import (
 from app.storage.audit import record_audit
 from app.storage.errors import DomainError
 from app.storage.raw_events import connect
+from app.storage.unit_of_work import atomic
 
 router = APIRouter()
 
@@ -70,6 +71,7 @@ def list_keys(actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
 
 
 @router.post("/api/attestation-keys")
+@atomic
 def register_key(payload: AttestationKeyRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _require_tenant(actor)
     _authorize(actor, tenant_id)
@@ -90,6 +92,7 @@ def register_key(payload: AttestationKeyRequest, actor: ActorContext = Depends(c
 
 
 @router.post("/api/attestation-keys/{key_id}/revoke")
+@atomic
 def revoke_key(key_id: str, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _require_tenant(actor)
     _authorize(actor, tenant_id)

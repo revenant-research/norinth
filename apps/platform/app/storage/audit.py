@@ -181,72 +181,119 @@ def record_audit(
     """append a tamper-evident audit entry, chained to the prior one
 
     the last-hash read and the insert run in one IMMEDIATE transaction so
-    concurrent writes can't fork the chain; append-only, no update path
+    concurrent writes can't fork the chain; append-only, no update path.
+
+    inside a unit of work (storage.unit_of_work) the entry is appended in the
+    unit's transaction, so the change it describes and the record of it commit
+    or roll back together; the checkpoint journal and the audit stream are
+    written once the unit has committed
     """
     detail_json = encode_json(detail) if detail is not None else None
     write_started = time.perf_counter()
+    unit = db.current_unit()
+    if unit is not None:
+        # the unit holds the checkpoint lock and the write transaction
+        db.serialize_writer(unit.connection)
+        count, row_hash, hmac_key_id = _append_row(
+            unit.connection, actor_ref, tenant_id, action, target_type, target_id, detail_json
+        )
+
+        def after_commit() -> None:
+            if hmac_key_id is not None:
+                append_checkpoint(count, row_hash, hmac_key_id, _audit_keyring()[hmac_key_id], _audit_keyring())
+            _announce(action, actor_ref, tenant_id, target_type, target_id, write_started)
+
+        unit.after_commit(after_commit)
+        return
     with checkpoint_lock():
         connection = connect()
         connection.isolation_level = None  # manage the transaction explicitly
         try:
             connection.execute("BEGIN IMMEDIATE")
             db.serialize_writer(connection)  # single-writer ordering on postgres too
-            last = connection.execute("SELECT row_hash FROM audit_logs ORDER BY id DESC LIMIT 1").fetchone()
-            prev_hash = last["row_hash"] if last and last["row_hash"] else GENESIS_HASH
-            previous_count = int(connection.execute("SELECT COUNT(*) AS count FROM audit_logs").fetchone()["count"])
-            checkpoint = latest_checkpoint(_audit_keyring())
-            if checkpoint:
-                if checkpoint["count"] > previous_count:
-                    raise RuntimeError("Audit database is shorter than the retained checkpoint")
-                if checkpoint["count"]:
-                    anchored = connection.execute(
-                        "SELECT row_hash FROM audit_logs ORDER BY id LIMIT 1 OFFSET ?",
-                        (checkpoint["count"] - 1,),
-                    ).fetchone()
-                    if anchored is None or anchored["row_hash"] != checkpoint["head_hash"]:
-                        raise RuntimeError("Audit database contradicts the retained checkpoint")
-            created_at = connection.execute("SELECT datetime('now') AS now").fetchone()["now"]
-            row_hash = _compute_row_hash(
-                CURRENT_HASH_VERSION,
-                prev_hash,
-                created_at,
-                actor_ref,
-                tenant_id,
-                action,
-                target_type,
-                target_id,
-                detail_json,
+            count, row_hash, hmac_key_id = _append_row(
+                connection, actor_ref, tenant_id, action, target_type, target_id, detail_json
             )
-            if row_hash is None:
-                raise RuntimeError(f"no audit hasher registered for version {CURRENT_HASH_VERSION}")
-            row_hmac, hmac_key_id = _compute_row_hmac(row_hash)
-            connection.execute(
-                """
-                INSERT INTO audit_logs
-                    (created_at, actor_ref, tenant_id, action, target_type, target_id, detail, prev_hash, row_hash, row_hmac, hmac_key_id, hash_version)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    created_at,
-                    actor_ref,
-                    tenant_id,
-                    action,
-                    target_type,
-                    target_id,
-                    detail_json,
-                    prev_hash,
-                    row_hash,
-                    row_hmac,
-                    hmac_key_id,
-                    CURRENT_HASH_VERSION,
-                ),
-            )
-            count = previous_count + 1
             connection.execute("COMMIT")
         finally:
             connection.close()
         if hmac_key_id is not None:
             append_checkpoint(count, row_hash, hmac_key_id, _audit_keyring()[hmac_key_id], _audit_keyring())
+    _announce(action, actor_ref, tenant_id, target_type, target_id, write_started)
+
+
+def _append_row(
+    connection,
+    actor_ref: str,
+    tenant_id: str | None,
+    action: str,
+    target_type: str | None,
+    target_id: str | None,
+    detail_json: str | None,
+) -> tuple[int, str, str | None]:
+    """chain one row onto the tail inside the caller's write transaction;
+    returns (row count after the append, row hash, hmac key id)"""
+    last = connection.execute("SELECT row_hash FROM audit_logs ORDER BY id DESC LIMIT 1").fetchone()
+    prev_hash = last["row_hash"] if last and last["row_hash"] else GENESIS_HASH
+    previous_count = int(connection.execute("SELECT COUNT(*) AS count FROM audit_logs").fetchone()["count"])
+    checkpoint = latest_checkpoint(_audit_keyring())
+    if checkpoint:
+        if checkpoint["count"] > previous_count:
+            raise RuntimeError("Audit database is shorter than the retained checkpoint")
+        if checkpoint["count"]:
+            anchored = connection.execute(
+                "SELECT row_hash FROM audit_logs ORDER BY id LIMIT 1 OFFSET ?",
+                (checkpoint["count"] - 1,),
+            ).fetchone()
+            if anchored is None or anchored["row_hash"] != checkpoint["head_hash"]:
+                raise RuntimeError("Audit database contradicts the retained checkpoint")
+    created_at = connection.execute("SELECT datetime('now') AS now").fetchone()["now"]
+    row_hash = _compute_row_hash(
+        CURRENT_HASH_VERSION,
+        prev_hash,
+        created_at,
+        actor_ref,
+        tenant_id,
+        action,
+        target_type,
+        target_id,
+        detail_json,
+    )
+    if row_hash is None:
+        raise RuntimeError(f"no audit hasher registered for version {CURRENT_HASH_VERSION}")
+    row_hmac, hmac_key_id = _compute_row_hmac(row_hash)
+    connection.execute(
+        """
+        INSERT INTO audit_logs
+            (created_at, actor_ref, tenant_id, action, target_type, target_id, detail, prev_hash, row_hash, row_hmac, hmac_key_id, hash_version)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            created_at,
+            actor_ref,
+            tenant_id,
+            action,
+            target_type,
+            target_id,
+            detail_json,
+            prev_hash,
+            row_hash,
+            row_hmac,
+            hmac_key_id,
+            CURRENT_HASH_VERSION,
+        ),
+    )
+    return previous_count + 1, row_hash, hmac_key_id
+
+
+def _announce(
+    action: str,
+    actor_ref: str,
+    tenant_id: str | None,
+    target_type: str | None,
+    target_id: str | None,
+    write_started: float,
+) -> None:
     # the audit record also streams to stdout: a siem should see security
     # events (logins, lockouts, resets, exports) without polling the database.
     # the chain in the database stays the tamper-evident record; this is a copy

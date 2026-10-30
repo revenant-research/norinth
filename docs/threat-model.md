@@ -40,7 +40,7 @@ JWKS, SAML) and Google Fonts for the dashboard's typeface.
 | IdP secrets (OIDC client secret) | Org admins | High | AES-256-GCM with tenant-bound AAD (`services/secrets.py`), key from `NORINTH_SECRET_KEY` |
 | Credentials issued by Norinth: ingestion keys, SCIM tokens, session tokens | Platform | High | Only SHA-256 hashes are stored; plaintext shown once |
 | Attestation public keys | Org admins | Low | PostgreSQL |
-| Audit log | Platform | Medium, integrity-critical | Hash-chained rows (`storage/audit.py`), `GET /api/admin/audit-logs/verify` |
+| Audit log | Platform | Medium, integrity-critical | Hash-chained rows (`storage/audit.py`), `GET /api/admin/audit-logs/verify`. A governance change and its audit entry commit in one transaction (`storage/unit_of_work.py`), so a change cannot persist without its record. |
 
 ## 3. Trust boundaries and principals
 

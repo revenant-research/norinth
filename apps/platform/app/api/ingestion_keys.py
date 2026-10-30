@@ -23,6 +23,7 @@ from app.storage.ingestion_keys import (
     list_ingestion_keys,
     revoke_ingestion_key,
 )
+from app.storage.unit_of_work import atomic
 
 router = APIRouter()
 
@@ -53,6 +54,7 @@ def list_keys(actor: ActorContext = Depends(current_actor)) -> dict[str, list[di
 
 
 @router.post("/api/ingestion-keys")
+@atomic
 def create_key(payload: IngestionKeyRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _require_tenant(actor)
     _authorize(actor, tenant_id)
@@ -70,6 +72,7 @@ def create_key(payload: IngestionKeyRequest, actor: ActorContext = Depends(curre
 
 
 @router.post("/api/ingestion-keys/{key_id}/revoke")
+@atomic
 def revoke_key(key_id: str, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _require_tenant(actor)
     _authorize(actor, tenant_id)

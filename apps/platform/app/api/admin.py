@@ -46,6 +46,7 @@ from app.storage.retention import (
     purge_tenant_data,
     tenant_data_summary,
 )
+from app.storage.unit_of_work import atomic
 from app.storage.workflow import (
     count_org_admins,
     count_platform_users,
@@ -196,6 +197,7 @@ def organizations(actor: ActorContext = Depends(current_actor)) -> dict[str, lis
 
 
 @router.post("/api/admin/organizations")
+@atomic
 def provision_organization(
     payload: CreateOrganizationRequest, actor: ActorContext = Depends(current_actor)
 ) -> dict[str, Any]:
@@ -246,6 +248,7 @@ def provision_organization(
 
 
 @router.post("/api/admin/organizations/{tenant_id}/status")
+@atomic
 def update_organization_status(
     tenant_id: str, payload: OrganizationStatusRequest, actor: ActorContext = Depends(current_actor)
 ) -> dict[str, Any]:
@@ -295,6 +298,7 @@ def tenant_data_preview(tenant_id: str, actor: ActorContext = Depends(current_ac
 
 
 @router.post("/api/admin/organizations/{tenant_id}/purge")
+@atomic
 def purge_organization(
     tenant_id: str, payload: TenantPurgeRequest, actor: ActorContext = Depends(current_actor)
 ) -> dict[str, Any]:
@@ -317,6 +321,7 @@ def purge_organization(
 
 
 @router.post("/api/admin/retention/purge-events")
+@atomic
 def purge_old_events(payload: RetentionPurgeRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     """age out raw events older than a retention window, one-off
 
@@ -371,6 +376,7 @@ def all_users(actor: ActorContext = Depends(current_actor)) -> dict[str, list[di
 
 
 @router.post("/api/admin/users/{user_ref}/status")
+@atomic
 def update_account_status(
     user_ref: str, payload: AccountStatusRequest, actor: ActorContext = Depends(current_actor)
 ) -> dict[str, Any]:
@@ -400,6 +406,7 @@ def update_account_status(
 
 
 @router.post("/api/admin/users/{user_ref}/reset-password")
+@atomic
 def reset_account_password(user_ref: str, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     """issue a one-time password, returned once"""
     _guard_super_admin(actor)
@@ -453,6 +460,7 @@ def role_permission_matrix(actor: ActorContext = Depends(current_actor)) -> dict
 
 
 @router.post("/api/admin/role-permissions")
+@atomic
 def update_role_permission(
     payload: RolePermissionChange, actor: ActorContext = Depends(current_actor)
 ) -> dict[str, Any]:
@@ -543,6 +551,7 @@ def org_users(actor: ActorContext = Depends(current_actor)) -> dict[str, list[di
 
 
 @router.post("/api/org/users")
+@atomic
 def create_org_user(payload: CreateUserRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _require_tenant(actor)
     try:
@@ -600,6 +609,7 @@ def create_org_user(payload: CreateUserRequest, actor: ActorContext = Depends(cu
 
 
 @router.post("/api/org/users/{user_ref}/status")
+@atomic
 def update_org_user_status(
     user_ref: str, payload: AccountStatusRequest, actor: ActorContext = Depends(current_actor)
 ) -> dict[str, Any]:
@@ -629,6 +639,7 @@ def update_org_user_status(
 
 
 @router.post("/api/org/users/{user_ref}/reset-password")
+@atomic
 def reset_org_user_password(user_ref: str, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     """issue a one-time password for a user in the admin's org"""
     tenant_id = _require_tenant(actor)
@@ -712,6 +723,7 @@ def get_security_policy(actor: ActorContext = Depends(current_actor)) -> dict[st
 
 
 @router.post("/api/org/security-policy")
+@atomic
 def set_security_policy(payload: SecurityPolicyRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     """org-wide mfa requirement for local-password accounts
 
@@ -747,6 +759,7 @@ def set_security_policy(payload: SecurityPolicyRequest, actor: ActorContext = De
 
 
 @router.post("/api/org/users/{user_ref}/mfa/reset")
+@atomic
 def reset_org_user_mfa(user_ref: str, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     """clear a locked-out user's second factor so they can re-enroll
 
@@ -829,6 +842,7 @@ def org_role_assignments(actor: ActorContext = Depends(current_actor)) -> dict[s
 
 
 @router.post("/api/org/role-assignments")
+@atomic
 def change_org_role_assignment(
     payload: RoleAssignmentChange, actor: ActorContext = Depends(current_actor)
 ) -> dict[str, Any]:

@@ -29,6 +29,7 @@ from app.storage.scim import (
     set_user_external_id,
 )
 from app.storage.sso import load_sso_configuration
+from app.storage.unit_of_work import atomic
 from app.storage.workflow import (
     create_platform_user,
     get_user_by_email,
@@ -193,6 +194,7 @@ def _display_name(payload: ScimUserIn) -> str:
 
 
 @router.post("/scim/v2/Users", status_code=201)
+@atomic
 def create_user(payload: ScimUserIn, tenant_id: str = Depends(scim_tenant)):
     email = payload.userName.strip().lower()
     existing = get_user_by_email(email)  # finds accounts created before addresses were normalised
@@ -242,6 +244,7 @@ def _apply_active(user_ref: str, tenant_id: str, active: bool) -> dict[str, Any]
 
 
 @router.put("/scim/v2/Users/{user_ref}")
+@atomic
 def replace_user(user_ref: str, payload: ScimUserIn, tenant_id: str = Depends(scim_tenant)):
     user = _load_tenant_user(user_ref, tenant_id)
     if user is None:
@@ -265,6 +268,7 @@ class ScimPatch(BaseModel):
 
 
 @router.patch("/scim/v2/Users/{user_ref}")
+@atomic
 def patch_user(user_ref: str, payload: ScimPatch, tenant_id: str = Depends(scim_tenant)):
     user = _load_tenant_user(user_ref, tenant_id)
     if user is None:
@@ -302,6 +306,7 @@ def patch_user(user_ref: str, payload: ScimPatch, tenant_id: str = Depends(scim_
 
 
 @router.delete("/scim/v2/Users/{user_ref}", status_code=204)
+@atomic
 def delete_user(user_ref: str, tenant_id: str = Depends(scim_tenant)):
     user = _load_tenant_user(user_ref, tenant_id)
     if user is None:
@@ -335,6 +340,7 @@ def org_scim_tokens(actor: ActorContext = Depends(current_actor)) -> dict[str, A
 
 
 @router.post("/api/org/scim-tokens")
+@atomic
 def create_org_scim_token(payload: ScimTokenRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _require_tenant_admin(actor)
     token, record = create_scim_token(tenant_id, payload.name, actor.user_ref)
@@ -349,6 +355,7 @@ def create_org_scim_token(payload: ScimTokenRequest, actor: ActorContext = Depen
 
 
 @router.post("/api/org/scim-tokens/{token_id}/revoke")
+@atomic
 def revoke_org_scim_token(token_id: str, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _require_tenant_admin(actor)
     try:

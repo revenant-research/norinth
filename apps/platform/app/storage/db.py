@@ -27,6 +27,7 @@ import re
 import sqlite3
 import threading
 import time
+from contextvars import ContextVar, Token
 from pathlib import Path
 from typing import Any
 
@@ -280,6 +281,72 @@ class SqliteConnection:
         return False
 
 
+# --- unit of work -------------------------------------------------------------
+#
+# a governance mutation and the audit entry that describes it must commit
+# together or not at all. storage functions open their own connections with
+# connect(), so a unit of work opens one connection, publishes it here, and
+# connect() hands every caller in that context a view of it that neither
+# begins, commits nor closes: the unit owns the transaction. the variable is
+# per thread and per task, so concurrent requests never share a unit
+
+_ambient_unit: ContextVar[Any] = ContextVar("norinth_unit_of_work", default=None)
+
+
+def current_unit() -> Any:
+    """the unit of work the calling code runs inside, or None"""
+    return _ambient_unit.get()
+
+
+def enter_unit(unit: Any) -> Token:
+    return _ambient_unit.set(unit)
+
+
+def leave_unit(token: Token) -> None:
+    _ambient_unit.reset(token)
+
+
+class ParticipantConnection:
+    """a storage function's view of the connection a unit of work owns
+
+    `with connect() as c:` inside a unit must not begin, commit or close: all
+    three belong to the unit. a rollback inside a unit cannot be expressed,
+    since the unit's other writes would survive it, so it is a bug and raises
+    """
+
+    def __init__(self, connection):
+        self._connection = connection
+
+    @property
+    def isolation_level(self):
+        return self._connection.isolation_level
+
+    @isolation_level.setter
+    def isolation_level(self, value):
+        pass  # the unit decided how its transaction is managed
+
+    def execute(self, sql: str, params: Any = ()) -> _Cursor:
+        return self._connection.execute(sql, params)
+
+    def executemany(self, sql: str, seq_of_params: list[Any]) -> _Cursor:
+        return self._connection.executemany(sql, seq_of_params)
+
+    def commit(self) -> None:
+        pass  # the unit commits
+
+    def rollback(self) -> None:
+        raise RuntimeError("a rollback inside a unit of work is not possible; raise to abandon the unit")
+
+    def close(self) -> None:
+        pass  # the unit closes
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
 # fixed 64-bit key for the audit-chain advisory lock (arbitrary constant)
 _AUDIT_LOCK_KEY = 4242000042420001
 
@@ -375,7 +442,20 @@ def close_pg_pool() -> None:
 
 
 def connect():
-    """open a connection to the configured backend"""
+    """a connection to the configured backend
+
+    inside a unit of work (storage.unit_of_work) this is a view of the unit's
+    own connection, so every storage function called from the unit writes in
+    the unit's transaction and commits, or rolls back, with it
+    """
+    unit = _ambient_unit.get()
+    if unit is not None:
+        return ParticipantConnection(unit.connection)
+    return open_connection()
+
+
+def open_connection():
+    """a new connection, whatever context the caller runs in"""
     if is_postgres():
         if psycopg is None:  # pragma: no cover
             raise RuntimeError("NORINTH_DATABASE_URL is set to PostgreSQL but psycopg is not installed")

@@ -16,6 +16,7 @@ from app.services.notifications import deliver_pending, emit, smtp_configured
 from app.storage import notifications as store
 from app.storage.audit import record_audit
 from app.storage.raw_events import connect
+from app.storage.unit_of_work import atomic
 
 router = APIRouter()
 
@@ -48,6 +49,7 @@ def list_hooks(actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
 
 
 @router.post("/api/org/webhooks", status_code=201)
+@atomic
 def create_hook(payload: WebhookRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _tenant(actor)
     if not payload.url.lower().startswith("https://") and not payload.url.lower().startswith("http://"):
@@ -79,6 +81,7 @@ def create_hook(payload: WebhookRequest, actor: ActorContext = Depends(current_a
 
 
 @router.delete("/api/org/webhooks/{webhook_id}", status_code=204)
+@atomic
 def delete_hook(webhook_id: str, actor: ActorContext = Depends(current_actor)) -> None:
     tenant_id = _tenant(actor)
     if not store.delete_webhook(webhook_id, tenant_id):

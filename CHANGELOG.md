@@ -84,6 +84,13 @@ Semantic Versioning.
   value written with a non-zero offset lapsed hours late or early and a
   release gate could be approved on a lapsed risk acceptance in that window.
   Migration 28 normalises rows written earlier.
+- **A governance change and its audit entry commit together.** Routes that
+  approve a gate, close an incident, decide a review, change a control or
+  policy, manage users, keys, agents or webhooks saved the change in one
+  transaction and appended the audit entry in another; a failed append left
+  the change in place with no record of it. Each such route now runs in one
+  unit of work: every storage write and the audit append share one
+  transaction, and the checkpoint journal is written only after it commits.
 - **Control, owner-policy and review-routing changes are on the audit
   chain**, and the listing endpoints for owner and review-queue policies
   return the policies in force for the caller's organization rather than

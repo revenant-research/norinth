@@ -89,6 +89,7 @@ from app.storage.intake import intake_submitter
 from app.storage.lifecycle import count_change_events, count_review_tasks
 from app.storage.raw_events import connect, count_scoped_events, list_events, list_scopes
 from app.storage.retention import MIN_RETENTION_DAYS, retention_days_for, set_retention_days
+from app.storage.unit_of_work import atomic
 from app.storage.workflow import (
     assign_owner,
     count_decisions,
@@ -349,6 +350,7 @@ def control_catalog(actor: ActorContext = Depends(current_actor)):
 
 
 @router.post("/api/control-catalog")
+@atomic
 def configure_control(payload: ControlDefinitionRequest, actor: ActorContext = Depends(current_actor)):
     try:
         require_config_write(actor)
@@ -379,6 +381,7 @@ def risk_rules(actor: ActorContext = Depends(current_actor)):
 
 
 @router.post("/api/risk-rules")
+@atomic
 def configure_risk_rule(payload: RiskRuleRequest, actor: ActorContext = Depends(current_actor)):
     try:
         require_config_write(actor)
@@ -421,6 +424,7 @@ def retention_policy(actor: ActorContext = Depends(current_actor)):
 
 
 @router.post("/api/retention-policy")
+@atomic
 def configure_retention_policy(payload: RetentionPolicyRequest, actor: ActorContext = Depends(current_actor)):
     """set how long this organization keeps raw telemetry
 
@@ -453,6 +457,7 @@ def owner_policies(actor: ActorContext = Depends(current_actor)):
 
 
 @router.post("/api/owner-policies")
+@atomic
 def configure_owner_policy(payload: OwnerPolicyRequest, actor: ActorContext = Depends(current_actor)):
     try:
         require_config_write(actor)
@@ -486,6 +491,7 @@ def review_queue_policies(actor: ActorContext = Depends(current_actor)):
 
 
 @router.post("/api/review-queue-policies")
+@atomic
 def configure_review_queue_policy(payload: ReviewQueuePolicyRequest, actor: ActorContext = Depends(current_actor)):
     try:
         require_config_write(actor)
@@ -574,6 +580,7 @@ def incident_detail(incident_id: str, scope: ScopeFilter = Depends(scoped_depend
 
 
 @router.post("/api/incidents/{incident_id}/close")
+@atomic
 def close_incident(
     incident_id: str, payload: DeploymentGateDecisionRequest, actor: ActorContext = Depends(current_actor)
 ):
@@ -619,6 +626,7 @@ def close_incident(
 
 
 @router.post("/api/deployment-gates/{gate_id}/approve")
+@atomic
 def approve_deployment_gate(
     gate_id: str, payload: DeploymentGateDecisionRequest, actor: ActorContext = Depends(current_actor)
 ):
@@ -665,6 +673,7 @@ def approve_deployment_gate(
 
 
 @router.post("/api/deployment-gates/{gate_id}/reject")
+@atomic
 def reject_deployment_gate(
     gate_id: str, payload: DeploymentGateDecisionRequest, actor: ActorContext = Depends(current_actor)
 ):
@@ -710,6 +719,7 @@ def owner_assignments(scope: ScopeFilter = Depends(scoped_dependency), page: Pag
 
 
 @router.post("/api/owner-assignments/{owner_assignment_id}/assign")
+@atomic
 def assign_owner_route(
     owner_assignment_id: str, payload: OwnerAssignmentRequest, actor: ActorContext = Depends(current_actor)
 ):
@@ -740,6 +750,7 @@ _ALLOWED_DECISIONS = {"approve", "reject", "accept_risk", "mitigate", "waive", "
 
 
 @router.post("/api/decisions")
+@atomic
 def create_decision(payload: DecisionRequest, actor: ActorContext = Depends(current_actor)):
     if payload.decision not in _ALLOWED_DECISIONS:
         raise HTTPException(
@@ -822,6 +833,7 @@ def _future_expiry(value: str) -> str:
 
 
 @router.post("/api/exceptions")
+@atomic
 def create_exception_route(payload: ExceptionRequest, actor: ActorContext = Depends(current_actor)):
     expires_at = _future_expiry(payload.expires_at)
     target = load_decision_target(payload.target_type, payload.target_id, tenant_id=actor.tenant_id)
