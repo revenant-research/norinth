@@ -1190,9 +1190,32 @@ def list_decisions(
     )
 
 
+def normalize_expiry(value: str) -> str:
+    """an exception expiry as a UTC ISO-8601 instant
+
+    accepts a date (YYYY-MM-DD, taken as midnight UTC) or an ISO datetime with
+    any offset. expiry is compared as text in sql, and text order equals time
+    order only when every stored value carries the same offset, so values are
+    normalised to +00:00 before they are written
+    """
+    text = value.strip()
+    for candidate in (text, f"{text}T00:00:00+00:00"):
+        try:
+            parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC).isoformat()
+    raise ValueError("expires_at must be an ISO date (YYYY-MM-DD) or datetime")
+
+
 def expire_due_exceptions() -> int:
     """mark active exceptions past expires_at as 'expired' and reopen the finding
-    they waived, so it re-enters the risk register; idempotent"""
+    they waived, so it re-enters the risk register; idempotent
+
+    expires_at is stored normalised to utc (normalize_expiry), so the textual
+    compare orders instants correctly"""
     now = datetime.now(UTC).isoformat()
     expired = 0
     with connect() as connection:

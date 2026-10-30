@@ -39,13 +39,13 @@ def test_expired_exception_reopens_the_finding(fresh_db):
 
 
 def test_exception_requires_a_future_date(super_admin_client):
-    from app.api.routes import _validate_future_date
+    from app.api.routes import _future_expiry
     from fastapi import HTTPException
 
-    _validate_future_date("2999-01-01")  # ok
+    assert _future_expiry("2999-01-01") == "2999-01-01T00:00:00+00:00"
     for bad in ("2000-01-01", "not-a-date", ""):
         try:
-            _validate_future_date(bad)
+            _future_expiry(bad)
             raise AssertionError(f"expected rejection for {bad!r}")
         except HTTPException as error:
             assert error.status_code == 400

@@ -98,6 +98,7 @@ from app.storage.workflow import (
     expire_due_exceptions,
     load_decision_target,
     load_owner_assignment,
+    normalize_expiry,
     record_decision,
     upsert_owner_policy,
     upsert_review_queue_policy,
@@ -686,27 +687,22 @@ def exceptions(scope: ScopeFilter = Depends(scoped_dependency), page: PageParams
     return paged(build_exceptions, "exceptions", scope, page, count_exceptions)
 
 
-def _validate_future_date(value: str) -> None:
+def _future_expiry(value: str) -> str:
+    """the expiry normalised to utc, refused unless it lies in the future"""
     from datetime import UTC, datetime
 
-    text = value.strip()
-    for candidate in (text, f"{text}T00:00:00+00:00"):
-        try:
-            parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
-            if parsed.tzinfo is None:
-                parsed = parsed.replace(tzinfo=UTC)
-            if parsed <= datetime.now(UTC):
-                raise HTTPException(status_code=400, detail="expires_at must be a future date")
-            return
-        except ValueError:
-            # fromisoformat rejecting the candidate, not a domain rule
-            continue
-    raise HTTPException(status_code=400, detail="expires_at must be an ISO date (YYYY-MM-DD) or datetime")
+    try:
+        normalized = normalize_expiry(value)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    if datetime.fromisoformat(normalized) <= datetime.now(UTC):
+        raise HTTPException(status_code=400, detail="expires_at must be a future date")
+    return normalized
 
 
 @router.post("/api/exceptions")
 def create_exception_route(payload: ExceptionRequest, actor: ActorContext = Depends(current_actor)):
-    _validate_future_date(payload.expires_at)
+    expires_at = _future_expiry(payload.expires_at)
     target = load_decision_target(payload.target_type, payload.target_id, tenant_id=actor.tenant_id)
     target["target_type"] = payload.target_type
     try:
@@ -718,7 +714,7 @@ def create_exception_route(payload: ExceptionRequest, actor: ActorContext = Depe
         payload.target_id,
         payload.reason,
         payload.compensating_control,
-        payload.expires_at,
+        expires_at,
         actor.user_ref,
         tenant_id=actor.tenant_id,
     )

@@ -634,6 +634,37 @@ def _0027_portable_contracts(connection) -> None:
     ensure_tables(connection)
 
 
+def _0028_exception_expiry_utc(connection) -> None:
+    """expiry instants are compared as text, so every stored value must carry
+    the same offset; rows written before normalisation may carry any offset"""
+    from app.storage.workflow import normalize_expiry
+
+    rows = connection.execute("SELECT exception_id, expires_at FROM governance_exceptions").fetchall()
+    for row in rows:
+        try:
+            normalized = normalize_expiry(row["expires_at"])
+        except ValueError:
+            continue  # an unparseable legacy value is left for an operator to look at
+        if normalized != row["expires_at"]:
+            connection.execute(
+                "UPDATE governance_exceptions SET expires_at = ? WHERE exception_id = ?",
+                (normalized, row["exception_id"]),
+            )
+
+
+def _0029_restore_scope_indexes(connection) -> None:
+    """migration 10 rebuilt three tables under new primary keys and dropped the
+    baseline scope and status indexes with the old tables; fresh installs run
+    that migration too, so no install has had them since"""
+    for statement in (
+        "CREATE INDEX IF NOT EXISTS idx_governance_incidents_scope ON governance_incidents(tenant_id, project, environment)",
+        "CREATE INDEX IF NOT EXISTS idx_governance_incidents_status ON governance_incidents(status)",
+        "CREATE INDEX IF NOT EXISTS idx_governance_deployments_scope ON governance_deployments(tenant_id, project, environment)",
+        "CREATE INDEX IF NOT EXISTS idx_prompt_templates_scope ON prompt_templates(tenant_id, project, environment)",
+    ):
+        connection.execute(statement)
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
@@ -662,6 +693,8 @@ MIGRATIONS: list[Migration] = [
     Migration(25, "control coverage and evidence freshness", _0025_control_coverage),
     Migration(26, "observe or enforce mode for risk rules", _0026_risk_rule_mode),
     Migration(27, "portable execution integration contracts", _0027_portable_contracts),
+    Migration(28, "exception expiry normalised to utc", _0028_exception_expiry_utc),
+    Migration(29, "scope indexes dropped by the tenant-key rebuild", _0029_restore_scope_indexes),
 ]
 
 
