@@ -68,8 +68,10 @@ def test_a_tenantless_record_cannot_be_decided_by_a_tenant_actor(super_admin_cli
         connection.execute("UPDATE risk_findings SET tenant_id = NULL WHERE finding_id = ?", (finding_id,))
 
     # a governance_admin (who holds risk.accept) still cannot decide it: the
-    # record has no tenant, so the scope check refuses rather than adopting the
-    # acting tenant
+    # target lookup is bound to the actor's tenant, so a record with no tenant
+    # is not found for them (404), and had it been, the scope check would have
+    # refused rather than adopting the acting tenant (403). either way it is
+    # refused, never adopted
     with TestClient(app) as gov:
         login_and_activate(gov, "gov@acme.test", "gov-password-1")
         resp = gov.post(
@@ -81,7 +83,7 @@ def test_a_tenantless_record_cannot_be_decided_by_a_tenant_actor(super_admin_cli
                 "rationale": "attempting to decide a record that carries no tenant of its own",
             },
         )
-        assert resp.status_code == 403, resp.text
+        assert resp.status_code in {403, 404}, resp.text
 
     # and the record is unchanged
     with connect() as connection:
