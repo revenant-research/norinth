@@ -44,19 +44,44 @@ def _as_dict(value: Any, path: str) -> dict[str, Any]:
     return value
 
 
+_SCALARS = (str, bool, int, float)
+
+
 def _attr_value(value: dict[str, Any]) -> Any:
-    """scalar from an otlp AnyValue"""
+    """scalar from an otlp AnyValue, or None when the sender put a container
+    where a scalar belongs
+
+    the event this becomes is bound straight into sql, and a list or object in
+    a scalar column fails at the binding, after the request has been accepted
+    as well-formed. a container is treated like any other malformed attribute:
+    skipped, not fatal
+    """
     for key in ("stringValue", "boolValue"):
         if key in value:
-            return value[key]
+            raw = value[key]
+            return raw if isinstance(raw, _SCALARS) else None
     for key in ("intValue", "doubleValue"):
         if key in value:
             raw = value[key]
+            if not isinstance(raw, _SCALARS):
+                return None
             try:
                 return int(raw) if key == "intValue" else float(raw)
             except (TypeError, ValueError, OverflowError):
-                return raw
-    return value.get("stringValue")
+                return raw  # a numeric string outside the convertible range stays as sent
+    raw = value.get("stringValue")
+    return raw if isinstance(raw, _SCALARS) else None
+
+
+def _span_field(span: dict[str, Any], key: str, path: str) -> str | None:
+    """a span envelope field as text, absent as None; a container is a shape
+    error the collector should hear about"""
+    raw = span.get(key)
+    if raw is None:
+        return None
+    if not isinstance(raw, _SCALARS):
+        raise OtelPayloadError(f"{path}.{key} must be a string")
+    return str(raw)
 
 
 def _attributes_to_dict(attributes: list[Any] | None) -> dict[str, Any]:
@@ -112,7 +137,7 @@ def _span_to_event(span: dict[str, Any], resource_attrs: dict[str, Any], path: s
     requested_model = attrs.get("gen_ai.request.model")
     model = attrs.get("gen_ai.response.model") or requested_model
     service = resource_attrs.get("service.name") or "otel"
-    workflow_name = span.get("name") or operation or "otel-span"
+    workflow_name = _span_field(span, "name", path) or operation or "otel-span"
     application_name = attrs.get("gen_ai.agent.name") or service
 
     metadata = {
@@ -149,9 +174,9 @@ def _span_to_event(span: dict[str, Any], resource_attrs: dict[str, Any], path: s
     return {
         "type": event_type,
         "schema_version": SCHEMA_VERSION,
-        "trace_id": str(span.get("traceId") or span.get("trace_id") or "otel"),
-        "span_id": str(span.get("spanId") or span.get("span_id") or "otel"),
-        "parent_span_id": span.get("parentSpanId"),
+        "trace_id": _span_field(span, "traceId", path) or _span_field(span, "trace_id", path) or "otel",
+        "span_id": _span_field(span, "spanId", path) or _span_field(span, "span_id", path) or "otel",
+        "parent_span_id": _span_field(span, "parentSpanId", path),
         "timestamp": _nanos_to_iso(span.get("endTimeUnixNano") or span.get("startTimeUnixNano")),
         "service": service,
         "environment": resource_attrs.get("deployment.environment") or "otel",

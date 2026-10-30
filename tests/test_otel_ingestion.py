@@ -5,6 +5,8 @@ from __future__ import annotations
 import pathlib
 import sys
 
+import pytest
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "apps" / "platform"))
 
 
@@ -238,3 +240,57 @@ def test_otel_mapper_preserves_numeric_attributes_that_overflow_conversion():
         (event,) = otel_spans_to_events(payload)
         assert event["attributes"]["usage"]["input_tokens"] is raw
         json.dumps(event)
+
+
+def _span_with(**overrides) -> dict:
+    payload = _otlp_chat_span()
+    payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0].update(overrides)
+    return payload
+
+
+def test_otel_mapper_skips_attribute_values_that_are_not_scalars():
+    """a container where a scalar belongs would fail at the sql binding, after
+    the request was accepted; it is skipped like any other malformed attribute"""
+    from app.ingestion.otel import otel_spans_to_events
+
+    payload = _otlp_chat_span()
+    payload["resourceSpans"][0]["resource"]["attributes"][0] = {"key": "service.name", "value": {"stringValue": {}}}
+    span = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    span["attributes"][1] = {"key": "gen_ai.provider.name", "value": {"stringValue": []}}
+    span["attributes"][3] = {"key": "gen_ai.usage.input_tokens", "value": {"intValue": [12]}}
+    span["attributes"].append({"key": "gen_ai.agent.name", "value": {"boolValue": {"nested": True}}})
+
+    (event,) = otel_spans_to_events(payload)
+    assert event["service"] == "otel"
+    assert event["attributes"]["provider"] is None
+    assert event["attributes"]["usage"]["input_tokens"] is None
+    assert event["attributes"]["metadata"]["application_name"] == "otel"
+
+
+@pytest.mark.parametrize("field", ["name", "parentSpanId", "traceId", "spanId"])
+def test_otel_mapper_rejects_a_container_in_a_span_envelope_field(field):
+    from app.ingestion.otel import OtelPayloadError, otel_spans_to_events
+
+    for bad in ([], {}, ["a", "b"], {"k": "v"}):
+        with pytest.raises(OtelPayloadError, match=field):
+            otel_spans_to_events(_span_with(**{field: bad}))
+
+
+def test_otel_endpoint_answers_400_not_500_for_a_container_in_an_envelope_field(client):
+    from app.storage.raw_events import connect
+
+    payload = _span_with(name=["chat", "gpt-4o"], parentSpanId={})
+    response = client.post("/v1/otel/traces", json=payload, headers={"Authorization": "Bearer dev"})
+    assert response.status_code == 400, response.text
+    assert "name" in response.json()["detail"]
+    with connect() as connection:
+        assert connection.execute("SELECT COUNT(*) AS n FROM sdk_events").fetchone()["n"] == 0
+
+
+def test_otel_endpoint_ingests_a_span_whose_attribute_values_are_containers(client):
+    """the span is still well-formed; only the odd attributes are dropped"""
+    payload = _otlp_chat_span()
+    payload["resourceSpans"][0]["resource"]["attributes"][0] = {"key": "service.name", "value": {"stringValue": {}}}
+    response = client.post("/v1/otel/traces", json=payload, headers={"Authorization": "Bearer dev"})
+    assert response.status_code == 200, response.text
+    assert response.json()["accepted"] == 1
