@@ -8,6 +8,12 @@ Semantic Versioning.
 
 ### Added
 
+- **A policy cannot put in force approval stages nobody can decide.**
+  Activation refuses a version when a stage list it changes cannot be given a
+  different active person per stage, each holding a role with at least the
+  stage role's authority. Stage lists the version leaves unchanged are not
+  checked. The policy diff endpoint lists the gaps, and the policy page saves
+  such a version as a draft and names the roles to assign.
 - **Connected-system governance workspace.** A standalone, reusable workspace
   for systems that execute outside the platform, with scoped read-only
   snapshots for server adapters, the distinction between an absent human
