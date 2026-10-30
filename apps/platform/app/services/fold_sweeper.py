@@ -58,9 +58,7 @@ def run_once() -> dict[str, Any]:
     if db.is_postgres():
         lock_conn = connect()
         try:
-            held = lock_conn.execute(
-                f"SELECT pg_try_advisory_lock({_FOLD_SWEEP_LOCK_KEY}) AS held"
-            ).fetchone()["held"]
+            held = lock_conn.execute(f"SELECT pg_try_advisory_lock({_FOLD_SWEEP_LOCK_KEY}) AS held").fetchone()["held"]
             if not held:
                 return {"skipped": True, "folded": 0}
             try:

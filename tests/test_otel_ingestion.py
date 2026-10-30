@@ -5,6 +5,8 @@ from __future__ import annotations
 import pathlib
 import sys
 
+import pytest
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "apps" / "platform"))
 
 
@@ -60,7 +62,18 @@ def test_otel_mapper_skips_non_genai_spans():
 
     payload = {
         "resourceSpans": [
-            {"scopeSpans": [{"spans": [{"name": "GET /health", "attributes": [{"key": "http.method", "value": {"stringValue": "GET"}}]}]}]}
+            {
+                "scopeSpans": [
+                    {
+                        "spans": [
+                            {
+                                "name": "GET /health",
+                                "attributes": [{"key": "http.method", "value": {"stringValue": "GET"}}],
+                            }
+                        ]
+                    }
+                ]
+            }
         ]
     }
     assert otel_spans_to_events(payload) == []
@@ -76,13 +89,15 @@ def test_otel_mapper_records_executed_model_and_preserves_requested_model(client
     payload = _otlp_chat_span()
     span = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
     span["attributes"].append({"key": "gen_ai.response.model", "value": {"stringValue": "gpt-4o-actual"}})
-    event, = otel_spans_to_events(payload)
+    (event,) = otel_spans_to_events(payload)
     assert event["attributes"]["model"] == "gpt-4o-actual"
     assert event["attributes"]["requested_model"] == "gpt-4o"
     response = client.post("/v1/otel/traces", json=payload, headers={"Authorization": "Bearer dev"})
     assert response.status_code == 200, response.text
     with connect() as connection:
-        row = connection.execute("SELECT models FROM governance_applications WHERE tenant_id = 'tenant-local'").fetchone()
+        row = connection.execute(
+            "SELECT models FROM governance_applications WHERE tenant_id = 'tenant-local'"
+        ).fetchone()
     assert json.loads(row["models"]) == ["gpt-4o-actual"]
 
 
@@ -93,7 +108,7 @@ def test_otel_mapper_accepts_a_response_model_without_a_request_model():
     attributes = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["attributes"]
     attributes[:] = [attr for attr in attributes if attr["key"] != "gen_ai.request.model"]
     attributes.append({"key": "gen_ai.response.model", "value": {"stringValue": "actual-model"}})
-    event, = otel_spans_to_events(payload)
+    (event,) = otel_spans_to_events(payload)
     assert event["attributes"]["model"] == "actual-model"
     assert event["attributes"].get("requested_model") is None
 
@@ -170,10 +185,14 @@ def _many_genai_spans(n: int) -> dict:
         }
         for i in range(n)
     ]
-    return {"resourceSpans": [{
-        "resource": {"attributes": [{"key": "service.name", "value": {"stringValue": "otel-app"}}]},
-        "scopeSpans": [{"spans": spans}],
-    }]}
+    return {
+        "resourceSpans": [
+            {
+                "resource": {"attributes": [{"key": "service.name", "value": {"stringValue": "otel-app"}}]},
+                "scopeSpans": [{"spans": spans}],
+            }
+        ]
+    }
 
 
 def test_otel_endpoint_caps_the_number_of_spans_per_request(client):
@@ -230,11 +249,105 @@ def test_otel_mapper_preserves_numeric_attributes_that_overflow_conversion():
 
     from app.ingestion.otel import otel_spans_to_events
 
-    for kind, raw in (("intValue", float("inf")), ("intValue", float("-inf")),
-                      ("intValue", float("nan")), ("doubleValue", 10**400)):
+    for kind, raw in (
+        ("intValue", float("inf")),
+        ("intValue", float("-inf")),
+        ("intValue", float("nan")),
+        ("doubleValue", 10**400),
+    ):
         payload = _otlp_chat_span()
         span = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
         span["attributes"].append({"key": "gen_ai.usage.input_tokens", "value": {kind: raw}})
         (event,) = otel_spans_to_events(payload)
         assert event["attributes"]["usage"]["input_tokens"] is raw
         json.dumps(event)
+
+
+def _span_with(**overrides) -> dict:
+    payload = _otlp_chat_span()
+    payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0].update(overrides)
+    return payload
+
+
+def test_otel_mapper_skips_attribute_values_that_are_not_scalars():
+    """a container where a scalar belongs would fail at the sql binding, after
+    the request was accepted; it is skipped like any other malformed attribute"""
+    from app.ingestion.otel import otel_spans_to_events
+
+    payload = _otlp_chat_span()
+    payload["resourceSpans"][0]["resource"]["attributes"][0] = {"key": "service.name", "value": {"stringValue": {}}}
+    span = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    span["attributes"][1] = {"key": "gen_ai.provider.name", "value": {"stringValue": []}}
+    span["attributes"][3] = {"key": "gen_ai.usage.input_tokens", "value": {"intValue": [12]}}
+    span["attributes"].append({"key": "gen_ai.agent.name", "value": {"boolValue": {"nested": True}}})
+
+    (event,) = otel_spans_to_events(payload)
+    assert event["service"] == "otel"
+    assert event["attributes"]["provider"] is None
+    assert event["attributes"]["usage"]["input_tokens"] is None
+    assert event["attributes"]["metadata"]["application_name"] == "otel"
+
+
+@pytest.mark.parametrize("field", ["name", "parentSpanId", "traceId", "spanId"])
+def test_otel_mapper_rejects_a_container_in_a_span_envelope_field(field):
+    from app.ingestion.otel import OtelPayloadError, otel_spans_to_events
+
+    for bad in ([], {}, ["a", "b"], {"k": "v"}):
+        with pytest.raises(OtelPayloadError, match=field):
+            otel_spans_to_events(_span_with(**{field: bad}))
+
+
+def test_otel_endpoint_answers_400_not_500_for_a_container_in_an_envelope_field(client):
+    from app.storage.raw_events import connect
+
+    payload = _span_with(name=["chat", "gpt-4o"], parentSpanId={})
+    response = client.post("/v1/otel/traces", json=payload, headers={"Authorization": "Bearer dev"})
+    assert response.status_code == 400, response.text
+    assert "name" in response.json()["detail"]
+    with connect() as connection:
+        assert connection.execute("SELECT COUNT(*) AS n FROM sdk_events").fetchone()["n"] == 0
+
+
+def test_otel_endpoint_ingests_a_span_whose_attribute_values_are_containers(client):
+    """the span is still well-formed; only the odd attributes are dropped"""
+    payload = _otlp_chat_span()
+    payload["resourceSpans"][0]["resource"]["attributes"][0] = {"key": "service.name", "value": {"stringValue": {}}}
+    response = client.post("/v1/otel/traces", json=payload, headers={"Authorization": "Bearer dev"})
+    assert response.status_code == 200, response.text
+    assert response.json()["accepted"] == 1
+
+
+def test_otel_mapper_renders_numeric_names_as_text():
+    """a sender may encode a namespace or data-source id as a number; the
+    columns those land in are text, on both databases"""
+    from app.ingestion.otel import otel_spans_to_events
+
+    payload = _otlp_chat_span()
+    payload["resourceSpans"][0]["resource"]["attributes"].append(
+        {"key": "service.namespace", "value": {"intValue": "7813586424118473845"}}
+    )
+    span = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    span["attributes"][0] = {"key": "gen_ai.operation.name", "value": {"stringValue": "retrieval"}}
+    span["attributes"].append({"key": "gen_ai.data_source.id", "value": {"intValue": "42"}})
+    span["attributes"].append({"key": "gen_ai.response.model", "value": {"doubleValue": "1.5"}})
+
+    (event,) = otel_spans_to_events(payload)
+    assert event["project"] == "7813586424118473845"
+    assert event["attributes"]["retriever"] == "42"
+    assert event["attributes"]["model"] == "1.5"
+
+
+def test_otel_mapper_renders_a_non_string_operation_name_as_text():
+    """a bool operation name is not a gen_ai operation, but a retrieval span
+    still maps, and the name it carries must be text"""
+    from app.ingestion.otel import otel_spans_to_events
+
+    payload = _otlp_chat_span()
+    span = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+    span["attributes"][0] = {"key": "gen_ai.operation.name", "value": {"boolValue": True}}
+    span["attributes"].append({"key": "gen_ai.data_source.id", "value": {"stringValue": "kb"}})
+    del span["name"]
+
+    (event,) = otel_spans_to_events(payload)
+    assert event["type"] == "retrieval.call"
+    assert event["name"] == "true" and event["attributes"]["operation"] == "true"

@@ -22,6 +22,7 @@ from app.storage.attestation_keys import (
 from app.storage.audit import record_audit
 from app.storage.errors import DomainError
 from app.storage.raw_events import connect
+from app.storage.unit_of_work import atomic
 
 router = APIRouter()
 
@@ -54,8 +55,7 @@ def list_keys(actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
         environments = policy["body"].get("gates", {}).get("environments", {}) or {}
         names = set(environments) | {"*"}
         policy_required = {
-            name: bool(resolve_gate_policy(connection, tenant_id, name)["require_attested_evals"])
-            for name in names
+            name: bool(resolve_gate_policy(connection, tenant_id, name)["require_attested_evals"]) for name in names
         }
     active_count = sum(key["status"] == "active" for key in keys)
     return {
@@ -64,11 +64,14 @@ def list_keys(actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
         "key_opt_in": key_opt_in,
         "policy_required_environments": policy_required,
         "active_key_count": active_count,
-        "key_status": "no_active_key" if active_count == 0 and (key_opt_in or any(policy_required.values())) else "ready",
+        "key_status": "no_active_key"
+        if active_count == 0 and (key_opt_in or any(policy_required.values()))
+        else "ready",
     }
 
 
 @router.post("/api/attestation-keys")
+@atomic
 def register_key(payload: AttestationKeyRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _require_tenant(actor)
     _authorize(actor, tenant_id)
@@ -89,6 +92,7 @@ def register_key(payload: AttestationKeyRequest, actor: ActorContext = Depends(c
 
 
 @router.post("/api/attestation-keys/{key_id}/revoke")
+@atomic
 def revoke_key(key_id: str, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _require_tenant(actor)
     _authorize(actor, tenant_id)

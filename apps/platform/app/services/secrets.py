@@ -128,9 +128,7 @@ def _require_binding(associated_data: str) -> None:
     an empty string silently became no-AAD, which is the binding vanishing
     exactly when a caller's tenant id happened to be blank — fail instead"""
     if not associated_data:
-        raise ValueError(
-            "associated_data must be a non-empty context binding (e.g. the tenant id or record key)"
-        )
+        raise ValueError("associated_data must be a non-empty context binding (e.g. the tenant id or record key)")
 
 
 def encrypt(value: str, *, associated_data: str) -> str:
@@ -169,7 +167,7 @@ def decrypt(stored: str, *, associated_data: str) -> str:
     _require_binding(associated_data)
     if stored.startswith(_PREFIX_V2):
         ring = keyring()
-        kid, _, tail = stored[len(_PREFIX_V2):].partition(":")
+        kid, _, tail = stored[len(_PREFIX_V2) :].partition(":")
         nonce_b64, _, ct_b64 = tail.partition(":")
         key = ring.get(kid)
         if key is None:

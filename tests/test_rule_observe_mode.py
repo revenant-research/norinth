@@ -117,7 +117,9 @@ def test_observed_findings_are_visible_but_do_not_block(org):
 
     # the built-in provider rule's open finding is the only blocker from this traffic
     assert _finding(client, "RISK-TPD-001")["status"] == "open"
-    assert blocking_before == len([r for r in client.get("/api/risk-register").json()["risks"] if r["status"] == "open"])
+    assert blocking_before == len(
+        [r for r in client.get("/api/risk-register").json()["risks"] if r["status"] == "open"]
+    )
 
 
 def test_promotion_reopens_findings_and_is_audited(org):

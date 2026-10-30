@@ -111,9 +111,7 @@ def purge_events_older_than(retention_days: int, tenant_id: str | None = None) -
         # means a client that future-dates its events can no longer keep them
         # past the window, while a genuinely old event still ages out at once
         if tenant_id is None:
-            cur = connection.execute(
-                "DELETE FROM sdk_events WHERE timestamp < ? OR ingested_at < ?", (cutoff, cutoff)
-            )
+            cur = connection.execute("DELETE FROM sdk_events WHERE timestamp < ? OR ingested_at < ?", (cutoff, cutoff))
         else:
             cur = connection.execute(
                 "DELETE FROM sdk_events WHERE (timestamp < ? OR ingested_at < ?) AND tenant_id = ?",
@@ -153,8 +151,7 @@ def tenants_with_retention_window() -> list[dict[str, Any]]:
     """organizations that have opted into ageing their telemetry out"""
     with connect() as connection:
         rows = connection.execute(
-            "SELECT tenant_id, retention_days FROM organizations "
-            "WHERE retention_days IS NOT NULL AND status = 'active'"
+            "SELECT tenant_id, retention_days FROM organizations WHERE retention_days IS NOT NULL AND status = 'active'"
         ).fetchall()
     return [{"tenant_id": row["tenant_id"], "retention_days": int(row["retention_days"])} for row in rows]
 
@@ -165,9 +162,7 @@ def tenant_data_summary(tenant_id: str) -> dict[str, Any]:
     summary: dict[str, int] = {}
     with connect() as connection:
         for table in _TENANT_SCOPED_TABLES:
-            row = connection.execute(
-                f"SELECT COUNT(*) AS n FROM {table} WHERE tenant_id = ?", (tenant_id,)
-            ).fetchone()
+            row = connection.execute(f"SELECT COUNT(*) AS n FROM {table} WHERE tenant_id = ?", (tenant_id,)).fetchone()
             if row["n"]:
                 summary[table] = int(row["n"])
     return {"tenant_id": tenant_id, "row_counts": summary, "total_rows": sum(summary.values())}

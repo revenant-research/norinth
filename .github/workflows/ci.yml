@@ -28,6 +28,8 @@ jobs:
           pip install --no-deps -e packages/python-sdk
       - name: Lint (ruff)
         run: ruff check apps/platform/app packages/python-sdk/norinth_logger tests scripts
+      - name: Format (ruff, same hook pre-commit runs)
+        run: ruff format --check apps/platform/app packages/python-sdk/norinth_logger tests
       - name: License headers (SPDX)
         run: python3 scripts/check_license_headers.py
       - name: Type check (mypy)

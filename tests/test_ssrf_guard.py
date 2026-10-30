@@ -15,16 +15,19 @@ def _enforce(monkeypatch):
     monkeypatch.setenv("NORINTH_ALLOW_PRIVATE_EGRESS", "0")
 
 
-@pytest.mark.parametrize("url", [
-    "http://127.0.0.1:1/x",
-    "http://localhost:8001/x",
-    "http://169.254.169.254/latest/meta-data/",
-    "http://[::1]:22/x",
-    "http://10.0.0.5/internal",
-    "http://192.168.1.1/",
-    "http://metadata.google.internal/",  # resolves to link-local in gcp; here to a private/absent addr
-    "ftp://example.com/x",
-])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1:1/x",
+        "http://localhost:8001/x",
+        "http://169.254.169.254/latest/meta-data/",
+        "http://[::1]:22/x",
+        "http://10.0.0.5/internal",
+        "http://192.168.1.1/",
+        "http://metadata.google.internal/",  # resolves to link-local in gcp; here to a private/absent addr
+        "ftp://example.com/x",
+    ],
+)
 def test_blocked_urls(url):
     from app.services.net_guard import EgressError, validate_external_url
 

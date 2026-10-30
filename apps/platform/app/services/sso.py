@@ -252,7 +252,9 @@ def _provision_user(
         # email could take over an existing account by claiming its address. SAML
         # passes email_verified=True because the assertion itself is signed
         if email_verified is not True:
-            raise SsoError("the identity provider did not assert this email as verified; it cannot be used to sign in to an existing account")
+            raise SsoError(
+                "the identity provider did not assert this email as verified; it cannot be used to sign in to an existing account"
+            )
         return existing
 
     # a brand-new account may be provisioned when the claim is absent (many idps

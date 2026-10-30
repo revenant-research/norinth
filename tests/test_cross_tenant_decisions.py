@@ -24,7 +24,8 @@ def _event(tenant_id: str, span: str) -> dict:
         "project": "p1",
         "status": "success",
         "attributes": {
-            "provider": "openai", "model": "gpt-4o",
+            "provider": "openai",
+            "model": "gpt-4o",
             "usage": {"input_tokens": 5, "output_tokens": 5},
             "metadata": {"tenant_id": tenant_id, "application_name": "PayApp", "workflow_name": "wf"},
         },
@@ -38,28 +39,52 @@ def _org_with_findings(super_admin_client, tenant_id: str, email: str, password:
 
     super_admin_client.post(
         "/api/admin/organizations",
-        json={"tenant_id": tenant_id, "name": tenant_id.title(), "admin_email": email,
-              "admin_display_name": "OA", "admin_password": password},
+        json={
+            "tenant_id": tenant_id,
+            "name": tenant_id.title(),
+            "admin_email": email,
+            "admin_display_name": "OA",
+            "admin_password": password,
+        },
     )
     with TestClient(app) as org:
         login_and_activate(org, email, password)
         token = org.post("/api/ingestion-keys", json={"name": "ci"}).json()["token"]
         gov_email = f"gov@{tenant_id}.test"
-        org.post("/api/org/users",
-                 json={"email": gov_email, "display_name": "Gov", "password": f"{tenant_id}-gov-pw-1"})
-        org.post("/api/org/role-assignments",
-                 json={"user_ref": gov_email, "role": "governance_admin"})
-        sent = org.post("/v1/events/batch", json={"events": [
-            _event(tenant_id, f"{tenant_id}_call"),
-            {"type": "deployment.event", "schema_version": "2026-01", "trace_id": f"trc_{tenant_id}",
-             "span_id": f"{tenant_id}_dep", "timestamp": "2026-08-22T00:00:03Z", "service": "svc",
-             "environment": "prod", "project": "p1", "status": "success",
-             "attributes": {"deployment_id": "dep-1", "version": "v1", "artifact_ref": "img:1",
-                            "provider": "openai", "model": "gpt-4o", "prompt_version": "v1",
+        org.post(
+            "/api/org/users", json={"email": gov_email, "display_name": "Gov", "password": f"{tenant_id}-gov-pw-1"}
+        )
+        org.post("/api/org/role-assignments", json={"user_ref": gov_email, "role": "governance_admin"})
+        sent = org.post(
+            "/v1/events/batch",
+            json={
+                "events": [
+                    _event(tenant_id, f"{tenant_id}_call"),
+                    {
+                        "type": "deployment.event",
+                        "schema_version": "2026-01",
+                        "trace_id": f"trc_{tenant_id}",
+                        "span_id": f"{tenant_id}_dep",
+                        "timestamp": "2026-08-22T00:00:03Z",
+                        "service": "svc",
+                        "environment": "prod",
+                        "project": "p1",
+                        "status": "success",
+                        "attributes": {
+                            "deployment_id": "dep-1",
+                            "version": "v1",
+                            "artifact_ref": "img:1",
+                            "provider": "openai",
+                            "model": "gpt-4o",
+                            "prompt_version": "v1",
                             "deployment_status": "pending",
-                            "metadata": {"tenant_id": tenant_id, "application_name": "PayApp",
-                                         "workflow_name": "wf"}}},
-        ]}, headers={"Authorization": f"Bearer {token}"})
+                            "metadata": {"tenant_id": tenant_id, "application_name": "PayApp", "workflow_name": "wf"},
+                        },
+                    },
+                ]
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
         assert sent.status_code == 200, sent.text
     return gov_email, f"{tenant_id}-gov-pw-1"
 
@@ -92,24 +117,35 @@ def test_one_org_cannot_decide_on_another_orgs_records(super_admin_client):
         login_and_activate(attacker, attacker_email, attacker_password)
 
         # accepting someone else's risk finding would clear their gate blocker
-        decided = attacker.post("/api/decisions", json={
-            "target_type": "risk_finding", "target_id": victim["finding_id"],
-            "decision": "accept_risk", "rationale": "accepting a finding that belongs to another organization",
-        })
+        decided = attacker.post(
+            "/api/decisions",
+            json={
+                "target_type": "risk_finding",
+                "target_id": victim["finding_id"],
+                "decision": "accept_risk",
+                "rationale": "accepting a finding that belongs to another organization",
+            },
+        )
         assert decided.status_code in FORBIDDEN, decided.text
 
         # approving someone else's release
-        approved = attacker.post(f"/api/deployment-gates/{victim['gate_id']}/approve",
-                                 json={"rationale": "approving a release that belongs to another organization"})
+        approved = attacker.post(
+            f"/api/deployment-gates/{victim['gate_id']}/approve",
+            json={"rationale": "approving a release that belongs to another organization"},
+        )
         assert approved.status_code in FORBIDDEN, approved.text
 
         # waiving someone else's finding via an exception
-        excepted = attacker.post("/api/exceptions", json={
-            "target_type": "risk_finding", "target_id": victim["finding_id"],
-            "reason": "waiving a finding that belongs to another organization",
-            "compensating_control": "none, this should not be accepted",
-            "expires_at": "2099-12-31",
-        })
+        excepted = attacker.post(
+            "/api/exceptions",
+            json={
+                "target_type": "risk_finding",
+                "target_id": victim["finding_id"],
+                "reason": "waiving a finding that belongs to another organization",
+                "compensating_control": "none, this should not be accepted",
+                "expires_at": "2099-12-31",
+            },
+        )
         assert excepted.status_code in FORBIDDEN, excepted.text
 
     # the victim's records are untouched

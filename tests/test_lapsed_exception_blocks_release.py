@@ -29,15 +29,34 @@ def _event(event_type: str, attributes: dict, span: str) -> dict:
 
 def _release_with_full_evidence() -> list[dict]:
     return [
-        _event("model.call", {"provider": "openai", "model": "gpt-4o",
-                              "usage": {"input_tokens": 10, "output_tokens": 5}}, "spn_call"),
-        _event("deployment.event", {"deployment_id": "dep-1", "version": "v1", "artifact_ref": "img:1",
-                                    "provider": "openai", "model": "gpt-4o", "prompt_version": "v1",
-                                    "deployment_status": "pending"}, "spn_dep"),
-        _event("prompt.event", {"prompt_id": "pr-1", "version": "v1", "artifact_ref": "img:1",
-                                "status": "active"}, "spn_prompt"),
-        _event("eval.result", {"eval_id": "safety", "passed": True, "score": 0.97,
-                               "prompt_version": "v1", "artifact_ref": "img:1"}, "spn_eval"),
+        _event(
+            "model.call",
+            {"provider": "openai", "model": "gpt-4o", "usage": {"input_tokens": 10, "output_tokens": 5}},
+            "spn_call",
+        ),
+        _event(
+            "deployment.event",
+            {
+                "deployment_id": "dep-1",
+                "version": "v1",
+                "artifact_ref": "img:1",
+                "provider": "openai",
+                "model": "gpt-4o",
+                "prompt_version": "v1",
+                "deployment_status": "pending",
+            },
+            "spn_dep",
+        ),
+        _event(
+            "prompt.event",
+            {"prompt_id": "pr-1", "version": "v1", "artifact_ref": "img:1", "status": "active"},
+            "spn_prompt",
+        ),
+        _event(
+            "eval.result",
+            {"eval_id": "safety", "passed": True, "score": 0.97, "prompt_version": "v1", "artifact_ref": "img:1"},
+            "spn_eval",
+        ),
     ]
 
 
@@ -48,50 +67,76 @@ def test_release_is_blocked_once_the_covering_exception_has_lapsed(super_admin_c
 
     super_admin_client.post(
         "/api/admin/organizations",
-        json={"tenant_id": "acme", "name": "Acme", "admin_email": "oa@acme.test",
-              "admin_display_name": "OA", "admin_password": "oa-password-1"},
+        json={
+            "tenant_id": "acme",
+            "name": "Acme",
+            "admin_email": "oa@acme.test",
+            "admin_display_name": "OA",
+            "admin_password": "oa-password-1",
+        },
     )
     with TestClient(app) as org:
         login_and_activate(org, "oa@acme.test", "oa-password-1")
         token = org.post("/api/ingestion-keys", json={"name": "ci"}).json()["token"]
-        org.post("/api/org/users",
-                 json={"email": "gov@acme.test", "display_name": "Gov", "password": "gov-password-1"})
-        org.post("/api/org/role-assignments",
-                 json={"user_ref": "gov@acme.test", "role": "governance_admin"})
-        ingested = org.post("/v1/events/batch", json={"events": _release_with_full_evidence()},
-                            headers={"Authorization": f"Bearer {token}"})
+        org.post("/api/org/users", json={"email": "gov@acme.test", "display_name": "Gov", "password": "gov-password-1"})
+        org.post("/api/org/role-assignments", json={"user_ref": "gov@acme.test", "role": "governance_admin"})
+        ingested = org.post(
+            "/v1/events/batch",
+            json={"events": _release_with_full_evidence()},
+            headers={"Authorization": f"Bearer {token}"},
+        )
         assert ingested.status_code == 200, ingested.text
         gate_id = org.get("/api/deployment-gates").json()["deployment_gates"][0]["gate_id"]
 
     with connect() as connection:
-        findings = [row["finding_id"] for row in connection.execute(
-            "SELECT finding_id FROM risk_findings WHERE status IN ('open', 'mitigation_required')"
-        ).fetchall()]
-        assessments = [row["assessment_id"] for row in connection.execute(
-            "SELECT assessment_id FROM control_assessments WHERE status = 'missing'"
-        ).fetchall()]
+        findings = [
+            row["finding_id"]
+            for row in connection.execute(
+                "SELECT finding_id FROM risk_findings WHERE status IN ('open', 'mitigation_required')"
+            ).fetchall()
+        ]
+        assessments = [
+            row["assessment_id"]
+            for row in connection.execute(
+                "SELECT assessment_id FROM control_assessments WHERE status = 'missing'"
+            ).fetchall()
+        ]
     assert findings
 
     with TestClient(app) as gov:
         login_and_activate(gov, "gov@acme.test", "gov-password-1")
         # one finding is accepted under a time-boxed exception, the rest cleared outright
-        waived = gov.post("/api/exceptions", json={
-            "target_type": "risk_finding", "target_id": findings[0],
-            "reason": "accepted for the quarter while the fix is scheduled",
-            "compensating_control": "weekly manual review by the claims lead",
-            "expires_at": "2099-12-31",
-        })
+        waived = gov.post(
+            "/api/exceptions",
+            json={
+                "target_type": "risk_finding",
+                "target_id": findings[0],
+                "reason": "accepted for the quarter while the fix is scheduled",
+                "compensating_control": "weekly manual review by the claims lead",
+                "expires_at": "2099-12-31",
+            },
+        )
         assert waived.status_code == 200, waived.text
         for finding_id in findings[1:]:
-            gov.post("/api/decisions", json={
-                "target_type": "risk_finding", "target_id": finding_id, "decision": "accept_risk",
-                "rationale": "accepted by the risk owner with compensating controls recorded",
-            })
+            gov.post(
+                "/api/decisions",
+                json={
+                    "target_type": "risk_finding",
+                    "target_id": finding_id,
+                    "decision": "accept_risk",
+                    "rationale": "accepted by the risk owner with compensating controls recorded",
+                },
+            )
         for assessment_id in assessments:
-            gov.post("/api/decisions", json={
-                "target_type": "control_assessment", "target_id": assessment_id, "decision": "waive",
-                "rationale": "waived pending the control rollout, tracked by the control owner",
-            })
+            gov.post(
+                "/api/decisions",
+                json={
+                    "target_type": "control_assessment",
+                    "target_id": assessment_id,
+                    "decision": "waive",
+                    "rationale": "waived pending the control rollout, tracked by the control owner",
+                },
+            )
 
         # while the exception holds, the release is approvable
         detail = gov.get(f"/api/deployment-gates/{gate_id}").json()
@@ -105,8 +150,10 @@ def test_release_is_blocked_once_the_covering_exception_has_lapsed(super_admin_c
                 (findings[0],),
             )
 
-        blocked = gov.post(f"/api/deployment-gates/{gate_id}/approve",
-                           json={"rationale": "approving even though the covering exception has lapsed"})
+        blocked = gov.post(
+            f"/api/deployment-gates/{gate_id}/approve",
+            json={"rationale": "approving even though the covering exception has lapsed"},
+        )
         assert blocked.status_code == 400, blocked.text
         assert "risk findings are open" in blocked.json()["detail"]
 

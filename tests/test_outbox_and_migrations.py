@@ -32,8 +32,15 @@ def test_claim_uses_the_db_clock_not_the_app_clock(client, monkeypatch):
 
     with connect() as connection:
         for i in range(3):
-            enqueue(connection, tenant_id="acme", channel="webhook", event_type="test.event",
-                    target=f"https://example.test/{i}", subject=None, payload={"i": i})
+            enqueue(
+                connection,
+                tenant_id="acme",
+                channel="webhook",
+                event_type="test.event",
+                target=f"https://example.test/{i}",
+                subject=None,
+                payload={"i": i},
+            )
 
     claimed = claim_pending(limit=10, worker_id="worker-a")
     assert len(claimed) == 3, "due rows must be claimed on the server clock despite the lagging app clock"

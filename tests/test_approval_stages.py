@@ -60,7 +60,9 @@ def _client_for(email, password):
 
 
 def _add_user(org_client, email, role, password="user-pw-123456"):
-    resp = org_client.post("/api/org/users", json={"email": email, "display_name": email.split("@")[0], "password": password})
+    resp = org_client.post(
+        "/api/org/users", json={"email": email, "display_name": email.split("@")[0], "password": password}
+    )
     assert resp.status_code == 200, resp.text
     granted = org_client.post("/api/org/role-assignments", json={"user_ref": email, "role": role})
     assert granted.status_code == 200, granted.text
@@ -97,8 +99,12 @@ def _two_stage_body(mode="sequence"):
 def _submit_and_stages(org_client, payload=None):
     submitted = org_client.post("/api/intake", json=payload or HIGH_TIER_INTAKE)
     assert submitted.status_code == 200, submitted.text
-    task = next(t for t in org_client.get("/api/review-tasks").json()["review_tasks"] if t["task_type"] == "intake_review")
-    stages = org_client.get(f"/api/approval-stages?subject_type=review_task&subject_id={task['task_id']}").json()["approval_stages"]
+    task = next(
+        t for t in org_client.get("/api/review-tasks").json()["review_tasks"] if t["task_type"] == "intake_review"
+    )
+    stages = org_client.get(f"/api/approval-stages?subject_type=review_task&subject_id={task['task_id']}").json()[
+        "approval_stages"
+    ]
     return task, sorted(stages, key=lambda s: s["stage_index"])
 
 
@@ -132,7 +138,12 @@ def test_sequence_ordering_sod_and_roll_up(super_admin_client):
     with _client_for("reviewer@acme.test", "user-pw-123456") as reviewer:
         direct = reviewer.post(
             "/api/decisions",
-            json={"target_type": "review_task", "target_id": task["task_id"], "decision": "approve", "rationale": RATIONALE},
+            json={
+                "target_type": "review_task",
+                "target_id": task["task_id"],
+                "decision": "approve",
+                "rationale": RATIONALE,
+            },
         )
         assert direct.status_code == 400
         assert "multi-stage" in direct.json()["detail"]
@@ -208,7 +219,9 @@ def test_rejection_at_any_stage_rejects_the_subject(super_admin_client):
     with _client_for(email, password) as org:
         record = next(r for r in org.get("/api/intake").json()["intake"] if r["application_name"] == "Claims")
         assert record["status"] == "rejected"
-        stages_after = org.get(f"/api/approval-stages?subject_type=review_task&subject_id={task['task_id']}").json()["approval_stages"]
+        stages_after = org.get(f"/api/approval-stages?subject_type=review_task&subject_id={task['task_id']}").json()[
+            "approval_stages"
+        ]
         by_index = {s["stage_index"]: s for s in stages_after}
         assert by_index[0]["status"] == "rejected"
         # the never-reached stage stays pending as a record; deciding it is refused
@@ -254,7 +267,9 @@ def test_in_flight_work_keeps_the_policy_it_started_under(super_admin_client):
         three_stage = _two_stage_body()
         three_stage["intake"]["tiers"]["high"]["stages"].append({"role": "governance_admin", "label": "Final sign-off"})
         _activate_policy(org, three_stage)
-        unchanged = org.get(f"/api/approval-stages?subject_type=review_task&subject_id={task['task_id']}").json()["approval_stages"]
+        unchanged = org.get(f"/api/approval-stages?subject_type=review_task&subject_id={task['task_id']}").json()[
+            "approval_stages"
+        ]
         assert len(unchanged) == 2
         assert all(s["policy_version"] == v1 for s in unchanged)
 
@@ -304,7 +319,12 @@ def test_stage_decisions_are_immutable_records(super_admin_client):
     with _client_for("reviewer@acme.test", "user-pw-123456") as reviewer:
         bypass = reviewer.post(
             "/api/decisions",
-            json={"target_type": "approval_stage", "target_id": stages[0]["stage_id"], "decision": "approve", "rationale": RATIONALE},
+            json={
+                "target_type": "approval_stage",
+                "target_id": stages[0]["stage_id"],
+                "decision": "approve",
+                "rationale": RATIONALE,
+            },
         )
         assert bypass.status_code == 400
         assert "approval-stages" in bypass.json()["detail"]

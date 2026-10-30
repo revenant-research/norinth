@@ -15,10 +15,34 @@ BASE = {"schema_version": "2026-01", "service": "svc", "environment": "prod", "p
 def _events(tenant: str, suffix: str) -> list[dict]:
     meta = {"tenant_id": tenant, "application_name": f"{tenant}-app", "workflow_name": "wf"}
     return [
-        {**BASE, "type": "deployment.event", "trace_id": f"td_{tenant}_{suffix}", "span_id": f"sd_{tenant}_{suffix}", "timestamp": "2026-08-22T00:00:02Z",
-         "attributes": {"deployment_id": f"dep-{tenant}", "version": "v1", "artifact_ref": "img:1", "prompt_version": "p1", "deployment_status": "pending", "metadata": meta}},
-        {**BASE, "type": "model.call", "trace_id": f"tm_{tenant}_{suffix}", "span_id": f"sm_{tenant}_{suffix}", "timestamp": "2026-08-22T00:00:03Z",
-         "attributes": {"provider": "openai", "model": "gpt-4o", "usage": {"input_tokens": 1, "output_tokens": 1}, "metadata": meta}},
+        {
+            **BASE,
+            "type": "deployment.event",
+            "trace_id": f"td_{tenant}_{suffix}",
+            "span_id": f"sd_{tenant}_{suffix}",
+            "timestamp": "2026-08-22T00:00:02Z",
+            "attributes": {
+                "deployment_id": f"dep-{tenant}",
+                "version": "v1",
+                "artifact_ref": "img:1",
+                "prompt_version": "p1",
+                "deployment_status": "pending",
+                "metadata": meta,
+            },
+        },
+        {
+            **BASE,
+            "type": "model.call",
+            "trace_id": f"tm_{tenant}_{suffix}",
+            "span_id": f"sm_{tenant}_{suffix}",
+            "timestamp": "2026-08-22T00:00:03Z",
+            "attributes": {
+                "provider": "openai",
+                "model": "gpt-4o",
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+                "metadata": meta,
+            },
+        },
     ]
 
 
@@ -38,24 +62,50 @@ def test_ingest_recomputes_only_touched_scopes(super_admin_client):
 
     clients, headers = {}, {}
     for tenant in ("acme", "beta"):
-        super_admin_client.post("/api/admin/organizations", json={"tenant_id": tenant, "name": tenant, "admin_email": f"oa@{tenant}.test", "admin_display_name": "A", "admin_password": "oa-password-1"})
+        super_admin_client.post(
+            "/api/admin/organizations",
+            json={
+                "tenant_id": tenant,
+                "name": tenant,
+                "admin_email": f"oa@{tenant}.test",
+                "admin_display_name": "A",
+                "admin_password": "oa-password-1",
+            },
+        )
         org = TestClient(app)
         login_and_activate(org, f"oa@{tenant}.test", "oa-password-1")
         clients[tenant] = org
-        headers[tenant] = {"Authorization": f"Bearer {org.post('/api/ingestion-keys', json={'name': 'k'}).json()['token']}"}
-        assert org.post("/v1/events/batch", json={"events": _events(tenant, "seed")}, headers=headers[tenant]).status_code == 200
+        headers[tenant] = {
+            "Authorization": f"Bearer {org.post('/api/ingestion-keys', json={'name': 'k'}).json()['token']}"
+        }
+        assert (
+            org.post("/v1/events/batch", json={"events": _events(tenant, "seed")}, headers=headers[tenant]).status_code
+            == 200
+        )
 
     assert len(clients["beta"].get("/api/deployment-gates").json()["deployment_gates"]) == 1
 
     # drop beta's gate row; if ingest recomputed globally acme's batch would recreate it
     with connect() as connection:
         connection.execute("DELETE FROM deployment_approval_gates WHERE tenant_id = 'beta'")
-    assert clients["acme"].post("/v1/events/batch", json={"events": _events("acme", "second")}, headers=headers["acme"]).status_code == 200
+    assert (
+        clients["acme"]
+        .post("/v1/events/batch", json={"events": _events("acme", "second")}, headers=headers["acme"])
+        .status_code
+        == 200
+    )
     assert clients["acme"].get("/api/deployment-gates").json()["deployment_gates"], "acme's own gate is maintained"
-    assert clients["beta"].get("/api/deployment-gates").json()["deployment_gates"] == [], "beta was not recomputed by acme's ingest"
+    assert clients["beta"].get("/api/deployment-gates").json()["deployment_gates"] == [], (
+        "beta was not recomputed by acme's ingest"
+    )
 
     # beta's own ingest restores it
-    assert clients["beta"].post("/v1/events/batch", json={"events": _events("beta", "second")}, headers=headers["beta"]).status_code == 200
+    assert (
+        clients["beta"]
+        .post("/v1/events/batch", json={"events": _events("beta", "second")}, headers=headers["beta"])
+        .status_code
+        == 200
+    )
     assert len(clients["beta"].get("/api/deployment-gates").json()["deployment_gates"]) == 1
 
     # no-argument form recomputes everything

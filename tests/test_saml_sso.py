@@ -112,7 +112,13 @@ def _org(super_admin_client):
 
     super_admin_client.post(
         "/api/admin/organizations",
-        json={"tenant_id": "acme", "name": "acme", "admin_email": "oa@acme.test", "admin_display_name": "OA", "admin_password": "oa-password-1"},
+        json={
+            "tenant_id": "acme",
+            "name": "acme",
+            "admin_email": "oa@acme.test",
+            "admin_display_name": "OA",
+            "admin_password": "oa-password-1",
+        },
     )
     org = TestClient(app)
     login_and_activate(org, "oa@acme.test", "oa-password-1")
@@ -201,7 +207,11 @@ def test_full_saml_login_with_jit(super_admin_client, idp):
 
     with TestClient(app) as browser:
         request_id = _start(browser)
-        acs = browser.post("/api/auth/saml/acs", data={"SAMLResponse": idp.response(request_id), "RelayState": "acme"}, follow_redirects=False)
+        acs = browser.post(
+            "/api/auth/saml/acs",
+            data={"SAMLResponse": idp.response(request_id), "RelayState": "acme"},
+            follow_redirects=False,
+        )
         assert acs.status_code == 303, acs.text
         me = browser.get("/api/auth/me").json()["user"]
         assert me["email"] == "jane@acme.test"
@@ -250,7 +260,10 @@ def test_invalid_responses_are_rejected(super_admin_client, idp, case):
             payload = idp.response(request_id, issuer="https://evil.example/saml")
         elif case == "replay":
             payload = idp.response(request_id)
-            assert browser.post("/api/auth/saml/acs", data={"SAMLResponse": payload}, follow_redirects=False).status_code == 303
+            assert (
+                browser.post("/api/auth/saml/acs", data={"SAMLResponse": payload}, follow_redirects=False).status_code
+                == 303
+            )
             # second submission of the same valid response must fail: inresponseto consumed
         else:  # unsolicited
             payload = idp.response("_never-issued")
@@ -262,7 +275,39 @@ def test_invalid_responses_are_rejected(super_admin_client, idp, case):
 
 def test_saml_config_requires_pem_and_org_admin(super_admin_client, idp):
     org = _org(super_admin_client)
-    bad = org.put("/api/org/saml", json={"idp_entity_id": "x", "idp_sso_url": "https://x", "idp_certificate": "not-a-cert"})
+    bad = org.put(
+        "/api/org/saml", json={"idp_entity_id": "x", "idp_sso_url": "https://x", "idp_certificate": "not-a-cert"}
+    )
     assert bad.status_code == 400
-    assert super_admin_client.put("/api/org/saml", json={"idp_entity_id": "x", "idp_sso_url": "https://x", "idp_certificate": idp.cert_pem}).status_code == 403
+    assert (
+        super_admin_client.put(
+            "/api/org/saml", json={"idp_entity_id": "x", "idp_sso_url": "https://x", "idp_certificate": idp.cert_pem}
+        ).status_code
+        == 403
+    )
+    org.close()
+
+
+def test_acs_refuses_a_response_from_a_browser_that_did_not_start_the_login(super_admin_client, idp):
+    """login csrf: an attacker completes their own IdP login, then posts the
+    signed response from a victim's browser. the victim has no request cookie,
+    so the response is refused, and the request stays pending for the browser
+    that did start it"""
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    org = _org(super_admin_client)
+    _configure(org, idp)
+
+    with TestClient(app) as attacker, TestClient(app) as victim:
+        request_id = _start(attacker)
+        response = idp.response(request_id)
+        posted = victim.post("/api/auth/saml/acs", data={"SAMLResponse": response}, follow_redirects=False)
+        assert posted.status_code == 401, posted.text
+        assert "norinth_session" not in victim.cookies
+        assert victim.get("/api/auth/me").status_code in {401, 403}
+
+        # the legitimate browser still completes its own login once
+        acs = attacker.post("/api/auth/saml/acs", data={"SAMLResponse": response}, follow_redirects=False)
+        assert acs.status_code == 303, acs.text
     org.close()

@@ -70,8 +70,14 @@ def test_forwarded_for_is_ignored_unless_proxy_trusted(client, monkeypatch):
     monkeypatch.delenv("NORINTH_TRUST_PROXY", raising=False)
     # rotating x-forwarded-for must not dodge the ip throttle; header untrusted by default
     for i in range(3):
-        client.post("/api/auth/login", json={"email": f"u{i}@x.test", "password": "bad"}, headers={"X-Forwarded-For": f"10.0.0.{i}"})
-    resp = client.post("/api/auth/login", json={"email": "u9@x.test", "password": "bad"}, headers={"X-Forwarded-For": "10.0.0.99"})
+        client.post(
+            "/api/auth/login",
+            json={"email": f"u{i}@x.test", "password": "bad"},
+            headers={"X-Forwarded-For": f"10.0.0.{i}"},
+        )
+    resp = client.post(
+        "/api/auth/login", json={"email": "u9@x.test", "password": "bad"}, headers={"X-Forwarded-For": "10.0.0.99"}
+    )
     assert resp.status_code == 429
 
 
@@ -82,26 +88,45 @@ def test_forwarded_for_is_used_when_proxy_trusted(client, monkeypatch):
     monkeypatch.setenv("NORINTH_TRUST_PROXY", "1")
     # behind a trusted proxy distinct real client ips are throttled independently
     for i in range(3):
-        client.post("/api/auth/login", json={"email": f"u{i}@x.test", "password": "bad"}, headers={"X-Forwarded-For": "203.0.113.7"})
-    blocked = client.post("/api/auth/login", json={"email": "u9@x.test", "password": "bad"}, headers={"X-Forwarded-For": "203.0.113.7"})
+        client.post(
+            "/api/auth/login",
+            json={"email": f"u{i}@x.test", "password": "bad"},
+            headers={"X-Forwarded-For": "203.0.113.7"},
+        )
+    blocked = client.post(
+        "/api/auth/login", json={"email": "u9@x.test", "password": "bad"}, headers={"X-Forwarded-For": "203.0.113.7"}
+    )
     assert blocked.status_code == 429
-    other = client.post("/api/auth/login", json={"email": "u9@x.test", "password": "bad"}, headers={"X-Forwarded-For": "203.0.113.8"})
+    other = client.post(
+        "/api/auth/login", json={"email": "u9@x.test", "password": "bad"}, headers={"X-Forwarded-For": "203.0.113.8"}
+    )
     assert other.status_code == 401  # different client, not throttled
 
 
 def test_csrf_accepts_https_origin_behind_trusted_proxy(client, monkeypatch):
     """behind a tls-terminating proxy an https origin is accepted though the request scheme is http"""
     monkeypatch.setenv("NORINTH_TRUST_PROXY", "1")
-    headers = {"Origin": "https://norinth.example.com", "Host": "internal:8001",
-               "X-Forwarded-Proto": "https", "X-Forwarded-Host": "norinth.example.com"}
+    headers = {
+        "Origin": "https://norinth.example.com",
+        "Host": "internal:8001",
+        "X-Forwarded-Proto": "https",
+        "X-Forwarded-Host": "norinth.example.com",
+    }
     # mutating cookie-route call reaches auth instead of being csrf-rejected
     resp = client.post("/api/auth/login", json={"email": "x@y.z", "password": "nope"}, headers=headers)
     assert resp.status_code != 403  # reaches auth (401 invalid creds), not CSRF-rejected
 
     # genuinely cross-site origin still rejected
-    bad = client.post("/api/auth/login", json={"email": "x@y.z", "password": "nope"},
-                      headers={"Origin": "https://evil.example", "Host": "internal:8001",
-                               "X-Forwarded-Proto": "https", "X-Forwarded-Host": "norinth.example.com"})
+    bad = client.post(
+        "/api/auth/login",
+        json={"email": "x@y.z", "password": "nope"},
+        headers={
+            "Origin": "https://evil.example",
+            "Host": "internal:8001",
+            "X-Forwarded-Proto": "https",
+            "X-Forwarded-Host": "norinth.example.com",
+        },
+    )
     assert bad.status_code == 403
 
 
@@ -116,11 +141,15 @@ def test_session_cookie_is_secure_over_https_even_without_the_admin_password_var
     """
     monkeypatch.delenv("NORINTH_COOKIE_SECURE", raising=False)
     monkeypatch.setenv("NORINTH_TRUST_PROXY", "1")
-    resp = client.post("/api/auth/login", json=GOOD, headers={
-        "Origin": "https://testserver",
-        "X-Forwarded-Proto": "https",
-        "X-Forwarded-Host": "testserver",
-    })
+    resp = client.post(
+        "/api/auth/login",
+        json=GOOD,
+        headers={
+            "Origin": "https://testserver",
+            "X-Forwarded-Proto": "https",
+            "X-Forwarded-Host": "testserver",
+        },
+    )
     assert resp.status_code == 200, resp.text
     assert "secure" in resp.headers.get("set-cookie", "").lower(), resp.headers.get("set-cookie")
 

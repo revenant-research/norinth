@@ -235,3 +235,40 @@ def test_admin_user_listings_never_carry_mfa_secrets(super_admin_client):
     assert "mfa_secret" not in me and "mfa_pending_secret" not in me
     assert me.get("mfa_enabled_at"), "admins may see who is enrolled"
     org.close()
+
+
+def test_disabling_mfa_is_throttled_after_repeated_failures(super_admin_client):
+    """whoever holds a live session and the password cannot grind the code"""
+    from app.storage import login_attempts as la
+
+    org = _org_admin(super_admin_client, "echo")
+    secret, codes = _enroll(org)
+    password = "echo-admin-pw-1-rotated-1"
+
+    for _ in range(la.LOCKOUT_THRESHOLD):
+        refused = org.post("/api/auth/mfa/disable", json={"password": password, "code": "000000"})
+        assert refused.status_code == 401, refused.text
+    # locked: even the right code is not examined now
+    locked = org.post("/api/auth/mfa/disable", json={"password": password, "code": _code(secret)})
+    assert locked.status_code == 429, locked.text
+    assert org.get("/api/auth/mfa").json()["enabled"] is True
+
+    la.clear_attempts(la.mfa_disable_subject("a@echo.test"))
+    ok = org.post("/api/auth/mfa/disable", json={"password": password, "recovery_code": codes[0]})
+    assert ok.status_code == 200, ok.text
+    assert org.get("/api/auth/mfa").json()["enabled"] is False
+    org.close()
+
+
+def test_a_wrong_password_on_mfa_disable_counts_as_a_failure(super_admin_client):
+    from app.storage import login_attempts as la
+
+    org = _org_admin(super_admin_client, "foxtrot")
+    _enroll(org)
+    for _ in range(la.LOCKOUT_THRESHOLD):
+        assert (
+            org.post("/api/auth/mfa/disable", json={"password": "wrong-password-11", "code": "000000"}).status_code
+            == 401
+        )
+    assert la.is_locked(la.mfa_disable_subject("a@foxtrot.test"))
+    org.close()

@@ -60,9 +60,7 @@ def ensure_attestation_requirement(connection) -> None:
     )
 
 
-def create_attestation_key(
-    tenant_id: str, name: str, public_key_pem: str, created_by: str | None
-) -> dict[str, Any]:
+def create_attestation_key(tenant_id: str, name: str, public_key_pem: str, created_by: str | None) -> dict[str, Any]:
     key_id = "nak_" + secrets.token_urlsafe(9)
     with connect() as connection:
         connection.execute(

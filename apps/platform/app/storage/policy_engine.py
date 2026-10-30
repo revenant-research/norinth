@@ -176,8 +176,12 @@ def ensure_policy_engine_tables(connection) -> None:
         )
         """
     )
-    connection.execute("CREATE INDEX IF NOT EXISTS idx_governance_policies_status ON governance_policies(tenant_id, status)")
-    connection.execute("CREATE INDEX IF NOT EXISTS idx_approval_stages_subject ON approval_stages(subject_type, subject_id, review_round)")
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_governance_policies_status ON governance_policies(tenant_id, status)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_approval_stages_subject ON approval_stages(subject_type, subject_id, review_round)"
+    )
     connection.execute("CREATE INDEX IF NOT EXISTS idx_approval_stages_tenant ON approval_stages(tenant_id)")
     connection.execute("CREATE INDEX IF NOT EXISTS idx_vendor_registry_tenant ON vendor_registry(tenant_id, status)")
     connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_vendor_registry_name ON vendor_registry(tenant_id, name)")
@@ -256,8 +260,14 @@ def _validate_stages(stages: Any, where: str, grants: dict[str, set[str]], error
 def _validate_recertify_days(value: Any, where: str, errors: list[str]) -> None:
     if value is None:
         return
-    if not isinstance(value, int) or isinstance(value, bool) or not (RECERTIFY_DAYS_FLOOR <= value <= RECERTIFY_DAYS_CEILING):
-        errors.append(f"{where}: recertify_days must be an integer between {RECERTIFY_DAYS_FLOOR} and {RECERTIFY_DAYS_CEILING}")
+    if (
+        not isinstance(value, int)
+        or isinstance(value, bool)
+        or not (RECERTIFY_DAYS_FLOOR <= value <= RECERTIFY_DAYS_CEILING)
+    ):
+        errors.append(
+            f"{where}: recertify_days must be an integer between {RECERTIFY_DAYS_FLOOR} and {RECERTIFY_DAYS_CEILING}"
+        )
 
 
 def _validate_intake(intake: Any, grants: dict[str, set[str]], errors: list[str]) -> None:
@@ -321,7 +331,9 @@ def _validate_fields(fields: Any, errors: list[str]) -> None:
             errors.append(f"{where}: type must be one of {sorted(_FIELD_TYPES)}")
         max_length = field.get("max_length")
         if max_length is not None and (
-            not isinstance(max_length, int) or isinstance(max_length, bool) or not (1 <= max_length <= MAX_FIELD_LENGTH_CAP)
+            not isinstance(max_length, int)
+            or isinstance(max_length, bool)
+            or not (1 <= max_length <= MAX_FIELD_LENGTH_CAP)
         ):
             errors.append(f"{where}: max_length must be an integer between 1 and {MAX_FIELD_LENGTH_CAP}")
         required_tiers = field.get("required_tiers", [])
@@ -352,7 +364,11 @@ def _validate_gates(gates: Any, errors: list[str]) -> None:
         if unknown:
             errors.append(f"{where}: unknown keys: {', '.join(sorted(unknown))}")
         min_coverage = entry.get("min_control_coverage", 0)
-        if isinstance(min_coverage, bool) or not isinstance(min_coverage, (int, float)) or not (0 <= min_coverage <= 100):
+        if (
+            isinstance(min_coverage, bool)
+            or not isinstance(min_coverage, (int, float))
+            or not (0 <= min_coverage <= 100)
+        ):
             errors.append(f"{where}: min_control_coverage must be a number between 0 and 100")
         attested = entry.get("require_attested_evals", False)
         if not isinstance(attested, bool):
@@ -375,7 +391,10 @@ def _validate_evidence(evidence: Any, errors: list[str]) -> None:
     unknown = set(evidence) - {"coverage_window_days", "stale_after_days"}
     if unknown:
         errors.append(f"evidence has unknown keys: {', '.join(sorted(unknown))}")
-    for key, ceiling in (("coverage_window_days", COVERAGE_WINDOW_DAYS_CEILING), ("stale_after_days", STALE_AFTER_DAYS_CEILING)):
+    for key, ceiling in (
+        ("coverage_window_days", COVERAGE_WINDOW_DAYS_CEILING),
+        ("stale_after_days", STALE_AFTER_DAYS_CEILING),
+    ):
         value = evidence.get(key)
         if value is None:
             continue
@@ -444,19 +463,21 @@ def active_policy(connection, tenant_id: str | None) -> dict[str, Any]:
         ).fetchone()
         if row is not None:
             return _policy_row(row)
-    row = connection.execute(
-        "SELECT * FROM governance_policies WHERE tenant_id = '' AND status = 'active'"
-    ).fetchone()
+    row = connection.execute("SELECT * FROM governance_policies WHERE tenant_id = '' AND status = 'active'").fetchone()
     if row is None:
         # unreachable after migration 21; fail safe with the shipped default
-        return {"tenant_id": "", "version": 1, "status": "active", "body": DEFAULT_POLICY_BODY, "body_hash": body_hash(DEFAULT_POLICY_BODY)}
+        return {
+            "tenant_id": "",
+            "version": 1,
+            "status": "active",
+            "body": DEFAULT_POLICY_BODY,
+            "body_hash": body_hash(DEFAULT_POLICY_BODY),
+        }
     return _policy_row(row)
 
 
 def _platform_default(connection) -> dict[str, Any]:
-    row = connection.execute(
-        "SELECT * FROM governance_policies WHERE tenant_id = '' AND status = 'active'"
-    ).fetchone()
+    row = connection.execute("SELECT * FROM governance_policies WHERE tenant_id = '' AND status = 'active'").fetchone()
     if row is None:
         return {"tenant_id": "", "version": 1, "body": DEFAULT_POLICY_BODY, "body_hash": body_hash(DEFAULT_POLICY_BODY)}
     return _policy_row(row)
@@ -502,7 +523,9 @@ def resolve_gate_policy(connection, tenant_id: str | None, environment: str) -> 
         if entry is not None:
             return {
                 "require_attested_evals": bool(entry.get("require_attested_evals", False)),
-                "max_open_material_changes": min(int(entry.get("max_open_material_changes", 0)), MATERIAL_CHANGE_CEILING),
+                "max_open_material_changes": min(
+                    int(entry.get("max_open_material_changes", 0)), MATERIAL_CHANGE_CEILING
+                ),
                 "min_control_coverage": float(entry.get("min_control_coverage", 0) or 0),
                 "policy_tenant": policy["tenant_id"],
                 "policy_version": policy["version"],
@@ -948,7 +971,9 @@ def validate_custom_field_values(
     declared = {field["key"]: field for field in fields}
     unknown = set(values) - set(declared)
     if unknown:
-        raise ValueError(f"unknown intake fields: {', '.join(sorted(unknown))} (fields are declared in the governance policy)")
+        raise ValueError(
+            f"unknown intake fields: {', '.join(sorted(unknown))} (fields are declared in the governance policy)"
+        )
     cleaned: dict[str, Any] = {}
     for key, field in declared.items():
         value = values.get(key)
@@ -1138,7 +1163,9 @@ def stage_subject_undecided(stage: dict[str, Any], subject: dict[str, Any]) -> b
     if stage["subject_type"] == "review_task":
         return subject.get("status") == "open"
     if stage["subject_type"] == "vendor_review":
-        return subject.get("status") == "under_review" and int(subject.get("review_round") or 0) == int(stage["review_round"])
+        return subject.get("status") == "under_review" and int(subject.get("review_round") or 0) == int(
+            stage["review_round"]
+        )
     return False
 
 
@@ -1314,9 +1341,7 @@ def age_recertifications() -> int:
     opened = 0
     now = datetime.now(UTC)
     with connect() as connection:
-        rows = connection.execute(
-            "SELECT * FROM ai_use_cases WHERE status IN ('approved', 'recertified')"
-        ).fetchall()
+        rows = connection.execute("SELECT * FROM ai_use_cases WHERE status IN ('approved', 'recertified')").fetchall()
         for row in rows:
             record = dict(row)
             tier_policy = resolve_tier_policy(connection, record.get("tenant_id"), record.get("risk_tier") or "limited")
@@ -1408,7 +1433,15 @@ def upsert_vendor(
                 )
                 VALUES (?, ?, ?, ?, 'draft', ?, ?, 0, ?, datetime('now'), datetime('now'), NULL)
                 """,
-                (vendor_id, tenant_id, name, encode_json(normalized), encode_json(models) if models is not None else None, notes_ref, created_by),
+                (
+                    vendor_id,
+                    tenant_id,
+                    name,
+                    encode_json(normalized),
+                    encode_json(models) if models is not None else None,
+                    notes_ref,
+                    created_by,
+                ),
             )
         else:
             current = _vendor_row(existing)
@@ -1422,9 +1455,17 @@ def upsert_vendor(
                 SET providers = ?, approved_models = ?, notes_ref = ?, status = ?, updated_at = datetime('now')
                 WHERE vendor_id = ?
                 """,
-                (encode_json(normalized), encode_json(models) if models is not None else None, notes_ref, status, vendor_id),
+                (
+                    encode_json(normalized),
+                    encode_json(models) if models is not None else None,
+                    notes_ref,
+                    status,
+                    vendor_id,
+                ),
             )
-        return _vendor_row(connection.execute("SELECT * FROM vendor_registry WHERE vendor_id = ?", (vendor_id,)).fetchone())
+        return _vendor_row(
+            connection.execute("SELECT * FROM vendor_registry WHERE vendor_id = ?", (vendor_id,)).fetchone()
+        )
 
 
 def list_vendors(tenant_id: str) -> list[dict[str, Any]]:
@@ -1490,7 +1531,9 @@ def submit_vendor_review(vendor_id: str, tenant_id: str, actor_ref: str) -> dict
         ).fetchone()
         if first is not None:
             _notify_stage_opened(connection, dict(first))
-        return _vendor_row(connection.execute("SELECT * FROM vendor_registry WHERE vendor_id = ?", (vendor_id,)).fetchone())
+        return _vendor_row(
+            connection.execute("SELECT * FROM vendor_registry WHERE vendor_id = ?", (vendor_id,)).fetchone()
+        )
 
 
 def retire_vendor(vendor_id: str, tenant_id: str) -> dict[str, Any]:
@@ -1504,7 +1547,9 @@ def retire_vendor(vendor_id: str, tenant_id: str) -> dict[str, Any]:
             "UPDATE vendor_registry SET status = 'retired', updated_at = datetime('now') WHERE vendor_id = ?",
             (vendor_id,),
         )
-        return _vendor_row(connection.execute("SELECT * FROM vendor_registry WHERE vendor_id = ?", (vendor_id,)).fetchone())
+        return _vendor_row(
+            connection.execute("SELECT * FROM vendor_registry WHERE vendor_id = ?", (vendor_id,)).fetchone()
+        )
 
 
 def age_vendor_recertifications() -> int:
@@ -1612,7 +1657,15 @@ def vendor_coverage(tenant_id: str) -> dict[str, Any]:
         provider = str(row["provider"]).strip().lower()
         entry = providers.setdefault(
             provider,
-            {"provider": provider, "models": set(), "applications": set(), "vendor": None, "vendor_status": None, "covered": False, "disallowed_models": set()},
+            {
+                "provider": provider,
+                "models": set(),
+                "applications": set(),
+                "vendor": None,
+                "vendor_status": None,
+                "covered": False,
+                "disallowed_models": set(),
+            },
         )
         if row.get("model"):
             entry["models"].add(row["model"])
@@ -1668,9 +1721,7 @@ def refresh_vendor_posture(tenant_ids: list[str] | None = None) -> None:
             tenants = [tenant for tenant in tenants if tenant in wanted]
         for tenant_id in tenants:
             vendor_by_provider: dict[str, dict[str, Any]] = {}
-            for row in connection.execute(
-                "SELECT * FROM vendor_registry WHERE tenant_id = ?", (tenant_id,)
-            ).fetchall():
+            for row in connection.execute("SELECT * FROM vendor_registry WHERE tenant_id = ?", (tenant_id,)).fetchall():
                 vendor = _vendor_row(row)
                 for provider in vendor["providers"]:
                     vendor_by_provider[provider] = vendor
@@ -1697,7 +1748,11 @@ def refresh_vendor_posture(tenant_ids: list[str] | None = None) -> None:
                         _provider_trace_ids(connection, tenant_id, scope, usage["provider"]),
                         detail,
                     )
-                elif registered["approved_models"] is not None and usage.get("model") and usage["model"] not in registered["approved_models"]:
+                elif (
+                    registered["approved_models"] is not None
+                    and usage.get("model")
+                    and usage["model"] not in registered["approved_models"]
+                ):
                     scoped_rule = dict(rule, rule_id=f"{rule['rule_id']}:{provider}:{usage['model']}")
                     write_rule_finding(
                         connection,

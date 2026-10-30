@@ -42,7 +42,9 @@ def _gov_user(org, tenant: str):
     from app.main import app
     from fastapi.testclient import TestClient
 
-    org.post("/api/org/users", json={"email": f"gov@{tenant}.test", "display_name": "Gov", "password": "gov-password-12"})
+    org.post(
+        "/api/org/users", json={"email": f"gov@{tenant}.test", "display_name": "Gov", "password": "gov-password-12"}
+    )
     org.post("/api/org/role-assignments", json={"user_ref": f"gov@{tenant}.test", "role": "governance_admin"})
     gov = TestClient(app)
     login_and_activate(gov, f"gov@{tenant}.test", "gov-password-12")
@@ -92,7 +94,12 @@ def test_owasp_agentic_family_appears_in_coverage(super_admin_client):
 def test_unrelated_model_telemetry_does_not_satisfy_agentic_requirements(super_admin_client):
     org, headers = _org(super_admin_client, "unrelated")
     now = datetime.now(UTC).isoformat()
-    assert org.post("/v1/events/batch", json={"events": [_model_call("unrelated", "s1", now)]}, headers=headers).status_code == 200
+    assert (
+        org.post(
+            "/v1/events/batch", json={"events": [_model_call("unrelated", "s1", now)]}, headers=headers
+        ).status_code
+        == 200
+    )
     owasp = next(entry for name, entry in _coverage(org).items() if "OWASP" in name)
     assert owasp["satisfied"] == 0
     assert owasp["unknown"] == owasp["total_requirements"]
@@ -101,20 +108,38 @@ def test_unrelated_model_telemetry_does_not_satisfy_agentic_requirements(super_a
 
 def test_registered_agent_observation_is_scoped_and_expires(super_admin_client):
     org, headers = _org(super_admin_client, "observed")
-    assert org.post("/api/agent-registry", json={"agent_name": "helper", "owner_ref": "a@observed.test", "autonomy_level": 1, "allowed_tools": []}).status_code == 200
+    assert (
+        org.post(
+            "/api/agent-registry",
+            json={"agent_name": "helper", "owner_ref": "a@observed.test", "autonomy_level": 1, "allowed_tools": []},
+        ).status_code
+        == 200
+    )
 
     def run(span: str, timestamp: str) -> dict:
         return {
-            "type": "agent.run", "schema_version": "2026-01", "trace_id": f"trc_{span}", "span_id": f"spn_{span}",
-            "timestamp": timestamp, "service": "svc", "environment": "prod", "project": "p1",
-            "attributes": {"agent_name": "helper", "step_count": 0, "outcome": "ok",
-                           "metadata": {"tenant_id": "observed", "application_name": "helper-app", "workflow_name": "wf"}},
+            "type": "agent.run",
+            "schema_version": "2026-01",
+            "trace_id": f"trc_{span}",
+            "span_id": f"spn_{span}",
+            "timestamp": timestamp,
+            "service": "svc",
+            "environment": "prod",
+            "project": "p1",
+            "attributes": {
+                "agent_name": "helper",
+                "step_count": 0,
+                "outcome": "ok",
+                "metadata": {"tenant_id": "observed", "application_name": "helper-app", "workflow_name": "wf"},
+            },
         }
 
     stale = (datetime.now(UTC) - timedelta(days=120)).isoformat()
     assert org.post("/v1/events/batch", json={"events": [run("old", stale)]}, headers=headers).status_code == 200
     ref = "OWASP Agentic ASI10"
-    assert ref in next(entry for entry in _coverage(org).values() if "OWASP" in entry["framework"])["unknown_requirements"]
+    assert (
+        ref in next(entry for entry in _coverage(org).values() if "OWASP" in entry["framework"])["unknown_requirements"]
+    )
 
     current = datetime.now(UTC).isoformat()
     assert org.post("/v1/events/batch", json={"events": [run("new", current)]}, headers=headers).status_code == 200
@@ -128,7 +153,10 @@ def test_registered_agent_observation_is_scoped_and_expires(super_admin_client):
 def test_open_finding_marks_its_requirement_as_a_gap(super_admin_client):
     org, headers = _org(super_admin_client, "beta")
     now = datetime.now(UTC).isoformat()
-    assert org.post("/v1/events/batch", json={"events": [_model_call("beta", "s1", now)]}, headers=headers).status_code == 200
+    assert (
+        org.post("/v1/events/batch", json={"events": [_model_call("beta", "s1", now)]}, headers=headers).status_code
+        == 200
+    )
 
     # the provider-dependency rule (NIST AI RMF MAP 3.2) now has an open finding
     risks = org.get("/api/risk-register").json()["risks"]
@@ -144,7 +172,10 @@ def test_open_finding_marks_its_requirement_as_a_gap(super_admin_client):
 def test_retired_system_telemetry_is_a_finding(super_admin_client):
     org, headers = _org(super_admin_client, "gamma")
     early = (datetime.now(UTC) - timedelta(hours=2)).isoformat()
-    assert org.post("/v1/events/batch", json={"events": [_model_call("gamma", "s1", early)]}, headers=headers).status_code == 200
+    assert (
+        org.post("/v1/events/batch", json={"events": [_model_call("gamma", "s1", early)]}, headers=headers).status_code
+        == 200
+    )
 
     gov = _gov_user(org, "gamma")
     intake = gov.post(
@@ -170,7 +201,10 @@ def test_retired_system_telemetry_is_a_finding(super_admin_client):
     assert not any(r["rule_id"] == "RISK-LCY-001" for r in risks)
 
     late = (datetime.now(UTC) + timedelta(minutes=5)).isoformat()
-    assert org.post("/v1/events/batch", json={"events": [_model_call("gamma", "s2", late)]}, headers=headers).status_code == 200
+    assert (
+        org.post("/v1/events/batch", json={"events": [_model_call("gamma", "s2", late)]}, headers=headers).status_code
+        == 200
+    )
 
     risks = org.get("/api/risk-register").json()["risks"]
     finding = next((r for r in risks if r["rule_id"] == "RISK-LCY-001"), None)

@@ -3,10 +3,14 @@
 
 from __future__ import annotations
 
+import inspect
+import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from functools import wraps
 from time import perf_counter
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from .config import NorinthConfig
 from .context import TraceContext, get_context, reset_context, set_context
@@ -26,9 +30,60 @@ from .schemas import NorinthEvent, new_id
 from .spool import resolve_spool_dir, spool_off_reason
 from .transport import EventTransport
 
+logger = logging.getLogger("norinth_logger")
+
 # an incident title is a label, not a narrative; cap it so a pasted record
 # body cannot ride into the incident list under the title field
 _MAX_TITLE_LEN = 200
+
+
+def _fail_open(emit: Callable[..., None]) -> Callable[..., None]:
+    """an emitter runs on the host's call path; with fail_open on, nothing it
+    does (summarizing an odd object, inspecting a response) may raise into the
+    host. the failure is logged at debug and the event is lost, as a dropped
+    batch would be"""
+
+    @wraps(emit)
+    def guarded(self: NorinthClient, *args: Any, **kwargs: Any) -> None:
+        try:
+            emit(self, *args, **kwargs)
+        except Exception:
+            if not self.config.fail_open:
+                raise
+            logger.debug("Norinth could not build a %s event; continuing", emit.__name__, exc_info=True)
+
+    return guarded
+
+
+def _display_endpoint(endpoint: str) -> str:
+    """the endpoint without any credentials embedded in its url"""
+    parts = urlsplit(endpoint)
+    if not parts.username and not parts.password:
+        return endpoint
+    host = parts.hostname or ""
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
+
+
+@dataclass
+class _Span:
+    name: str
+    parent: TraceContext | None
+    context: TraceContext
+    token: Any
+    started: float
+    status: str = "success"
+    error: dict[str, Any] | None = None
+
+    def fail(self, exc: BaseException, config: NorinthConfig) -> None:
+        self.status = "error"
+        try:
+            self.error = summarize_error(exc, config.capture_content, config.fingerprint_key)
+        except Exception:
+            if not config.fail_open:
+                raise
+            self.error = {"type": type(exc).__name__}
 
 
 class NorinthClient:
@@ -44,6 +99,15 @@ class NorinthClient:
             )
         self.config = config
         self.transport = EventTransport(config, spool_dir=spool_dir)
+        if config.fingerprint_key_is_public:
+            # the content boundary hashes with a key derived from the api key;
+            # derived from the default key, every fingerprint is reversible by
+            # anyone with a list of likely values, which is no privacy control
+            logger.warning(
+                "Norinth is hashing content with a key derived from the default api key, so fingerprints "
+                "of short values can be reversed by guessing. Set NORINTH_API_KEY to the key your platform "
+                "issued, or NORINTH_SIGNING_SECRET, before sending anything sensitive."
+            )
         self.emit_sdk_health("initialized")
 
     def record(self, event: NorinthEvent) -> None:
@@ -92,6 +156,7 @@ class NorinthClient:
             self.config.metadata_allowlist,
         )
 
+    @_fail_open
     def emit_sdk_health(self, state: str) -> None:
         stats = self.transport.stats
         self.record(
@@ -113,7 +178,7 @@ class NorinthClient:
                     # report worker liveness and backlog so a stalled transport is visible
                     "thread_alive": self.transport.thread_alive(),
                     "queue_depth": stats.queued - stats.sent - stats.dropped,
-                    "endpoint": self.config.endpoint,
+                    "endpoint": _display_endpoint(self.config.endpoint),
                     "queued": stats.queued,
                     "sent": stats.sent,
                     "dropped": stats.dropped,
@@ -128,66 +193,98 @@ class NorinthClient:
         )
 
     def trace(self, fn: Callable[..., Any] | None = None, *, system: str | None = None, name: str | None = None):
+        """record a function as a trace span, for sync and async functions alike
+
+        an async function is awaited inside the span, so the event carries the
+        real duration and outcome and nested model calls join this trace
+        """
+
         def decorator(inner: Callable[..., Any]):
+            trace_name = name or inner.__name__
+            function_ref = f"{inner.__module__}.{inner.__name__}"
+
+            if inspect.iscoroutinefunction(inner):
+
+                @wraps(inner)
+                async def async_wrapped(*args: Any, **kwargs: Any):
+                    span = self._open_span(trace_name, system, args, kwargs)
+                    try:
+                        return await inner(*args, **kwargs)
+                    except Exception as exc:
+                        span.fail(exc, self.config)
+                        raise
+                    finally:
+                        self._close_span(span, function_ref, args, kwargs)
+
+                return async_wrapped
+
             @wraps(inner)
             def wrapped(*args: Any, **kwargs: Any):
-                parent = get_context()
-                trace_name = name or inner.__name__
-                inferred_metadata = {
-                    **(parent.metadata if parent else {}),
-                    **infer_governance_context(args, kwargs),
-                    "workflow_name": trace_name,
-                }
-                context = TraceContext(
-                    trace_id=parent.trace_id if parent else new_id("trc"),
-                    span_id=new_id("spn"),
-                    system=system or (parent.system if parent else None),
-                    metadata=inferred_metadata,
-                )
-                token = set_context(context)
-                started = perf_counter()
-                status = "success"
-                error_summary: dict[str, Any] | None = None
+                span = self._open_span(trace_name, system, args, kwargs)
                 try:
                     return inner(*args, **kwargs)
                 except Exception as exc:
-                    status = "error"
-                    error_summary = summarize_error(exc, self.config.capture_content, self.config.fingerprint_key)
+                    span.fail(exc, self.config)
                     raise
                 finally:
-                    duration_ms = (perf_counter() - started) * 1000
-                    try:
-                        self.record(
-                            NorinthEvent(
-                                type="trace.completed",
-                                trace_id=context.trace_id,
-                                span_id=context.span_id,
-                                parent_span_id=parent.span_id if parent else None,
-                                service=self.config.service,
-                                environment=self.config.environment,
-                                project=self.config.project,
-                                system=context.system,
-                                name=name or inner.__name__,
-                                status=status,
-                                duration_ms=duration_ms,
-                                attributes={
-                                    "function": f"{inner.__module__}.{inner.__name__}",
-                                    "call": summarize_call(args, kwargs, self.config.capture_content, self.config.fingerprint_key),
-                                    "metadata": self._metadata(context.metadata),
-                                    "error": error_summary,
-                                },
-                            ),
-                        )
-                    except Exception:
-                        if not self.config.fail_open:
-                            raise
-                    finally:
-                        reset_context(token)
+                    self._close_span(span, function_ref, args, kwargs)
 
             return wrapped
 
         return decorator(fn) if fn else decorator
 
+    def _open_span(self, trace_name: str, system: str | None, args: tuple[Any, ...], kwargs: dict[str, Any]) -> _Span:
+        """start a span on the caller's thread; it must not raise into the host
+        even when an argument refuses to be inspected"""
+        parent = get_context()
+        try:
+            inferred = infer_governance_context(args, kwargs)
+        except Exception:
+            if not self.config.fail_open:
+                raise
+            logger.debug("Norinth could not infer governance context from the call; continuing", exc_info=True)
+            inferred = {}
+        context = TraceContext(
+            trace_id=parent.trace_id if parent else new_id("trc"),
+            span_id=new_id("spn"),
+            system=system or (parent.system if parent else None),
+            metadata={**(parent.metadata if parent else {}), **inferred, "workflow_name": trace_name},
+        )
+        return _Span(
+            name=trace_name, parent=parent, context=context, token=set_context(context), started=perf_counter()
+        )
+
+    def _close_span(self, span: _Span, function_ref: str, args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
+        try:
+            self.record(
+                NorinthEvent(
+                    type="trace.completed",
+                    trace_id=span.context.trace_id,
+                    span_id=span.context.span_id,
+                    parent_span_id=span.parent.span_id if span.parent else None,
+                    service=self.config.service,
+                    environment=self.config.environment,
+                    project=self.config.project,
+                    system=span.context.system,
+                    name=span.name,
+                    status=span.status,
+                    duration_ms=(perf_counter() - span.started) * 1000,
+                    attributes={
+                        "function": function_ref,
+                        "call": summarize_call(args, kwargs, self.config.capture_content, self.config.fingerprint_key),
+                        "metadata": self._metadata(span.context.metadata),
+                        "error": span.error,
+                    },
+                ),
+            )
+        except Exception:
+            if not self.config.fail_open:
+                raise
+            logger.debug("Norinth failed to record a trace span; continuing", exc_info=True)
+        finally:
+            reset_context(span.token)
+
+    @_fail_open
     def model_call(
         self,
         *,
@@ -229,6 +326,7 @@ class NorinthClient:
             ),
         )
 
+    @_fail_open
     def retrieval(
         self,
         *,
@@ -265,6 +363,7 @@ class NorinthClient:
             )
         )
 
+    @_fail_open
     def tool_call(
         self,
         *,
@@ -300,6 +399,7 @@ class NorinthClient:
             )
         )
 
+    @_fail_open
     def guardrail(
         self,
         *,
@@ -337,6 +437,7 @@ class NorinthClient:
             )
         )
 
+    @_fail_open
     def eval_result(
         self,
         *,
@@ -380,6 +481,7 @@ class NorinthClient:
             )
         )
 
+    @_fail_open
     def agent_run(
         self,
         *,
@@ -416,6 +518,7 @@ class NorinthClient:
             )
         )
 
+    @_fail_open
     def prompt(
         self,
         *,
@@ -455,12 +558,15 @@ class NorinthClient:
                     "prompt_status": status,
                     "owner_ref": owner_ref,
                     "template": summarize_value(template, self.config.capture_content, self.config.fingerprint_key),
-                    "change_notes": summarize_value(change_notes, self.config.capture_content, self.config.fingerprint_key),
+                    "change_notes": summarize_value(
+                        change_notes, self.config.capture_content, self.config.fingerprint_key
+                    ),
                     "metadata": event_metadata,
                 },
             )
         )
 
+    @_fail_open
     def deployment(
         self,
         *,
@@ -508,6 +614,7 @@ class NorinthClient:
             )
         )
 
+    @_fail_open
     def incident(
         self,
         *,

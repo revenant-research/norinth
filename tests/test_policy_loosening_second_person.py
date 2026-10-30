@@ -77,13 +77,19 @@ def test_recertification_lengthened_or_removed_loosens():
     assert _loosening(monthly, yearly) == ["intake.tiers.high: recertification is less frequent or removed"]
     assert _loosening(monthly, ONE_STAGE_HIGH) == ["intake.tiers.high: recertification is less frequent or removed"]
     assert _loosening(yearly, monthly) == []
-    vendors_long = {"schema": "governance-policy/v1", "vendors": {"stages": [{"role": "governance_reviewer"}], "recertify_days": 730}}
+    vendors_long = {
+        "schema": "governance-policy/v1",
+        "vendors": {"stages": [{"role": "governance_reviewer"}], "recertify_days": 730},
+    }
     assert _loosening(DEFAULT, vendors_long) == ["vendors: recertification is less frequent or removed"]
 
 
 def test_dropping_attested_evals_for_an_environment_loosens():
     everywhere = {"schema": "governance-policy/v1", "gates": {"environments": {"*": {"require_attested_evals": True}}}}
-    prod_only = {"schema": "governance-policy/v1", "gates": {"environments": {"prod": {"require_attested_evals": True}}}}
+    prod_only = {
+        "schema": "governance-policy/v1",
+        "gates": {"environments": {"prod": {"require_attested_evals": True}}},
+    }
     assert _loosening(everywhere, prod_only) == ["gates.environments.*: attested evals are no longer required"]
     assert _loosening(prod_only, everywhere) == []
     assert _loosening(prod_only, DEFAULT) == ["gates.environments.prod: attested evals are no longer required"]

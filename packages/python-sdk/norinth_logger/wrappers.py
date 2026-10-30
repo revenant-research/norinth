@@ -4,12 +4,15 @@
 from __future__ import annotations
 
 import inspect
+import logging
 from collections.abc import Callable
 from time import perf_counter
 from typing import Any
 
 from .client import NorinthClient
 from .privacy import summarize_error
+
+logger = logging.getLogger("norinth_logger")
 
 # only these ops produce a completion; matching by full path keeps non-generative
 # ops (files.create, batches.create, fine_tuning.jobs.create, vector_stores.create)
@@ -106,30 +109,78 @@ class WrappedCallable:
         self._record(response, kwargs, started, "success", None)
         return response
 
-    def _record(self, response: Any, kwargs: dict[str, Any], started: float, status: str, exc: BaseException | None) -> None:
-        duration_ms = (perf_counter() - started) * 1000
-        error = (
-            summarize_error(exc, self._client.config.capture_content, self._client.config.fingerprint_key)
-            if exc is not None
-            else None
-        )
-        streaming = bool(kwargs.get("stream"))
-        model = str(getattr(response, "model", None) or kwargs.get("model") or "unknown")
-        prompt = kwargs.get("input") or kwargs.get("prompt") or kwargs.get("messages")
-        # streaming response is an unconsumed iterator; hashing it fingerprints a
-        # memory address and usage is unknown until drained, so record neither
-        self._client.model_call(
-            provider=self._provider,
-            model=model,
-            operation=self._operation,
-            prompt=prompt,
-            response=None if streaming else response,
-            usage={} if streaming else normalize_usage(getattr(response, "usage", None)),
-            metadata={"streaming": True} if streaming else None,
-            status=status,
-            duration_ms=duration_ms,
-            error=error,
-        )
+    def _record(
+        self, response: Any, kwargs: dict[str, Any], started: float, status: str, exc: BaseException | None
+    ) -> None:
+        # this runs on the host's call path after the provider has answered, so
+        # nothing in it may raise into the host: an argument whose truth value
+        # is ambiguous, a response object that will not summarize, anything
+        try:
+            config = self._client.config
+            record_model_call(
+                self._client,
+                provider=self._provider,
+                operation=self._operation,
+                prompt=first_present(kwargs, "input", "prompt", "messages"),
+                kwargs=kwargs,
+                response=response,
+                status=status,
+                error=summarize_error(exc, config.capture_content, config.fingerprint_key) if exc is not None else None,
+                started=started,
+            )
+        except Exception:
+            if not self._client.config.fail_open:
+                raise
+            logger.debug("Norinth failed to record a model call; continuing", exc_info=True)
+
+
+def first_present(kwargs: dict[str, Any], *keys: str) -> Any:
+    """the first named argument that was passed, by presence rather than truth
+
+    `a or b` asks each value for its truth, and an array-like argument (a
+    numpy embedding input, a pandas frame) raises on that question
+    """
+    for key in keys:
+        value = kwargs.get(key)
+        if value is not None:
+            return value
+    return None
+
+
+def record_model_call(
+    client: NorinthClient,
+    *,
+    provider: str,
+    operation: str,
+    prompt: Any,
+    kwargs: dict[str, Any],
+    response: Any,
+    status: str,
+    error: dict[str, Any] | None,
+    started: float,
+) -> None:
+    """one model.call event for a provider call made through a wrapper or a
+    patched provider method
+
+    a streaming response is an unconsumed iterator: hashing it fingerprints a
+    memory address and usage is unknown until it is drained, so neither is
+    recorded and the event says it was a stream
+    """
+    duration_ms = (perf_counter() - started) * 1000
+    streaming = bool(kwargs.get("stream"))
+    model = str(getattr(response, "model", None) or kwargs.get("model") or "unknown")
+    client.model_call(
+        provider=provider,
+        model=model,
+        operation=operation,
+        prompt=prompt,
+        response=None if streaming else response,
+        usage={} if streaming else normalize_usage(getattr(response, "usage", None)),
+        metadata={"streaming": True} if streaming else None,
+        status=status,
+        duration_ms=duration_ms,
+        error=error,
+    )
 
 
 def _is_model_operation(path: str, name: str) -> bool:

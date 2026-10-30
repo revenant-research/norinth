@@ -111,7 +111,9 @@ def test_policy_clock_opens_routed_review_once_per_certification(org):
     # idempotent: the same certification is asked about once
     assert run_once()["recertifications_opened"] == 0
 
-    tasks = [t for t in org.get("/api/review-tasks").json()["review_tasks"] if t["task_type"] == "recertification_review"]
+    tasks = [
+        t for t in org.get("/api/review-tasks").json()["review_tasks"] if t["task_type"] == "recertification_review"
+    ]
     assert len(tasks) == 1
     task = tasks[0]
     assert task["status"] == "open"
@@ -126,7 +128,9 @@ def test_policy_clock_opens_routed_review_once_per_certification(org):
     )
     assert recertified.status_code == 200, recertified.text
     assert recertified.json()["intake"]["status"] == "recertified"
-    tasks = [t for t in org.get("/api/review-tasks").json()["review_tasks"] if t["task_type"] == "recertification_review"]
+    tasks = [
+        t for t in org.get("/api/review-tasks").json()["review_tasks"] if t["task_type"] == "recertification_review"
+    ]
     assert tasks[0]["status"] == "closed"
     assert run_once()["recertifications_opened"] == 0
 
@@ -147,7 +151,9 @@ def test_retirement_closes_open_recertification_work(org):
 
     retired = org.post(f"/api/intake/{record['intake_id']}/retire", json={"rationale": "Replaced by v2 system."})
     assert retired.status_code == 200, retired.text
-    tasks = [t for t in org.get("/api/review-tasks").json()["review_tasks"] if t["task_type"] == "recertification_review"]
+    tasks = [
+        t for t in org.get("/api/review-tasks").json()["review_tasks"] if t["task_type"] == "recertification_review"
+    ]
     assert tasks[0]["status"] == "closed"
     # a retired system never re-enters the clock
     assert run_once()["recertifications_opened"] == 0

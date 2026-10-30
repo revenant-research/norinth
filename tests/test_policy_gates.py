@@ -46,7 +46,13 @@ def _prompt() -> dict:
         "trace_id": "trc_prompt",
         "span_id": "spn_prompt",
         "timestamp": "2026-08-22T00:00:01Z",
-        "attributes": {"prompt_id": "triage-prompt", "version": "p1", "artifact_ref": "prompt:p1", "template": {"t": "x"}, "metadata": META},
+        "attributes": {
+            "prompt_id": "triage-prompt",
+            "version": "p1",
+            "artifact_ref": "prompt:p1",
+            "template": {"t": "x"},
+            "metadata": META,
+        },
     }
 
 
@@ -121,7 +127,9 @@ def _gate(client) -> dict:
 def _gates_policy(environment: str, require_attested: bool) -> dict:
     return {
         "schema": "governance-policy/v1",
-        "gates": {"environments": {environment: {"require_attested_evals": require_attested, "max_open_material_changes": 0}}},
+        "gates": {
+            "environments": {environment: {"require_attested_evals": require_attested, "max_open_material_changes": 0}}
+        },
     }
 
 
@@ -136,7 +144,9 @@ def test_default_policy_keeps_unattested_evals_passing(org):
     assert gate["passing_eval_count"] == 1
     assert gate["policy_tenant"] == "" and gate["policy_version"] == 1
     with _approver(client) as approver:
-        approved = approver.post(f"/api/deployment-gates/{gate['gate_id']}/approve", json={"rationale": APPROVAL_RATIONALE})
+        approved = approver.post(
+            f"/api/deployment-gates/{gate['gate_id']}/approve", json={"rationale": APPROVAL_RATIONALE}
+        )
         assert approved.status_code == 200, approved.text
 
 
@@ -158,7 +168,9 @@ def test_policy_can_require_attestation_per_environment(org):
     assert "attested" in gate["required_reason"]
     assert gate["policy_tenant"] == "acme" and gate["policy_version"] == version
     with _approver(client) as approver:
-        blocked = approver.post(f"/api/deployment-gates/{gate['gate_id']}/approve", json={"rationale": APPROVAL_RATIONALE})
+        blocked = approver.post(
+            f"/api/deployment-gates/{gate['gate_id']}/approve", json={"rationale": APPROVAL_RATIONALE}
+        )
         assert blocked.status_code == 400
         assert "attested" in blocked.json()["detail"]
 
@@ -195,7 +207,9 @@ def test_policy_cannot_relax_below_registered_keys(org):
 
     unsigned = _eval("plain")
     signed = sign_eval_result(_eval("signed"), private_key_pem=private_pem, key_id=key_id)
-    resp = client.post("/v1/events/batch", json={"events": [_prompt(), _deployment(), unsigned, signed]}, headers=headers)
+    resp = client.post(
+        "/v1/events/batch", json={"events": [_prompt(), _deployment(), unsigned, signed]}, headers=headers
+    )
     assert resp.status_code == 200, resp.text
     # only the signed eval counts: the keys-based requirement stands
     assert _gate(client)["passing_eval_count"] == 1

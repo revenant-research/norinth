@@ -77,7 +77,9 @@ def test_a_suspended_person_does_not_count(super_admin_client):
         from app.storage.raw_events import connect
 
         with connect() as connection:
-            connection.execute("UPDATE platform_users SET status = 'suspended' WHERE user_ref = ?", ("owner@acme.test",))
+            connection.execute(
+                "UPDATE platform_users SET status = 'suspended' WHERE user_ref = ?", ("owner@acme.test",)
+            )
         version = _draft(org, _high("governance_reviewer", "risk_owner"))
         assert org.post(f"/api/governance-policy/versions/{version}/activate").status_code == 400
 

@@ -98,9 +98,7 @@ def test_new_expiry_is_a_new_exception(fresh_db):
     from app.storage.workflow import create_exception
 
     _seed_finding("rf-4")
-    first = create_exception(
-        "risk_finding", "rf-4", "waiver", "control", "2026-02-01T00:00:00+00:00", "gov@acme.test"
-    )
+    first = create_exception("risk_finding", "rf-4", "waiver", "control", "2026-02-01T00:00:00+00:00", "gov@acme.test")
     renewed = create_exception(
         "risk_finding", "rf-4", "waiver", "control", "2026-03-01T00:00:00+00:00", "gov@acme.test"
     )

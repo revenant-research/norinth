@@ -80,7 +80,10 @@ def build_authn_redirect(tenant_id: str, base_url: str) -> tuple[str, str]:
     deflated = zlib.compress(xml.encode("utf-8"))[2:-4]
     saml_request = base64.b64encode(deflated).decode("ascii")
     separator = "&" if "?" in config["idp_sso_url"] else "?"
-    return f"{config['idp_sso_url']}{separator}{parse.urlencode({'SAMLRequest': saml_request, 'RelayState': tenant_id})}", request_id
+    return (
+        f"{config['idp_sso_url']}{separator}{parse.urlencode({'SAMLRequest': saml_request, 'RelayState': tenant_id})}",
+        request_id,
+    )
 
 
 # --- Response ---------------------------------------------------------------------
@@ -107,12 +110,13 @@ def _verify_signed(root: etree._Element, certificate_pem: str) -> etree._Element
     return verified.signed_xml
 
 
-def process_response(saml_response_b64: str, base_url: str, expected_request_id: str | None = None) -> dict[str, Any]:
+def process_response(saml_response_b64: str, base_url: str, expected_request_id: str) -> dict[str, Any]:
     """verify a saml Response (http-post binding) and return the provisioned user
 
     ``expected_request_id`` is the AuthnRequest id this browser was issued at
-    /start (from a cookie); when set, the response's InResponseTo must match it,
-    binding the login to the browser that began it"""
+    /start (from a cookie); the response's InResponseTo must match it, binding
+    the login to the browser that began it. a response with no such id to
+    compare against is refused before this is called"""
     try:
         raw = base64.b64decode(saml_response_b64)
         root = etree.fromstring(raw, parser=_PARSER)
@@ -123,7 +127,7 @@ def process_response(saml_response_b64: str, base_url: str, expected_request_id:
     in_response_to = root.get("InResponseTo")
     if not in_response_to:
         raise SamlError("SAML Response lacks InResponseTo; unsolicited responses are not accepted")
-    if expected_request_id is not None and in_response_to != expected_request_id:
+    if in_response_to != expected_request_id:
         raise SamlError("SAML Response does not match the login request from this browser")
     request = consume_saml_request(in_response_to)
     if request is None:
@@ -201,11 +205,15 @@ def process_response(saml_response_b64: str, base_url: str, expected_request_id:
         if values:
             attributes[attr.get("Name", "")] = values[0]
     email = (
-        attributes.get("email")
-        or attributes.get("mail")
-        or attributes.get("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress")
-        or (name_id if "@" in name_id else "")
-    ).strip().lower()
+        (
+            attributes.get("email")
+            or attributes.get("mail")
+            or attributes.get("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress")
+            or (name_id if "@" in name_id else "")
+        )
+        .strip()
+        .lower()
+    )
     if not email:
         raise SamlError("identity provider did not supply an email (NameID or email attribute)")
     domain = config.get("allowed_email_domain")

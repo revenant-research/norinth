@@ -16,6 +16,8 @@ import urllib.request
 from collections.abc import Callable
 from typing import Any
 
+from .transport import NoRedirectHandler
+
 Transport = Callable[[str, dict[str, Any] | None], dict[str, Any]]
 
 
@@ -28,12 +30,6 @@ class PermissionDenied(PortableError):
         self.outcome = outcome
         self.reasons = reasons
         super().__init__("Norinth did not authorize this effect: " + outcome)
-
-
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        # Never forward an integration credential to a redirect destination.
-        return None
 
 
 class PortableClient:
@@ -70,7 +66,8 @@ class PortableClient:
             method="POST" if payload is not None else "GET",
         )
         try:
-            with urllib.request.build_opener(_NoRedirect()).open(request, timeout=self.timeout) as response:
+            # never forward an integration credential to a redirect destination
+            with urllib.request.build_opener(NoRedirectHandler()).open(request, timeout=self.timeout) as response:
                 if response.status != 200:
                     raise PortableError("Norinth returned an unexpected status")
                 raw = response.read(2097153)

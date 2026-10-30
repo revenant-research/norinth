@@ -152,10 +152,13 @@ def test_deactivation_revokes_live_sessions(super_admin_client):
     assert bob.get("/api/auth/me").status_code == 200
 
     with _scim(token) as scim:
-        assert scim.patch(
-            "/scim/v2/Users/bob@acme.test",
-            json={"Operations": [{"op": "replace", "path": "active", "value": False}]},
-        ).status_code == 200
+        assert (
+            scim.patch(
+                "/scim/v2/Users/bob@acme.test",
+                json={"Operations": [{"op": "replace", "path": "active", "value": False}]},
+            ).status_code
+            == 200
+        )
 
     # bob's existing session is dead immediately
     assert bob.get("/api/auth/me").status_code in (401, 403)

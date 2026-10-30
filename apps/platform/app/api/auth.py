@@ -22,11 +22,19 @@ from app.services.auth import (
     end_session,
     hash_password,
     needs_rehash,
+    spend_verification_time,
     verify_password,
 )
 from app.services.authorization import effective_permissions
 from app.storage.audit import record_audit
-from app.storage.login_attempts import clear_attempts, email_subject, ip_subject, is_locked, register_failure
+from app.storage.login_attempts import (
+    clear_attempts,
+    email_subject,
+    ip_subject,
+    is_locked,
+    mfa_disable_subject,
+    register_failure,
+)
 from app.storage.mfa import (
     activate_mfa,
     clear_mfa,
@@ -134,7 +142,14 @@ def login(payload: LoginRequest, request: Request, response: Response) -> dict[s
             detail="Too many failed login attempts. Try again later.",
         )
     user = get_user_by_email(payload.email)
-    if user is None or user.get("status") != "active" or not verify_password(payload.password, user.get("password_hash")):
+    if user is None or user.get("status") != "active":
+        # cost the same as a real verification so response time does not
+        # reveal whether the email names an active account
+        spend_verification_time()
+        authenticated = False
+    else:
+        authenticated = verify_password(payload.password, user.get("password_hash"))
+    if not authenticated:
         newly_locked = [
             subject
             for subject, locked in ((account, register_failure(account)), (source, register_failure(source)))
@@ -160,6 +175,7 @@ def login(payload: LoginRequest, request: Request, response: Response) -> dict[s
                 detail={"subjects": newly_locked, "source_ip": client_ip(request)},
             )
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    assert user is not None  # authenticated implies an active account was found
     clear_attempts(account)
     # rehash if kdf params are outdated, now that we have the verified plaintext.
     # upgrade_password_hash, not set_user_password: a transparent rehash must not
@@ -179,7 +195,9 @@ def login(payload: LoginRequest, request: Request, response: Response) -> dict[s
     return _finish_login(request, response, user)
 
 
-def _finish_login(request: Request, response: Response, user: dict[str, Any], *, mfa_method: str | None = None) -> dict[str, Any]:
+def _finish_login(
+    request: Request, response: Response, user: dict[str, Any], *, mfa_method: str | None = None
+) -> dict[str, Any]:
     token = create_session(user["user_ref"])
     _set_session_cookie(request, response, token)
     detail = {"mfa": mfa_method} if mfa_method else None
@@ -316,20 +334,41 @@ def mfa_enable(payload: MfaCodeRequest, actor: ActorContext = Depends(current_ac
 
 
 @router.post("/api/auth/mfa/disable")
-def mfa_disable(payload: MfaDisableRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
-    """turning off the second factor requires both factors"""
+def mfa_disable(
+    payload: MfaDisableRequest, request: Request, actor: ActorContext = Depends(current_actor)
+) -> dict[str, Any]:
+    """turning off the second factor requires both factors
+
+    failed attempts are throttled like login failures: whoever holds a live
+    session and the password must not be able to grind the six-digit code
+    and strip the second factor
+    """
+    subject = mfa_disable_subject(actor.user_ref)
+    if is_locked(subject):
+        raise HTTPException(status_code=429, detail="Too many failed attempts. Try again later.")
     user = load_platform_user(actor.user_ref)
-    if user is None or not verify_password(payload.password, user.get("password_hash")):
-        raise HTTPException(status_code=401, detail="Password is incorrect")
     proved = False
-    if payload.recovery_code:
-        proved = consume_recovery_code(actor.user_ref, hash_opaque(payload.recovery_code.strip().lower()))
-    elif payload.code:
-        secret = _decrypt_secret(user, "mfa_secret")
-        counter = totp.verify_code(secret, payload.code, last_counter=user.get("mfa_last_counter")) if secret else None
-        proved = counter is not None
+    if user is not None and verify_password(payload.password, user.get("password_hash")):
+        if payload.recovery_code:
+            proved = consume_recovery_code(actor.user_ref, hash_opaque(payload.recovery_code.strip().lower()))
+        elif payload.code:
+            secret = _decrypt_secret(user, "mfa_secret")
+            counter = (
+                totp.verify_code(secret, payload.code, last_counter=user.get("mfa_last_counter")) if secret else None
+            )
+            proved = counter is not None
     if not proved:
-        raise HTTPException(status_code=401, detail="A valid authenticator or recovery code is required")
+        register_failure(subject)
+        record_audit(
+            actor_ref=actor.user_ref,
+            action="auth.mfa_disable_failed",
+            tenant_id=actor.tenant_id,
+            detail={"source_ip": client_ip(request)},
+        )
+        raise HTTPException(
+            status_code=401, detail="The password and a valid authenticator or recovery code are required"
+        )
+    clear_attempts(subject)
     clear_mfa(actor.user_ref)
     record_audit(actor_ref=actor.user_ref, action="auth.mfa_disabled", tenant_id=actor.tenant_id)
     return {"enabled": False}
@@ -377,7 +416,11 @@ def invite_preview(token: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="This invite link is invalid, expired, or already used")
     user = load_platform_user(invite["user_ref"]) or {}
     organization = load_organization(invite["tenant_id"]) or {}
-    return {"email": invite["user_ref"], "display_name": user.get("display_name"), "organization": organization.get("name") or invite["tenant_id"]}
+    return {
+        "email": invite["user_ref"],
+        "display_name": user.get("display_name"),
+        "organization": organization.get("name") or invite["tenant_id"],
+    }
 
 
 class AcceptInviteRequest(BaseModel):
@@ -387,16 +430,27 @@ class AcceptInviteRequest(BaseModel):
 
 @router.post("/api/auth/accept-invite")
 def accept_invite(payload: AcceptInviteRequest, request: Request, response: Response) -> dict[str, Any]:
-    invite = consume_invite(payload.token)
+    # look before consuming: a suspended invitee who follows the link must not
+    # burn the single-use token, since there is no way to reissue it
+    invite = peek_invite(payload.token)
     if invite is None:
         raise HTTPException(status_code=404, detail="This invite link is invalid, expired, or already used")
     user = load_platform_user(invite["user_ref"])
     if user is None or user.get("status") != "active":
         raise HTTPException(status_code=403, detail="This account is not active")
+    invite = consume_invite(payload.token)
+    if invite is None:
+        raise HTTPException(status_code=404, detail="This invite link is invalid, expired, or already used")
     set_user_password(invite["user_ref"], hash_password(payload.password))  # also clears must_change_password
     end_all_sessions(invite["user_ref"])
     token = create_session(invite["user_ref"])
     _set_session_cookie(request, response, token)
-    record_audit(actor_ref=invite["user_ref"], action="auth.accept_invite", tenant_id=invite["tenant_id"], target_type="user", target_id=invite["user_ref"])
+    record_audit(
+        actor_ref=invite["user_ref"],
+        action="auth.accept_invite",
+        tenant_id=invite["tenant_id"],
+        target_type="user",
+        target_id=invite["user_ref"],
+    )
     actor = ActorContext(user_ref=invite["user_ref"], tenant_id=invite["tenant_id"], platform_role=None)
     return {"user": _actor_profile(actor)}

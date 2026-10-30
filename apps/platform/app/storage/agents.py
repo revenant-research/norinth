@@ -312,7 +312,14 @@ def compute_agent_posture(tenant_id: str) -> dict[str, Any]:
         }
         if registration is None or registration.get("status") != "active":
             entry["issues"].append("unregistered_agent")
-            findings.append({"rule_id": "RISK-AGT-SHADOW", "agent": name, "obs": obs, "summary": f"Agent '{name}' ran {obs['run_count']}x but is not registered"})
+            findings.append(
+                {
+                    "rule_id": "RISK-AGT-SHADOW",
+                    "agent": name,
+                    "obs": obs,
+                    "summary": f"Agent '{name}' ran {obs['run_count']}x but is not registered",
+                }
+            )
         else:
             entry["owner_ref"] = registration["owner_ref"]
             entry["autonomy_level"] = registration["autonomy_level"]
@@ -320,7 +327,14 @@ def compute_agent_posture(tenant_id: str) -> dict[str, Any]:
             if unauthorized:
                 entry["issues"].append("unauthorized_tool")
                 entry["unauthorized_tools"] = unauthorized
-                findings.append({"rule_id": "RISK-AGT-TOOL", "agent": name, "obs": obs, "summary": f"Agent '{name}' used tools outside its allow-list: {', '.join(unauthorized)}"})
+                findings.append(
+                    {
+                        "rule_id": "RISK-AGT-TOOL",
+                        "agent": name,
+                        "obs": obs,
+                        "summary": f"Agent '{name}' used tools outside its allow-list: {', '.join(unauthorized)}",
+                    }
+                )
             trifecta = (
                 registration["processes_untrusted_input"]
                 and registration["accesses_sensitive_data"]
@@ -329,10 +343,24 @@ def compute_agent_posture(tenant_id: str) -> dict[str, Any]:
             )
             if trifecta:
                 entry["issues"].append("agent_trifecta")
-                findings.append({"rule_id": "RISK-AGT-TRIFECTA", "agent": name, "obs": obs, "summary": f"Agent '{name}' combines untrusted input, sensitive data, and external action with no human checkpoint"})
+                findings.append(
+                    {
+                        "rule_id": "RISK-AGT-TRIFECTA",
+                        "agent": name,
+                        "obs": obs,
+                        "summary": f"Agent '{name}' combines untrusted input, sensitive data, and external action with no human checkpoint",
+                    }
+                )
             if int(registration["autonomy_level"]) >= 3 and not registration["human_checkpoint"]:
                 entry["issues"].append("autonomy_without_oversight")
-                findings.append({"rule_id": "RISK-AGT-AUTONOMY", "agent": name, "obs": obs, "summary": f"Agent '{name}' is autonomy level {registration['autonomy_level']} with no human checkpoint"})
+                findings.append(
+                    {
+                        "rule_id": "RISK-AGT-AUTONOMY",
+                        "agent": name,
+                        "obs": obs,
+                        "summary": f"Agent '{name}' is autonomy level {registration['autonomy_level']} with no human checkpoint",
+                    }
+                )
             # compared where the agent ran; a system with no intake record is
             # reported as unregistered elsewhere, not here
             system = registration.get("application_name") or obs["application_name"]
@@ -340,13 +368,15 @@ def compute_agent_posture(tenant_id: str) -> dict[str, Any]:
             agent_band = INTAKE_AUTONOMY_FOR_LEVEL.get(int(registration["autonomy_level"]), "autonomous")
             if intake_index is not None and INTAKE_AUTONOMY_LEVELS.index(agent_band) > intake_index:
                 entry["issues"].append("agent_autonomy_exceeds_intake")
-                findings.append({
-                    "rule_id": "RISK-AGT-INTAKE",
-                    "agent": name,
-                    "obs": obs,
-                    "summary": f"Agent '{name}' is autonomy level {registration['autonomy_level']} ({agent_band}); "
-                    f"the intake for '{system}' declares {INTAKE_AUTONOMY_LEVELS[intake_index]}",
-                })
+                findings.append(
+                    {
+                        "rule_id": "RISK-AGT-INTAKE",
+                        "agent": name,
+                        "obs": obs,
+                        "summary": f"Agent '{name}' is autonomy level {registration['autonomy_level']} ({agent_band}); "
+                        f"the intake for '{system}' declares {INTAKE_AUTONOMY_LEVELS[intake_index]}",
+                    }
+                )
         agents.append(entry)
 
     # registered agents never observed at runtime are reported too (dormant)
@@ -416,4 +446,3 @@ def refresh_agent_posture(tenant_ids: list[str] | None = None) -> None:
 
 def public_posture(posture: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in posture.items() if not key.startswith("_")}
-

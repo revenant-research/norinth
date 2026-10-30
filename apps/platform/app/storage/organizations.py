@@ -28,9 +28,7 @@ def init_organizations() -> None:
 
 def create_organization(tenant_id: str, name: str, created_by: str) -> dict[str, Any]:
     with connect() as connection:
-        existing = connection.execute(
-            "SELECT 1 FROM organizations WHERE tenant_id = ?", (tenant_id,)
-        ).fetchone()
+        existing = connection.execute("SELECT 1 FROM organizations WHERE tenant_id = ?", (tenant_id,)).fetchone()
         if existing is not None:
             raise DomainError(f"organization '{tenant_id}' already exists")
         connection.execute(
@@ -72,9 +70,7 @@ def organization_requires_mfa(tenant_id: str | None) -> bool:
     if not tenant_id:
         return False
     with connect() as connection:
-        row = connection.execute(
-            "SELECT require_mfa FROM organizations WHERE tenant_id = ?", (tenant_id,)
-        ).fetchone()
+        row = connection.execute("SELECT require_mfa FROM organizations WHERE tenant_id = ?", (tenant_id,)).fetchone()
     return bool(row and row["require_mfa"])
 
 

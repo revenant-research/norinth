@@ -17,7 +17,6 @@ def login_and_activate(test_client, email: str, password: str, new_password: str
     return test_client
 
 
-
 def staff_policy_stages(org_client, domain: str, body: dict) -> None:
     """give an organization one active person per approval-stage position in
     a policy document, so the version can be activated
@@ -32,7 +31,8 @@ def staff_policy_stages(org_client, domain: str, body: dict) -> None:
     for index, role in sorted(wanted):
         email = f"staff-{index}-{role.replace('_', '-')}@{domain}"
         created = org_client.post(
-            "/api/org/users", json={"email": email, "display_name": f"staff {index} {role}", "password": "staff-pw-123456"}
+            "/api/org/users",
+            json={"email": email, "display_name": f"staff {index} {role}", "password": "staff-pw-123456"},
         )
         if created.status_code != 200:
             continue  # already staffed by an earlier call

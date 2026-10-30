@@ -28,6 +28,7 @@ from app.storage.intake import (
 )
 from app.storage.policy_engine import resolve_intake_fields, validate_custom_field_values
 from app.storage.raw_events import connect
+from app.storage.unit_of_work import atomic
 from app.storage.workflow import refresh_workflow_state
 
 router = APIRouter()
@@ -63,6 +64,7 @@ def intake(scope: ScopeFilter = Depends(scoped_dependency)) -> dict[str, list[di
 
 
 @router.post("/api/intake")
+@atomic
 def submit_intake(payload: IntakeRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     if payload.data_sensitivity not in DATA_SENSITIVITY_LEVELS:
         raise HTTPException(status_code=400, detail=f"data_sensitivity must be one of {DATA_SENSITIVITY_LEVELS}")
@@ -105,12 +107,18 @@ def submit_intake(payload: IntakeRequest, actor: ActorContext = Depends(current_
 
 
 @router.post("/api/intake/{intake_id}/recertify")
-def recertify_intake(intake_id: str, payload: LifecycleActionRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
+@atomic
+def recertify_intake(
+    intake_id: str, payload: LifecycleActionRequest, actor: ActorContext = Depends(current_actor)
+) -> dict[str, Any]:
     return _lifecycle_transition(intake_id, payload, actor, status="recertified", action="lifecycle.recertify")
 
 
 @router.post("/api/intake/{intake_id}/retire")
-def retire_intake(intake_id: str, payload: LifecycleActionRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
+@atomic
+def retire_intake(
+    intake_id: str, payload: LifecycleActionRequest, actor: ActorContext = Depends(current_actor)
+) -> dict[str, Any]:
     return _lifecycle_transition(intake_id, payload, actor, status="retired", action="lifecycle.retire")
 
 

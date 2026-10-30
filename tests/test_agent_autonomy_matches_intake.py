@@ -127,7 +127,9 @@ def test_retired_intake_and_missing_intake_do_not_count(super_admin_client):
     org, headers = _org(super_admin_client, "retiredintake")
     gov = _gov_user(org, "retiredintake")
     retired = _intake(gov, "old-app", "assistive")
-    assert gov.post(f"/api/intake/{retired['intake_id']}/retire", json={"rationale": "decommissioned"}).status_code == 200
+    assert (
+        gov.post(f"/api/intake/{retired['intake_id']}/retire", json={"rationale": "decommissioned"}).status_code == 200
+    )
     _register(org, "old-bot", "old-app", 4)
     _register(org, "loose-bot", "no-intake-app", 4)
     batch = [

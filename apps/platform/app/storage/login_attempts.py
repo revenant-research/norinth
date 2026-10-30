@@ -138,5 +138,11 @@ def email_subject(email: str) -> str:
     return f"email:{email.strip().lower()}"
 
 
+def mfa_disable_subject(user_ref: str) -> str:
+    """throttle key for attempts to turn off a user's second factor; the
+    account policy applies (same threshold and window as login)"""
+    return f"mfa-disable:{user_ref.strip().lower()}"
+
+
 def ip_subject(ip: str | None) -> str:
     return f"ip:{ip or 'unknown'}"

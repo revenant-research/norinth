@@ -37,6 +37,23 @@ logger = logging.getLogger("norinth_logger")
 logger.addHandler(logging.NullHandler())
 
 
+class NoRedirectHandler(request.HTTPRedirectHandler):
+    """refuse to follow redirects
+
+    urllib's default handler re-issues a redirected request to the new location
+    with the Authorization header intact, and turns a POST into a GET. an
+    endpoint that answers 3xx, or anything on the path to a plain-http
+    endpoint, could therefore collect the ingestion key. a redirect is treated
+    as a rejected request, never followed
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_OPENER = request.build_opener(NoRedirectHandler())
+
+
 def sign_payload(payload: bytes, secret: str) -> str:
     mac = hmac.new(secret.encode("utf-8"), msg=payload, digestmod=hashlib.sha256)
     return mac.hexdigest()
@@ -133,9 +150,18 @@ class EventTransport:
             self.stats.dropped += 1
             logger.debug("Norinth failed to enqueue event", exc_info=True)
 
-    def flush(self) -> None:
-        # drain disk spool first so spooled events go out ahead of the queue
-        self._drain_spool()
+    def flush(self, *, final: bool = False) -> None:
+        """send what is queued
+
+        final is the last flush of a process (shutdown, interpreter exit) and
+        runs on the caller's thread, so it is bounded: one delivery attempt per
+        batch with no retry sleeps, and the disk spool is left for the next
+        start rather than drained now. a batch that fails is spooled where a
+        spool exists, as it would be after retries
+        """
+        if not final:
+            # drain disk spool first so spooled events go out ahead of the queue
+            self._drain_spool()
         batch: list[dict] = []
         while True:
             try:
@@ -143,18 +169,18 @@ class EventTransport:
             except queue.Empty:
                 break
         if batch:
-            self.send_batch(batch)
+            self.send_batch(batch, retries=0 if final else None)
 
     def shutdown(self) -> None:
         self._stop.set()
-        self.flush()
+        self.flush(final=True)
         worker = self._worker
         if worker and worker.is_alive():
             worker.join(timeout=self.config.timeout_seconds)
 
     def _atexit_flush(self) -> None:
         try:
-            self.flush()
+            self.flush(final=True)
         except Exception:
             # never raise during interpreter shutdown
             pass
@@ -170,7 +196,9 @@ class EventTransport:
 
     # -- send ---------------------------------------------------------------
 
-    def send_batch(self, events: list[dict]) -> None:
+    def send_batch(self, events: list[dict], *, retries: int | None = None) -> None:
+        """serialize and deliver one batch; retries overrides the configured
+        retry count for this batch (0 means one attempt)"""
         try:
             # default=str tolerates non-json values; allow_nan=False makes NaN/Inf
             # (invalid json the receiver rejects) raise here so one bad event is
@@ -185,7 +213,7 @@ class EventTransport:
             self.stats.dropped += len(events)
             logger.debug("Norinth failed to serialize event batch; dropping", exc_info=True)
             return
-        self._deliver(payload, len(events))
+        self._deliver(payload, len(events), retries=retries)
 
     def _post_once(self, payload: bytes) -> None:
         """send one payload; raises on any transport or http failure"""
@@ -202,7 +230,9 @@ class EventTransport:
             headers=headers,
             method="POST",
         )
-        with request.urlopen(http_request, timeout=self.config.timeout_seconds) as response:
+        # _OPENER never follows a redirect: a 3xx surfaces as an HTTPError and
+        # the key is not re-sent to whatever Location named
+        with _OPENER.open(http_request, timeout=self.config.timeout_seconds) as response:
             if response.status >= 400:
                 raise HTTPError(http_request.full_url, response.status, "ingestion failed", response.headers, None)
 
@@ -213,9 +243,10 @@ class EventTransport:
         # timeouts and connection errors are transient
         return True
 
-    def _deliver(self, payload: bytes, count: int) -> None:
+    def _deliver(self, payload: bytes, count: int, *, retries: int | None = None) -> None:
         """deliver a batch with bounded retry, then spool or drop; permanent 4xx dropped immediately"""
-        for attempt in range(self.config.max_send_retries + 1):
+        max_retries = self.config.max_send_retries if retries is None else retries
+        for attempt in range(max_retries + 1):
             try:
                 self._post_once(payload)
                 self.stats.sent += count
@@ -230,7 +261,7 @@ class EventTransport:
                         exc,
                     )
                     return
-                if attempt < self.config.max_send_retries:
+                if attempt < max_retries:
                     self.stats.retried += 1
                     time.sleep(self.config.retry_backoff_seconds * (2**attempt))
                     continue

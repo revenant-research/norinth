@@ -17,7 +17,16 @@ def test_deployer_cannot_approve_own_release(super_admin_client):
     from app.main import app
     from fastapi.testclient import TestClient
 
-    super_admin_client.post("/api/admin/organizations", json={"tenant_id": "acme", "name": "Acme", "admin_email": "a@acme.test", "admin_display_name": "A", "admin_password": "acme-admin-pw-1"})
+    super_admin_client.post(
+        "/api/admin/organizations",
+        json={
+            "tenant_id": "acme",
+            "name": "Acme",
+            "admin_email": "a@acme.test",
+            "admin_display_name": "A",
+            "admin_password": "acme-admin-pw-1",
+        },
+    )
     org = TestClient(app)
     login_and_activate(org, "a@acme.test", "acme-admin-pw-1")
     # two governance admins
@@ -28,9 +37,46 @@ def test_deployer_cannot_approve_own_release(super_admin_client):
 
     # gov1 deployed this version; its gate names gov1 as deployed_by
     events = [
-        {**BASE, "type": "prompt.event", "trace_id": "tp", "span_id": "sp", "timestamp": "2026-08-22T00:00:01Z", "attributes": {"prompt_id": "p", "version": "v1", "artifact_ref": "pr:1", "metadata": META}},
-        {**BASE, "type": "deployment.event", "trace_id": "td", "span_id": "sd", "timestamp": "2026-08-22T00:00:02Z", "attributes": {"deployment_id": "dep-1", "version": "v1", "artifact_ref": "img:1", "prompt_version": "v1", "deployment_status": "pending", "deployed_by": "gov1@acme.test", "metadata": META}},
-        {**BASE, "type": "eval.result", "trace_id": "te", "span_id": "se", "timestamp": "2026-08-22T00:00:03Z", "status": "success", "attributes": {"eval_id": "s", "passed": True, "score": 0.9, "artifact_ref": "img:1", "prompt_version": "v1", "metadata": META}},
+        {
+            **BASE,
+            "type": "prompt.event",
+            "trace_id": "tp",
+            "span_id": "sp",
+            "timestamp": "2026-08-22T00:00:01Z",
+            "attributes": {"prompt_id": "p", "version": "v1", "artifact_ref": "pr:1", "metadata": META},
+        },
+        {
+            **BASE,
+            "type": "deployment.event",
+            "trace_id": "td",
+            "span_id": "sd",
+            "timestamp": "2026-08-22T00:00:02Z",
+            "attributes": {
+                "deployment_id": "dep-1",
+                "version": "v1",
+                "artifact_ref": "img:1",
+                "prompt_version": "v1",
+                "deployment_status": "pending",
+                "deployed_by": "gov1@acme.test",
+                "metadata": META,
+            },
+        },
+        {
+            **BASE,
+            "type": "eval.result",
+            "trace_id": "te",
+            "span_id": "se",
+            "timestamp": "2026-08-22T00:00:03Z",
+            "status": "success",
+            "attributes": {
+                "eval_id": "s",
+                "passed": True,
+                "score": 0.9,
+                "artifact_ref": "img:1",
+                "prompt_version": "v1",
+                "metadata": META,
+            },
+        },
     ]
     org.post("/v1/events/batch", json={"events": events}, headers=h)
     gate = org.get("/api/deployment-gates").json()["deployment_gates"][0]
@@ -45,6 +91,8 @@ def test_deployer_cannot_approve_own_release(super_admin_client):
     if fresh["risk_count"] == 0 and fresh["missing_control_count"] == 0:
         with TestClient(app) as g2:
             login_and_activate(g2, "gov2@acme.test", "gov-password-1")
-            ok = g2.post(f"/api/deployment-gates/{gid}/approve", json={"rationale": "reviewed gov1's release, evidence bound"})
+            ok = g2.post(
+                f"/api/deployment-gates/{gid}/approve", json={"rationale": "reviewed gov1's release, evidence bound"}
+            )
             assert ok.status_code == 200, ok.text
     org.close()

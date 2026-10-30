@@ -21,6 +21,9 @@ class _RecordingClient:
             project = "p"
             capture_content = False
             signing_secret = None
+            fingerprint_key = None
+            metadata_allowlist = ()
+            fail_open = True
 
         self.config = _Cfg()
 
@@ -71,7 +74,9 @@ def test_streaming_response_completes_and_does_not_block(anyio_backend="asyncio"
             # 5xx recorded as an error with the status, not as success
             r = await asyncio.wait_for(http.get("/boom"), timeout=5)
             assert r.status_code == 500
-        statuses = [(e.name, e.status, e.attributes.get("http_status")) for e in client.events if e.type == "trace.completed"]
+        statuses = [
+            (e.name, e.status, e.attributes.get("http_status")) for e in client.events if e.type == "trace.completed"
+        ]
         assert statuses, "no trace recorded"
         boom = [s for s in statuses if s[2] == 500]
         assert boom and boom[0][1] == "error"
