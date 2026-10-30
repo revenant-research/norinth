@@ -21,6 +21,9 @@ class _RecordingClient:
             project = "p"
             capture_content = False
             signing_secret = None
+            fingerprint_key = None
+            metadata_allowlist = ()
+            fail_open = True
 
         self.config = _Cfg()
 

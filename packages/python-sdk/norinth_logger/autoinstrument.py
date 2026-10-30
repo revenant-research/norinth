@@ -4,16 +4,50 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from time import perf_counter
 from typing import Any
 
 from .context import TraceContext, reset_context, set_context
-from .privacy import infer_governance_context, summarize_error
+from .privacy import infer_governance_context, sanitize_metadata, summarize_error
 from .schemas import NorinthEvent, new_id
-from .wrappers import normalize_usage
+from .wrappers import first_present, record_model_call
 
 _PATCHED: set[str] = set()
+
+logger = logging.getLogger("norinth_logger")
+
+
+def _error_summary(client, exc: BaseException) -> dict[str, Any]:
+    """summarize an exception on the host's error path without adding one"""
+    try:
+        return summarize_error(exc, client.config.capture_content, client.config.fingerprint_key)
+    except Exception:
+        if not client.config.fail_open:
+            raise
+        return {"type": type(exc).__name__}
+
+
+def _record_patched_call(client, *, provider, operation, prompt_getter, args, kwargs, response, status, error_summary, started) -> None:
+    """record a patched provider call; runs in the host's finally block, so it
+    swallows its own failures when the client is fail-open"""
+    try:
+        record_model_call(
+            client,
+            provider=provider,
+            operation=operation,
+            prompt=prompt_getter(args, kwargs),
+            kwargs=kwargs,
+            response=response,
+            status=status,
+            error=error_summary,
+            started=started,
+        )
+    except Exception:
+        if not client.config.fail_open:
+            raise
+        logger.debug("Norinth failed to record a patched provider call; continuing", exc_info=True)
 
 
 def autoinstrument(client) -> None:
@@ -22,7 +56,7 @@ def autoinstrument(client) -> None:
 
 
 def _openai_input(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
-    return kwargs.get("input") or kwargs.get("prompt")
+    return first_present(kwargs, "input", "prompt")
 
 
 def _messages(args: tuple[Any, ...], kwargs: dict[str, Any]) -> Any:
@@ -142,21 +176,20 @@ def patch_provider_method(
             return response
         except Exception as exc:
             status = "error"
-            error = summarize_error(exc, client.config.capture_content, client.config.fingerprint_key)
+            error = _error_summary(client, exc)
             raise
         finally:
-            duration_ms = (perf_counter() - started) * 1000
-            model = str(getattr(response, "model", None) or kwargs.get("model") or "unknown")
-            client.model_call(
+            _record_patched_call(
+                client,
                 provider=provider,
-                model=model,
                 operation=operation,
-                prompt=prompt_getter(args, kwargs),
+                prompt_getter=prompt_getter,
+                args=args,
+                kwargs=kwargs,
                 response=response,
-                usage=normalize_usage(getattr(response, "usage", None)),
                 status=status,
-                duration_ms=duration_ms,
-                error=error,
+                error_summary=error,
+                started=started,
             )
 
     setattr(owner, method_name, instrumented)
@@ -189,21 +222,20 @@ def patch_provider_method_async(
             return response
         except Exception as exc:
             status = "error"
-            error = summarize_error(exc, client.config.capture_content, client.config.fingerprint_key)
+            error = _error_summary(client, exc)
             raise
         finally:
-            duration_ms = (perf_counter() - started) * 1000
-            model = str(getattr(response, "model", None) or kwargs.get("model") or "unknown")
-            client.model_call(
+            _record_patched_call(
+                client,
                 provider=provider,
-                model=model,
                 operation=operation,
-                prompt=prompt_getter(args, kwargs),
+                prompt_getter=prompt_getter,
+                args=args,
+                kwargs=kwargs,
                 response=response,
-                usage=normalize_usage(getattr(response, "usage", None)),
                 status=status,
-                duration_ms=duration_ms,
-                error=error,
+                error_summary=error,
+                started=started,
             )
 
     setattr(owner, method_name, instrumented)
@@ -255,7 +287,12 @@ class NorinthFastAPIMiddleware:
             await send(event)
 
         workflow_name = workflow_name_from_path(scope.get("path", ""))
-        metadata = infer_governance_context((decode_body(body),), {})
+        try:
+            metadata = infer_governance_context((decode_body(body),), {})
+        except Exception:
+            if not self.client.config.fail_open:
+                raise
+            metadata = {}
         metadata["workflow_name"] = workflow_name
         context = TraceContext(trace_id=new_id("trc"), span_id=new_id("spn"), system=self.system, metadata=metadata)
         token = set_context(context)
@@ -266,29 +303,49 @@ class NorinthFastAPIMiddleware:
             await self.app(scope, replay_receive, wrapped_send)
         except Exception as exc:
             status = "error"
-            error_summary = summarize_error(exc, self.client.config.capture_content, self.client.config.fingerprint_key)
+            error_summary = _error_summary(self.client, exc)
             raise
         finally:
-            duration_ms = (perf_counter() - started) * 1000
-            code = response_status["code"]
-            if status != "error" and isinstance(code, int) and code >= 500:
-                status = "error"  # 5xx is a failed request
-            self.client.record(
-                NorinthEvent(
-                    type="trace.completed",
-                    trace_id=context.trace_id,
-                    span_id=context.span_id,
-                    service=self.client.config.service,
-                    environment=self.client.config.environment,
-                    project=self.client.config.project,
-                    system=context.system,
-                    name=workflow_name,
-                    status=status,
-                    duration_ms=duration_ms,
-                    attributes={"metadata": context.metadata, "error": error_summary, "http_status": code},
+            try:
+                duration_ms = (perf_counter() - started) * 1000
+                code = response_status["code"]
+                if status != "error" and isinstance(code, int) and code >= 500:
+                    status = "error"  # 5xx is a failed request
+                config = self.client.config
+                self.client.record(
+                    NorinthEvent(
+                        type="trace.completed",
+                        trace_id=context.trace_id,
+                        span_id=context.span_id,
+                        service=config.service,
+                        environment=config.environment,
+                        project=config.project,
+                        system=context.system,
+                        name=workflow_name,
+                        status=status,
+                        duration_ms=duration_ms,
+                        attributes={
+                            # the inferred context came out of the request body,
+                            # so it crosses the same content boundary as every
+                            # other emitter's metadata: labels redacted and
+                            # capped, anything else hashed
+                            "metadata": sanitize_metadata(
+                                context.metadata,
+                                config.capture_content,
+                                config.fingerprint_key,
+                                getattr(config, "metadata_allowlist", None),
+                            ),
+                            "error": error_summary,
+                            "http_status": code,
+                        },
+                    )
                 )
-            )
-            reset_context(token)
+            except Exception:
+                if not self.client.config.fail_open:
+                    raise
+                logger.debug("Norinth failed to record a request trace; continuing", exc_info=True)
+            finally:
+                reset_context(token)
 
 
 def decode_body(body: bytes) -> dict[str, Any]:

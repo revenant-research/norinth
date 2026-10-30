@@ -186,6 +186,9 @@ METADATA_SAFE_KEYS = frozenset(
         # is the caller declaring one, not the inference path above, which still
         # refuses to guess it from app objects
         "tenant_id",
+        # set by the sdk itself, never by the caller: a streamed provider call
+        # is recorded without its response, and the platform should know why
+        "streaming",
     }
 )
 

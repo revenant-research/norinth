@@ -14,6 +14,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from .transport import NoRedirectHandler
+
 logger = logging.getLogger("norinth_cli")
 
 AI_PROVIDERS = {"openai", "anthropic", "langchain", "cohere", "google.generativeai", "bedrock"}
@@ -154,7 +156,8 @@ def _http(method: str, url: str, *, key: str | None = None, body: dict | None = 
         headers["Authorization"] = f"Bearer {key}"
     req = urllib.request.Request(url, data=data, method=method, headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        # never follow a redirect with the key attached (see transport.NoRedirectHandler)
+        with urllib.request.build_opener(NoRedirectHandler()).open(req, timeout=timeout) as resp:
             raw = resp.read().decode("utf-8")
             try:
                 return resp.status, json.loads(raw)
@@ -180,6 +183,10 @@ def _settings(args: argparse.Namespace) -> dict[str, str]:
     for attr, env in (("endpoint", "NORINTH_ENDPOINT"), ("api_key", "NORINTH_API_KEY"), ("project", "NORINTH_PROJECT"), ("environment", "NORINTH_ENVIRONMENT"), ("service", "NORINTH_SERVICE")):
         if getattr(args, attr, None):
             values[env] = getattr(args, attr)
+    if getattr(args, "api_key", None):
+        # argv is readable by every process on the host and lands in shell
+        # history and ci logs; the environment variable is not
+        print("  ! --api-key is visible to other processes; prefer NORINTH_API_KEY", file=sys.stderr)
     # .env fills gaps, never overrides real env vars
     env_file = Path(".env")
     if env_file.exists():
@@ -349,7 +356,7 @@ def cmd_gate_check(args: argparse.Namespace) -> int:
                 _bad("platform does not report current eligibility; upgrade Norinth before using --current")
                 return 3
             if body.get("approved") and (not args.current or current.get("eligible") is True):
-                _ok(f"gate {body['gate_id']} approved by {body.get('decided_by')} at {body.get('decided_at')}")
+                _ok(f"gate {body.get('gate_id')} approved by {body.get('decided_by')} at {body.get('decided_at')}")
                 return 0
             msg = f"gate {body.get('gate_id')} is {body.get('status')}"
             if body.get("blocking"):
@@ -396,7 +403,7 @@ def cmd_attest(args: argparse.Namespace) -> int:
 
 def _add_connection_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--endpoint", help="Norinth base URL (default: NORINTH_ENDPOINT)")
-    parser.add_argument("--api-key", help="Ingestion key (default: NORINTH_API_KEY)")
+    parser.add_argument("--api-key", help="Ingestion key (default: NORINTH_API_KEY, which keeps it out of process lists and shell history)")
     parser.add_argument("--project")
     parser.add_argument("--environment")
     parser.add_argument("--service")

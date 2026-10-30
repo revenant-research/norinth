@@ -17,6 +17,12 @@ def _split_env(value: str | None) -> tuple[str, ...]:
     return tuple(item.strip() for item in value.split(",") if item.strip())
 
 
+# the api key a config falls back to when NORINTH_API_KEY is unset. the platform
+# only accepts it in development mode, and a fingerprint key derived from it is
+# public knowledge, so a client built on it says so at startup
+DEFAULT_API_KEY = "dev"
+
+
 @dataclass(frozen=True)
 class NorinthConfig:
     api_key: str
@@ -82,10 +88,17 @@ class NorinthConfig:
             self.api_key.encode("utf-8"), b"norinth-fingerprint-key-v1", hashlib.sha256
         ).hexdigest()
 
+    @property
+    def fingerprint_key_is_public(self) -> bool:
+        """true when the fingerprint key derives from the well-known default api
+        key, so every content fingerprint this client emits is reversible by
+        anyone with a dictionary of likely values"""
+        return not self.signing_secret and self.api_key == DEFAULT_API_KEY
+
     @classmethod
     def from_env(cls, **overrides: object) -> NorinthConfig:
         values: dict[str, Any] = {
-            "api_key": getenv("NORINTH_API_KEY", "dev"),
+            "api_key": getenv("NORINTH_API_KEY", DEFAULT_API_KEY),
             "signing_secret": getenv("NORINTH_SIGNING_SECRET"),
             "endpoint": getenv("NORINTH_ENDPOINT", "http://localhost:8001"),
             "project": getenv("NORINTH_PROJECT", "default"),
