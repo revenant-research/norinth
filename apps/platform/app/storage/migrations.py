@@ -666,6 +666,12 @@ def _0029_restore_scope_indexes(connection) -> None:
         connection.execute(statement)
 
 
+def _0030_vendor_evidence_references(connection) -> None:
+    from app.storage.vendor_evidence import ensure_vendor_evidence_tables
+
+    ensure_vendor_evidence_tables(connection)
+
+
 MIGRATIONS: list[Migration] = [
     Migration(1, "baseline schema", _baseline),
     Migration(2, "indexes for agent posture, audit actions, risk rules", _0002_event_ingest_indexes),
@@ -702,6 +708,7 @@ MIGRATIONS: list[Migration] = [
     Migration(27, "portable execution integration contracts", _0027_portable_contracts),
     Migration(28, "exception expiry normalised to utc", _0028_exception_expiry_utc),
     Migration(29, "scope indexes dropped by the tenant-key rebuild", _0029_restore_scope_indexes),
+    Migration(30, "vendor evidence references with expiry", _0030_vendor_evidence_references),
 ]
 
 

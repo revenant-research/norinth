@@ -8,6 +8,18 @@ Semantic Versioning.
 
 ### Added
 
+- **Vendor evidence references that expire.** A vendor's agreements and
+  certificates (BAA, DPA, SOC 2, ISO/IEC 27001 and 42001, FDA clearance,
+  penetration test, other) are recorded as typed references: a name, an
+  identifier, an issue date, an expiry date and an optional document hash.
+  Never the document. `POST /api/vendors/{id}/evidence` records one and
+  supersedes the earlier reference of the same kind; `.../withdraw` retires
+  one. The maintenance worker ages expiry dates: an expired reference drops an
+  approved vendor to `recertify_due`, reopens the unreviewed-vendor finding on
+  every system using its providers, and blocks the vendor's review until a
+  current reference replaces it or the expired one is withdrawn. A reference
+  inside 30 days of expiry is announced once. Every change is audited and the
+  audit packet lists the references. Migration 30. (#157)
 - **Connected-system governance workspace.** A standalone, reusable workspace
   for systems that execute outside the platform, with scoped read-only
   snapshots for server adapters, the distinction between an absent human

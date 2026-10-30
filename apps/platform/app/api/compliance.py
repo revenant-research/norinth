@@ -90,6 +90,7 @@ def audit_packet(
     from app.storage.agents import compute_agent_posture, list_registered_agents, public_posture
     from app.storage.entities import list_providers
     from app.storage.policy_engine import build_policy_evidence, list_stages, list_vendors, vendor_coverage
+    from app.storage.vendor_evidence import list_evidence_references
 
     # exporting evidence is itself auditable; record it before assembling
     record_audit(
@@ -130,6 +131,8 @@ def audit_packet(
         "governance_policy": build_policy_evidence(scope.tenant_id),
         "approval_stages": list_stages(tenant_id=scope.tenant_id),
         "vendor_registry": list_vendors(scope.tenant_id or ""),
+        # typed references with dates and hashes; never a document body
+        "vendor_evidence": list_evidence_references(scope.tenant_id or ""),
         "vendor_coverage": vendor_coverage(scope.tenant_id or ""),
         "agent_registry": list_registered_agents(scope.tenant_id or ""),
         "agent_posture": public_posture(compute_agent_posture(scope.tenant_id or "")),

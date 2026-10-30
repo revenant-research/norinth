@@ -63,6 +63,12 @@ from app.storage.policy_engine import list_vendors as list_vendor_rows
 from app.storage.policy_engine import resolve_vendor_policy as resolve_vendor_policy_storage
 from app.storage.raw_events import connect
 from app.storage.unit_of_work import atomic
+from app.storage.vendor_evidence import (
+    EVIDENCE_KINDS,
+    list_evidence_references,
+    record_evidence_reference,
+    withdraw_evidence_reference,
+)
 from app.storage.workflow import record_decision, refresh_workflow_state
 
 router = APIRouter()
@@ -87,6 +93,18 @@ class VendorRequest(BaseModel):
     providers: list[str] = Field(min_length=1)
     approved_models: list[str] | None = None
     notes_ref: str | None = Field(default=None, max_length=500)
+
+
+class EvidenceReferenceRequest(BaseModel):
+    """a typed reference to a vendor document: dates, an identifier and a hash,
+    never the document itself"""
+
+    kind: str = Field(min_length=1, max_length=40)
+    name: str = Field(min_length=1, max_length=200)
+    identifier: str | None = Field(default=None, max_length=200)
+    issued_at: str = Field(min_length=10, max_length=10)
+    expires_at: str = Field(min_length=10, max_length=10)
+    document_hash: str | None = Field(default=None, min_length=64, max_length=64)
 
 
 def _raise_forbidden(error: AuthorizationError) -> None:
@@ -324,7 +342,15 @@ def _vendor_with_stages(vendor: dict[str, Any]) -> dict[str, Any]:
         if int(vendor.get("review_round") or 0) > 0
         else []
     )
-    return {**vendor, "stages": stages}
+    evidence = list_evidence_references(vendor["tenant_id"], vendor["vendor_id"])
+    return {
+        **vendor,
+        "stages": stages,
+        "evidence": evidence,
+        # an expired reference that was neither replaced nor withdrawn blocks
+        # the vendor's approval; the page says so before a review is started
+        "evidence_expired": any(item["status"] == "expired" for item in evidence),
+    }
 
 
 @router.get("/api/vendors")
@@ -337,7 +363,71 @@ def vendors(actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
         "vendors": [_vendor_with_stages(vendor) for vendor in list_vendor_rows(tenant_id)],
         "coverage": vendor_coverage(tenant_id),
         "policy": vendor_policy,
+        "evidence_kinds": EVIDENCE_KINDS,
     }
+
+
+@router.post("/api/vendors/{vendor_id}/evidence")
+@atomic
+def record_vendor_evidence(
+    vendor_id: str, payload: EvidenceReferenceRequest, actor: ActorContext = Depends(current_actor)
+) -> dict[str, Any]:
+    """record a dated reference to a vendor document; a reference of the same
+    kind recorded earlier is superseded"""
+    tenant_id = _config_tenant(actor)
+    try:
+        reference = record_evidence_reference(
+            tenant_id=tenant_id,
+            vendor_id=vendor_id,
+            kind=payload.kind,
+            name=payload.name,
+            identifier=payload.identifier,
+            issued_at=payload.issued_at,
+            expires_at=payload.expires_at,
+            document_hash=payload.document_hash,
+            actor_ref=actor.user_ref,
+        )
+    except RecordNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="vendor.evidence.record",
+        tenant_id=tenant_id,
+        target_type="vendor_evidence",
+        target_id=reference["reference_id"],
+        detail={
+            "vendor_id": vendor_id,
+            "kind": reference["kind"],
+            "identifier": reference["identifier"],
+            "issued_at": reference["issued_at"],
+            "expires_at": reference["expires_at"],
+            "document_hash": reference["document_hash"],
+        },
+    )
+    return {"reference": reference}
+
+
+@router.post("/api/vendors/{vendor_id}/evidence/{reference_id}/withdraw")
+@atomic
+def withdraw_vendor_evidence(
+    vendor_id: str, reference_id: str, actor: ActorContext = Depends(current_actor)
+) -> dict[str, Any]:
+    tenant_id = _config_tenant(actor)
+    try:
+        reference = withdraw_evidence_reference(reference_id, tenant_id)
+    except RecordNotFound as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    if reference["vendor_id"] != vendor_id:
+        raise HTTPException(status_code=404, detail="evidence reference not found for this vendor")
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="vendor.evidence.withdraw",
+        tenant_id=tenant_id,
+        target_type="vendor_evidence",
+        target_id=reference_id,
+        detail={"vendor_id": vendor_id, "kind": reference["kind"], "expires_at": reference["expires_at"]},
+    )
+    return {"reference": reference}
 
 
 @router.post("/api/vendors")
