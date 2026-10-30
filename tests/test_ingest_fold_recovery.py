@@ -27,10 +27,18 @@ META = {"tenant_id": "acme", "application_name": "Claims", "workflow_name": "tri
 
 def _model_call(span: str = "spn_r") -> dict:
     return {
-        **BASE, "type": "model.call", "trace_id": f"trc_{span}", "span_id": span,
-        "timestamp": "2026-08-22T00:00:00Z", "status": "success",
-        "attributes": {"provider": "openai", "model": "gpt-4o",
-                       "usage": {"input_tokens": 10, "output_tokens": 4}, "metadata": META},
+        **BASE,
+        "type": "model.call",
+        "trace_id": f"trc_{span}",
+        "span_id": span,
+        "timestamp": "2026-08-22T00:00:00Z",
+        "status": "success",
+        "attributes": {
+            "provider": "openai",
+            "model": "gpt-4o",
+            "usage": {"input_tokens": 10, "output_tokens": 4},
+            "metadata": META,
+        },
     }
 
 
@@ -39,9 +47,16 @@ def _ingest_client(super_admin_client, *, raise_server_exceptions: bool = True):
     from app.main import app
     from fastapi.testclient import TestClient
 
-    super_admin_client.post("/api/admin/organizations", json={
-        "tenant_id": "acme", "name": "Acme", "admin_email": "oa@acme.test",
-        "admin_display_name": "OA", "admin_password": "oa-password-1"})
+    super_admin_client.post(
+        "/api/admin/organizations",
+        json={
+            "tenant_id": "acme",
+            "name": "Acme",
+            "admin_email": "oa@acme.test",
+            "admin_display_name": "OA",
+            "admin_password": "oa-password-1",
+        },
+    )
     org = TestClient(app, raise_server_exceptions=raise_server_exceptions)
     login_and_activate(org, "oa@acme.test", "oa-password-1")
     token = org.post("/api/ingestion-keys", json={"name": "k"}).json()["token"]
@@ -209,7 +224,9 @@ def test_poison_row_is_isolated_and_quarantined_by_the_sweeper(super_admin_clien
     from app.storage.raw_events import connect
 
     with connect() as connection:
-        for r in connection.execute("SELECT span_id, folded_at, fold_attempts FROM sdk_events WHERE tenant_id='acme'").fetchall():
+        for r in connection.execute(
+            "SELECT span_id, folded_at, fold_attempts FROM sdk_events WHERE tenant_id='acme'"
+        ).fetchall():
             by_span[r["span_id"]] = dict(r)
 
     assert by_span["good"]["folded_at"] is not None, "the good row folded despite the poison beside it"

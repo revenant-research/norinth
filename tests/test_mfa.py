@@ -266,6 +266,9 @@ def test_a_wrong_password_on_mfa_disable_counts_as_a_failure(super_admin_client)
     org = _org_admin(super_admin_client, "foxtrot")
     _enroll(org)
     for _ in range(la.LOCKOUT_THRESHOLD):
-        assert org.post("/api/auth/mfa/disable", json={"password": "wrong-password-11", "code": "000000"}).status_code == 401
+        assert (
+            org.post("/api/auth/mfa/disable", json={"password": "wrong-password-11", "code": "000000"}).status_code
+            == 401
+        )
     assert la.is_locked(la.mfa_disable_subject("a@foxtrot.test"))
     org.close()

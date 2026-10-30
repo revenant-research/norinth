@@ -25,8 +25,13 @@ UNREACHABLE = "http://127.0.0.1:9"
 
 def _client(**overrides) -> tuple[NorinthClient, list[dict]]:
     settings = {
-        "api_key": "k-test", "endpoint": UNREACHABLE, "async_transport": False, "max_send_retries": 0,
-        "timeout_seconds": 0.5, "spool_dir": "off", **overrides,
+        "api_key": "k-test",
+        "endpoint": UNREACHABLE,
+        "async_transport": False,
+        "max_send_retries": 0,
+        "timeout_seconds": 0.5,
+        "spool_dir": "off",
+        **overrides,
     }
     config = NorinthConfig(**settings)
     client = NorinthClient(config)
@@ -116,8 +121,13 @@ def test_patched_provider_method_never_raises_from_its_finally_block():
     client, events = _client()
     _PATCHED.discard("test.owner.create")
     patch_provider_method(
-        patch_key="test.owner.create", owner=_Owner, method_name="create", provider="test",
-        operation="create", prompt_getter=lambda args, kwargs: _ArrayLike(), client=client,
+        patch_key="test.owner.create",
+        owner=_Owner,
+        method_name="create",
+        provider="test",
+        operation="create",
+        prompt_getter=lambda args, kwargs: _ArrayLike(),
+        client=client,
     )
     assert isinstance(_Owner().create(model="m"), _ArrayLike)
 
@@ -253,9 +263,15 @@ def test_transport_does_not_follow_a_redirect_with_the_key_attached():
 
     redirector, redirector_url = _serve(_Redirector)
     try:
-        transport = EventTransport(NorinthConfig(
-            api_key="nrk_SECRET", endpoint=redirector_url, async_transport=False, max_send_retries=0, spool_dir="off",
-        ))
+        transport = EventTransport(
+            NorinthConfig(
+                api_key="nrk_SECRET",
+                endpoint=redirector_url,
+                async_transport=False,
+                max_send_retries=0,
+                spool_dir="off",
+            )
+        )
         transport.send_batch([{"type": "sdk.health"}])
         assert _Collector.seen == []  # nothing, with or without the key, reached the redirect target
         assert transport.stats.sent == 0 and transport.stats.dropped == 1
@@ -292,10 +308,18 @@ def test_cli_does_not_follow_a_redirect_with_the_key_attached():
 def test_shutdown_makes_one_attempt_per_batch_and_does_not_sleep_through_retries():
     from norinth_logger.transport import EventTransport
 
-    transport = EventTransport(NorinthConfig(
-        api_key="k", endpoint=UNREACHABLE, async_transport=True, max_send_retries=3,
-        retry_backoff_seconds=0.5, flush_interval_seconds=60, timeout_seconds=0.5, spool_dir="off",
-    ))
+    transport = EventTransport(
+        NorinthConfig(
+            api_key="k",
+            endpoint=UNREACHABLE,
+            async_transport=True,
+            max_send_retries=3,
+            retry_backoff_seconds=0.5,
+            flush_interval_seconds=60,
+            timeout_seconds=0.5,
+            spool_dir="off",
+        )
+    )
     transport.enqueue({"type": "sdk.health"})
     started = time.monotonic()
     transport.shutdown()
@@ -321,8 +345,13 @@ def test_patched_provider_method_records_a_stream_without_hashing_it():
     client, events = _client()
     _PATCHED.discard("test.stream.create")
     patch_provider_method(
-        patch_key="test.stream.create", owner=_Owner, method_name="create", provider="test",
-        operation="chat.completions.create", prompt_getter=lambda args, kwargs: kwargs.get("messages"), client=client,
+        patch_key="test.stream.create",
+        owner=_Owner,
+        method_name="create",
+        provider="test",
+        operation="chat.completions.create",
+        prompt_getter=lambda args, kwargs: kwargs.get("messages"),
+        client=client,
     )
     _Owner().create(model="m", messages=[], stream=True)
     (call,) = [e for e in events if e["type"] == "model.call"]
@@ -342,7 +371,18 @@ def test_gate_check_tolerates_an_approved_response_without_a_gate_id(monkeypatch
     monkeypatch.setenv("NORINTH_ENDPOINT", "http://norinth.test")
     monkeypatch.setenv("NORINTH_API_KEY", "k")
     monkeypatch.setattr(cli, "_http", lambda *a, **k: (200, {"approved": True, "decided_by": "gov@acme.test"}))
-    args = argparse.Namespace(deployment="dep", version="v1", wait=0, poll=1, current=False, endpoint=None, api_key=None, project=None, environment=None, service=None)
+    args = argparse.Namespace(
+        deployment="dep",
+        version="v1",
+        wait=0,
+        poll=1,
+        current=False,
+        endpoint=None,
+        api_key=None,
+        project=None,
+        environment=None,
+        service=None,
+    )
     assert cli.cmd_gate_check(args) == 0
     assert "approved by gov@acme.test" in capsys.readouterr().out
 

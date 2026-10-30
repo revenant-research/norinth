@@ -134,7 +134,9 @@ def governance_policy_versions(actor: ActorContext = Depends(current_actor)) -> 
 
 
 @router.post("/api/governance-policy/validate")
-def validate_governance_policy(payload: PolicyBodyRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
+def validate_governance_policy(
+    payload: PolicyBodyRequest, actor: ActorContext = Depends(current_actor)
+) -> dict[str, Any]:
     _config_tenant(actor)
     errors = validate_policy_body(payload.body)
     return {"valid": not errors, "errors": errors}
@@ -211,11 +213,7 @@ def approval_stages(
     subject_id: str | None = None,
     scope: ScopeFilter = Depends(scoped_dependency),
 ) -> dict[str, Any]:
-    return {
-        "approval_stages": list_stages(
-            tenant_id=scope.tenant_id, subject_type=subject_type, subject_id=subject_id
-        )
-    }
+    return {"approval_stages": list_stages(tenant_id=scope.tenant_id, subject_type=subject_type, subject_id=subject_id)}
 
 
 @router.post("/api/approval-stages/{stage_id}/decide")

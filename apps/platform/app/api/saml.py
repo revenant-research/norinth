@@ -80,7 +80,14 @@ def configure_saml(payload: SamlConfigurationRequest, actor: ActorContext = Depe
         allowed_email_domain=payload.allowed_email_domain,
         created_by=actor.user_ref,
     )
-    record_audit(actor_ref=actor.user_ref, action="saml.configure", tenant_id=tenant_id, target_type="saml", target_id=tenant_id, detail={"idp_entity_id": payload.idp_entity_id})
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="saml.configure",
+        tenant_id=tenant_id,
+        target_type="saml",
+        target_id=tenant_id,
+        detail={"idp_entity_id": payload.idp_entity_id},
+    )
     return {"saml": _public(config)}
 
 
@@ -88,7 +95,9 @@ def configure_saml(payload: SamlConfigurationRequest, actor: ActorContext = Depe
 def remove_saml(actor: ActorContext = Depends(current_actor)) -> dict[str, bool]:
     tenant_id = _require_tenant_admin(actor)
     disable_saml_configuration(tenant_id)
-    record_audit(actor_ref=actor.user_ref, action="saml.disable", tenant_id=tenant_id, target_type="saml", target_id=tenant_id)
+    record_audit(
+        actor_ref=actor.user_ref, action="saml.disable", tenant_id=tenant_id, target_type="saml", target_id=tenant_id
+    )
     return {"ok": True}
 
 

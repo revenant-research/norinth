@@ -35,7 +35,16 @@ _REQUIRED_ATTRIBUTES: dict[str, tuple[str, ...]] = {
 
 
 # attributes the pipeline reads as nested objects; reject non-object here so recompute can't choke
-_OBJECT_ATTRIBUTES = ("metadata", "prompt", "response", "usage", "template", "change_notes", "description", "attestation")
+_OBJECT_ATTRIBUTES = (
+    "metadata",
+    "prompt",
+    "response",
+    "usage",
+    "template",
+    "change_notes",
+    "description",
+    "attestation",
+)
 
 
 # usage counters the pipeline sums into storage. int() raises TypeError on a
@@ -245,7 +254,10 @@ def gate_check(
     except DomainError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if gate is None:
-        raise HTTPException(status_code=404, detail="no release gate for that deployment and version (has the deployment.event been ingested?)")
+        raise HTTPException(
+            status_code=404,
+            detail="no release gate for that deployment and version (has the deployment.event been ingested?)",
+        )
     return {
         "gate_id": gate["gate_id"],
         "deployment_id": gate["deployment_id"],

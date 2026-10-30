@@ -186,12 +186,24 @@ def init_workflow() -> None:
             except db.OperationalError:
                 pass
         connection.execute("CREATE INDEX IF NOT EXISTS idx_platform_users_status ON platform_users(status)")
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_role_assignments_scope ON role_assignments(tenant_id, project, environment)")
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_review_queue_policies_type ON review_queue_policies(task_type)")
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_owner_assignment_policies_subject ON owner_assignment_policies(subject_type)")
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_owner_assignments_scope ON owner_assignments(tenant_id, project, environment)")
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_governance_decisions_scope ON governance_decisions(tenant_id, project, environment)")
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_governance_exceptions_scope ON governance_exceptions(tenant_id, project, environment)")
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_role_assignments_scope ON role_assignments(tenant_id, project, environment)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_review_queue_policies_type ON review_queue_policies(task_type)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_owner_assignment_policies_subject ON owner_assignment_policies(subject_type)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_owner_assignments_scope ON owner_assignments(tenant_id, project, environment)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_governance_decisions_scope ON governance_decisions(tenant_id, project, environment)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_governance_exceptions_scope ON governance_exceptions(tenant_id, project, environment)"
+        )
         connection.execute("CREATE INDEX IF NOT EXISTS idx_platform_users_email ON platform_users(email)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_platform_users_tenant ON platform_users(tenant_id)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_ref)")
@@ -203,9 +215,27 @@ def init_workflow() -> None:
 # recertification tasks route to governance_admin because the recertify
 # transition itself needs lifecycle.manage, which that role holds
 DEFAULT_REVIEW_QUEUE_POLICIES: list[dict[str, Any]] = [
-    {"policy_id": "default-intake", "task_type": "intake_review", "assigned_role": "governance_reviewer", "due_days": 5, "escalation_days": 3},
-    {"policy_id": "default-material-change", "task_type": "material_change_review", "assigned_role": "governance_admin", "due_days": 3, "escalation_days": 2},
-    {"policy_id": "default-recertification", "task_type": "recertification_review", "assigned_role": "governance_admin", "due_days": 14, "escalation_days": 7},
+    {
+        "policy_id": "default-intake",
+        "task_type": "intake_review",
+        "assigned_role": "governance_reviewer",
+        "due_days": 5,
+        "escalation_days": 3,
+    },
+    {
+        "policy_id": "default-material-change",
+        "task_type": "material_change_review",
+        "assigned_role": "governance_admin",
+        "due_days": 3,
+        "escalation_days": 2,
+    },
+    {
+        "policy_id": "default-recertification",
+        "task_type": "recertification_review",
+        "assigned_role": "governance_admin",
+        "due_days": 14,
+        "escalation_days": 7,
+    },
 ]
 
 
@@ -217,7 +247,13 @@ def seed_review_queue_policies(connection) -> None:
             VALUES ('', ?, ?, ?, ?, ?, 'default', datetime('now'), datetime('now'))
             ON CONFLICT(tenant_id, policy_id) DO NOTHING
             """,
-            (policy["policy_id"], policy["task_type"], policy["assigned_role"], policy["due_days"], policy["escalation_days"]),
+            (
+                policy["policy_id"],
+                policy["task_type"],
+                policy["assigned_role"],
+                policy["due_days"],
+                policy["escalation_days"],
+            ),
         )
 
 
@@ -280,7 +316,11 @@ def _in_scopes(row: dict[str, Any], wanted: set[tuple] | None) -> bool:
 def refresh_workflow_state(scopes: list[dict[str, Any]] | None = None) -> None:
     """apply owner policies and refresh the review queue; scopes limits to the
     apps an ingest touched, None refreshes everything"""
-    wanted = None if scopes is None else {(s.get("tenant_id"), s["project"], s["environment"], s["application_name"]) for s in scopes}
+    wanted = (
+        None
+        if scopes is None
+        else {(s.get("tenant_id"), s["project"], s["environment"], s["application_name"]) for s in scopes}
+    )
     tenant_filter = None if scopes is None else {s.get("tenant_id") for s in scopes}
     with connect() as connection:
         applications = connection.execute(
@@ -299,29 +339,65 @@ def refresh_workflow_state(scopes: list[dict[str, Any]] | None = None) -> None:
             app_context = dict(application)
             if not _in_scopes(app_context, wanted):
                 continue
-            apply_owner_policies(connection, app_context, owner_policies_for(app_context.get("tenant_id")), "application", app_context["application_name"], "active")
+            apply_owner_policies(
+                connection,
+                app_context,
+                owner_policies_for(app_context.get("tenant_id")),
+                "application",
+                app_context["application_name"],
+                "active",
+            )
         # an observed finding (a rule in observe mode) is not routed to an owner
-        for row in connection.execute("SELECT DISTINCT tenant_id, project, environment, application_name, risk, finding_id FROM risk_findings WHERE status != 'observed'").fetchall():
+        for row in connection.execute(
+            "SELECT DISTINCT tenant_id, project, environment, application_name, risk, finding_id FROM risk_findings WHERE status != 'observed'"
+        ).fetchall():
             app_context = dict(row)
             if not _in_scopes(app_context, wanted):
                 continue
-            apply_owner_policies(connection, app_context, owner_policies_for(app_context.get("tenant_id")), "risk_finding", row["finding_id"], "open")
-        for row in connection.execute("SELECT DISTINCT tenant_id, project, environment, application_name, control_id, assessment_id FROM control_assessments WHERE status = 'missing'").fetchall():
+            apply_owner_policies(
+                connection,
+                app_context,
+                owner_policies_for(app_context.get("tenant_id")),
+                "risk_finding",
+                row["finding_id"],
+                "open",
+            )
+        for row in connection.execute(
+            "SELECT DISTINCT tenant_id, project, environment, application_name, control_id, assessment_id FROM control_assessments WHERE status = 'missing'"
+        ).fetchall():
             app_context = dict(row)
             if not _in_scopes(app_context, wanted):
                 continue
-            apply_owner_policies(connection, app_context, owner_policies_for(app_context.get("tenant_id")), "control_assessment", row["assessment_id"], "missing")
-        for row in connection.execute("SELECT DISTINCT tenant_id, project, environment, application_name, incident_id, status FROM governance_incidents WHERE status != 'closed'").fetchall():
+            apply_owner_policies(
+                connection,
+                app_context,
+                owner_policies_for(app_context.get("tenant_id")),
+                "control_assessment",
+                row["assessment_id"],
+                "missing",
+            )
+        for row in connection.execute(
+            "SELECT DISTINCT tenant_id, project, environment, application_name, incident_id, status FROM governance_incidents WHERE status != 'closed'"
+        ).fetchall():
             app_context = dict(row)
             if not _in_scopes(app_context, wanted):
                 continue
-            apply_owner_policies(connection, app_context, owner_policies_for(app_context.get("tenant_id")), "incident", row["incident_id"], row["status"])
+            apply_owner_policies(
+                connection,
+                app_context,
+                owner_policies_for(app_context.get("tenant_id")),
+                "incident",
+                row["incident_id"],
+                row["status"],
+            )
         refresh_review_queue(connection, queue_cache, tenant_filter)
 
 
 def list_queue_policies(connection, tenant_id: str | None = None) -> list[dict[str, Any]]:
     tid = tenant_id or ""
-    rows = connection.execute("SELECT * FROM review_queue_policies WHERE tenant_id IN ('', ?) ORDER BY policy_id", (tid,)).fetchall()
+    rows = connection.execute(
+        "SELECT * FROM review_queue_policies WHERE tenant_id IN ('', ?) ORDER BY policy_id", (tid,)
+    ).fetchall()
     merged: dict[str, dict[str, Any]] = {}
     for row in rows:
         record = dict(row)
@@ -349,7 +425,9 @@ def _stage_route_role(connection, task: dict[str, Any]) -> str | None:
     return None if row is None else row["required_role"]
 
 
-def refresh_review_queue(connection, queue_cache: dict[str, list[dict[str, Any]]], tenant_filter: set | None = None) -> None:
+def refresh_review_queue(
+    connection, queue_cache: dict[str, list[dict[str, Any]]], tenant_filter: set | None = None
+) -> None:
     for task in connection.execute("SELECT * FROM review_tasks WHERE status = 'open'").fetchall():
         task_record = dict(task)
         if tenant_filter is not None and task_record.get("tenant_id") not in tenant_filter:
@@ -435,7 +513,12 @@ def _notify_queue_transition(connection, task, assigned_role, assigned_to, due_a
             event_type="review.assigned",
             subject=f"Review assigned to you: {title}",
             text=f"A {task.get('task_type', 'review')} for {task.get('application_name')} is routed to you as {assigned_role}. Due {due_at}.",
-            data={"task_id": task["task_id"], "task_type": task.get("task_type"), "application_name": task.get("application_name"), "due_at": due_at},
+            data={
+                "task_id": task["task_id"],
+                "task_type": task.get("task_type"),
+                "application_name": task.get("application_name"),
+                "due_at": due_at,
+            },
             to_users=[assigned_to],
             link=link,
         )
@@ -489,7 +572,9 @@ def mark_review_task_queue_state(
 
 def list_owner_policies(connection, tenant_id: str | None = None) -> list[dict[str, Any]]:
     tid = tenant_id or ""
-    rows = connection.execute("SELECT * FROM owner_assignment_policies WHERE tenant_id IN ('', ?) ORDER BY policy_id", (tid,)).fetchall()
+    rows = connection.execute(
+        "SELECT * FROM owner_assignment_policies WHERE tenant_id IN ('', ?) ORDER BY policy_id", (tid,)
+    ).fetchall()
     merged: dict[str, dict[str, Any]] = {}
     for row in rows:
         record = dict(row)
@@ -511,10 +596,14 @@ def apply_owner_policies(
             continue
         if policy["applies_to_status"] and policy["applies_to_status"] != subject_status:
             continue
-        ensure_owner_assignment(connection, app_context, subject_type, subject_name, policy["owner_role"], policy["source"])
+        ensure_owner_assignment(
+            connection, app_context, subject_type, subject_name, policy["owner_role"], policy["source"]
+        )
 
 
-def ensure_owner_assignment(connection, app_context: dict[str, Any], subject_type: str, subject_name: str, owner_role: str, source: str) -> None:
+def ensure_owner_assignment(
+    connection, app_context: dict[str, Any], subject_type: str, subject_name: str, owner_role: str, source: str
+) -> None:
     assignment_id = entity_id(
         "owner-assignment",
         app_context.get("tenant_id"),
@@ -861,7 +950,11 @@ def assign_owner(owner_assignment_id: str, owner_ref: str, actor_ref: str) -> di
             """,
             (owner_ref, f"assigned_by:{actor_ref}", owner_assignment_id),
         )
-        return dict(connection.execute("SELECT * FROM owner_assignments WHERE owner_assignment_id = ?", (owner_assignment_id,)).fetchone())
+        return dict(
+            connection.execute(
+                "SELECT * FROM owner_assignments WHERE owner_assignment_id = ?", (owner_assignment_id,)
+            ).fetchone()
+        )
 
 
 def record_decision(
@@ -914,7 +1007,9 @@ def record_decision(
         from .policy_engine import sync_decision_to_stages
 
         sync_decision_to_stages(connection, target_type, target_id, decision, actor_ref, decision_id)
-        return dict(connection.execute("SELECT * FROM governance_decisions WHERE decision_id = ?", (decision_id,)).fetchone())
+        return dict(
+            connection.execute("SELECT * FROM governance_decisions WHERE decision_id = ?", (decision_id,)).fetchone()
+        )
 
 
 def load_decision_target(target_type: str, target_id: str, *, tenant_id: str | None = None) -> dict[str, Any]:
@@ -992,10 +1087,14 @@ def apply_decision_status(connection, target_type: str, target_id: str, decision
     if status is None:
         return
     if target_type == "review_task":
-        connection.execute("UPDATE review_tasks SET status = ?, updated_at = datetime('now') WHERE task_id = ?", (status, target_id))
+        connection.execute(
+            "UPDATE review_tasks SET status = ?, updated_at = datetime('now') WHERE task_id = ?", (status, target_id)
+        )
         # an intake review decides the use case's lifecycle: approve -> approved,
         # reject -> rejected; other decisions leave it submitted
-        task = connection.execute("SELECT task_type, change_id FROM review_tasks WHERE task_id = ?", (target_id,)).fetchone()
+        task = connection.execute(
+            "SELECT task_type, change_id FROM review_tasks WHERE task_id = ?", (target_id,)
+        ).fetchone()
         if task is not None and task["task_type"] == "intake_review" and status in {"approved", "rejected"}:
             moved = connection.execute(
                 "UPDATE ai_use_cases SET status = ?, updated_at = datetime('now') WHERE intake_id = ? AND status != ?",
@@ -1006,11 +1105,17 @@ def apply_decision_status(connection, target_type: str, target_id: str, decision
             if getattr(moved, "rowcount", 1) > 0:
                 _notify_intake_decided(connection, task["change_id"], target_id, status)
     if target_type == "risk_finding":
-        connection.execute("UPDATE risk_findings SET status = ?, evaluated_at = datetime('now') WHERE finding_id = ?", (status, target_id))
+        connection.execute(
+            "UPDATE risk_findings SET status = ?, evaluated_at = datetime('now') WHERE finding_id = ?",
+            (status, target_id),
+        )
     if target_type == "change_event":
         connection.execute("UPDATE change_events SET status = ? WHERE change_id = ?", (status, target_id))
     if target_type == "control_assessment":
-        connection.execute("UPDATE control_assessments SET status = ?, evaluated_at = datetime('now') WHERE assessment_id = ?", (status, target_id))
+        connection.execute(
+            "UPDATE control_assessments SET status = ?, evaluated_at = datetime('now') WHERE assessment_id = ?",
+            (status, target_id),
+        )
     # deployment gates and incidents are not transitioned here: their status
     # changes go through the guarded set_deployment_gate_status (evidence check +
     # attribution) and set_incident_status, so a generic decision can't flip a
@@ -1062,9 +1167,9 @@ def create_exception(
             ),
         )
         apply_decision_status(connection, target_type, target_id, "waive")
-        return dict(connection.execute("SELECT * FROM governance_exceptions WHERE exception_id = ?", (exception_id,)).fetchone())
-
-
+        return dict(
+            connection.execute("SELECT * FROM governance_exceptions WHERE exception_id = ?", (exception_id,)).fetchone()
+        )
 
 
 def list_owner_assignments(
@@ -1151,8 +1256,12 @@ def tenant_user_counts() -> dict[str, int]:
     return {row["tenant_id"]: int(row["count"]) for row in rows}
 
 
-def list_role_assignments(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
-    return scoped_rows("role_assignments", tenant_id=tenant_id, project=project, environment=environment, order_by="updated_at")
+def list_role_assignments(
+    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
+) -> list[dict[str, Any]]:
+    return scoped_rows(
+        "role_assignments", tenant_id=tenant_id, project=project, environment=environment, order_by="updated_at"
+    )
 
 
 def list_actor_role_assignments(user_ref: str) -> list[dict[str, Any]]:
@@ -1284,9 +1393,7 @@ def count_owner_assignments(
     return count_scoped_rows("owner_assignments", tenant_id=tenant_id, project=project, environment=environment)
 
 
-def count_decisions(
-    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
-) -> int:
+def count_decisions(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> int:
     return count_scoped_rows("governance_decisions", tenant_id=tenant_id, project=project, environment=environment)
 
 

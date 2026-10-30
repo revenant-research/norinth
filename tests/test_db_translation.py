@@ -11,7 +11,9 @@ from app.storage.db import translate_sql  # noqa: E402
 
 
 def test_positional_placeholders():
-    assert translate_sql("SELECT * FROM t WHERE a = ? AND b = ?", ("x", "y")) == "SELECT * FROM t WHERE a = %s AND b = %s"
+    assert (
+        translate_sql("SELECT * FROM t WHERE a = ? AND b = ?", ("x", "y")) == "SELECT * FROM t WHERE a = %s AND b = %s"
+    )
 
 
 def test_named_placeholders():

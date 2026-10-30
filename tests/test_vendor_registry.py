@@ -155,9 +155,19 @@ def test_model_outside_allow_list_raises_finding(org):
         )
 
     # an approved model raises nothing; an off-list model is a finding
-    assert client.post("/v1/events/batch", json={"events": [_model_call("ok", model="gpt-4o")]}, headers=headers).status_code == 200
+    assert (
+        client.post(
+            "/v1/events/batch", json={"events": [_model_call("ok", model="gpt-4o")]}, headers=headers
+        ).status_code
+        == 200
+    )
     assert _vnd_findings(client) == []
-    assert client.post("/v1/events/batch", json={"events": [_model_call("off", model="o3-preview")]}, headers=headers).status_code == 200
+    assert (
+        client.post(
+            "/v1/events/batch", json={"events": [_model_call("off", model="o3-preview")]}, headers=headers
+        ).status_code
+        == 200
+    )
     findings = _vnd_findings(client)
     assert len(findings) == 1
     assert "outside vendor" in findings[0]["evidence_summary"]

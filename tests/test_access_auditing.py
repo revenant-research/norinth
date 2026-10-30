@@ -91,9 +91,7 @@ def test_lockout_is_audited_exactly_once(super_admin_client):
     for _ in range(LOCKOUT_THRESHOLD + 2):  # attempts past the threshold get 429s
         anonymous.post("/api/auth/login", json={"email": "a@beta.test", "password": "bad-password-1"})
 
-    lockouts = [
-        e for e in _audit_actions(super_admin_client, action="auth.lockout") if e["actor_ref"] == "a@beta.test"
-    ]
+    lockouts = [e for e in _audit_actions(super_admin_client, action="auth.lockout") if e["actor_ref"] == "a@beta.test"]
     assert len(lockouts) == 1, f"expected exactly one lockout event, got {len(lockouts)}"
     assert "email:a@beta.test" in _detail(lockouts[0])["subjects"]
     anonymous.close()

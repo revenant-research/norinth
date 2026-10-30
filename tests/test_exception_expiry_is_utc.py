@@ -22,8 +22,13 @@ def _org_with_finding(super_admin_client):
 
     super_admin_client.post(
         "/api/admin/organizations",
-        json={"tenant_id": "acme", "name": "Acme", "admin_email": "oa@acme.test",
-              "admin_display_name": "OA", "admin_password": "oa-password-1"},
+        json={
+            "tenant_id": "acme",
+            "name": "Acme",
+            "admin_email": "oa@acme.test",
+            "admin_display_name": "OA",
+            "admin_password": "oa-password-1",
+        },
     )
     org = TestClient(app)
     org.__enter__()
@@ -31,13 +36,31 @@ def _org_with_finding(super_admin_client):
     token = org.post("/api/ingestion-keys", json={"name": "ci"}).json()["token"]
     org.post("/api/org/users", json={"email": "risk@acme.test", "display_name": "Risk", "password": "risk-pw-123456"})
     org.post("/api/org/role-assignments", json={"user_ref": "risk@acme.test", "role": "risk_owner"})
-    sent = org.post("/v1/events/batch", json={"events": [{
-        "type": "model.call", "schema_version": "2026-01", "trace_id": "trc_1", "span_id": "spn_1",
-        "timestamp": "2026-08-22T00:00:02Z", "service": "svc", "environment": "prod", "project": "p1",
-        "status": "success",
-        "attributes": {"provider": "openai", "model": "gpt-4o", "usage": {"input_tokens": 5, "output_tokens": 5},
-                       "metadata": {"tenant_id": "acme", "application_name": "PayApp", "workflow_name": "wf"}},
-    }]}, headers={"Authorization": f"Bearer {token}"})
+    sent = org.post(
+        "/v1/events/batch",
+        json={
+            "events": [
+                {
+                    "type": "model.call",
+                    "schema_version": "2026-01",
+                    "trace_id": "trc_1",
+                    "span_id": "spn_1",
+                    "timestamp": "2026-08-22T00:00:02Z",
+                    "service": "svc",
+                    "environment": "prod",
+                    "project": "p1",
+                    "status": "success",
+                    "attributes": {
+                        "provider": "openai",
+                        "model": "gpt-4o",
+                        "usage": {"input_tokens": 5, "output_tokens": 5},
+                        "metadata": {"tenant_id": "acme", "application_name": "PayApp", "workflow_name": "wf"},
+                    },
+                }
+            ]
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
     assert sent.status_code == 200, sent.text
     org.close()
     with connect() as connection:
@@ -55,12 +78,16 @@ def test_an_offset_expiry_is_stored_in_utc(super_admin_client):
     risk, finding_id = _org_with_finding(super_admin_client)
     instant = (datetime.now(UTC) + timedelta(hours=1)).replace(microsecond=0)
     local = instant.astimezone(timezone(timedelta(hours=5)))
-    created = risk.post("/api/exceptions", json={
-        "target_type": "risk_finding", "target_id": finding_id,
-        "reason": "accepted for the pilot period with monitoring in place",
-        "compensating_control": "weekly manual review of flagged outputs",
-        "expires_at": local.isoformat(),
-    })
+    created = risk.post(
+        "/api/exceptions",
+        json={
+            "target_type": "risk_finding",
+            "target_id": finding_id,
+            "reason": "accepted for the pilot period with monitoring in place",
+            "compensating_control": "weekly manual review of flagged outputs",
+            "expires_at": local.isoformat(),
+        },
+    )
     assert created.status_code == 200, created.text
     assert created.json()["exception"]["expires_at"] == instant.isoformat()
     with connect() as connection:
@@ -72,12 +99,16 @@ def test_an_offset_expiry_is_stored_in_utc(super_admin_client):
 
 def test_a_date_only_expiry_is_midnight_utc(super_admin_client):
     risk, finding_id = _org_with_finding(super_admin_client)
-    created = risk.post("/api/exceptions", json={
-        "target_type": "risk_finding", "target_id": finding_id,
-        "reason": "accepted for the pilot period with monitoring in place",
-        "compensating_control": "weekly manual review of flagged outputs",
-        "expires_at": "2099-12-31",
-    })
+    created = risk.post(
+        "/api/exceptions",
+        json={
+            "target_type": "risk_finding",
+            "target_id": finding_id,
+            "reason": "accepted for the pilot period with monitoring in place",
+            "compensating_control": "weekly manual review of flagged outputs",
+            "expires_at": "2099-12-31",
+        },
+    )
     assert created.status_code == 200, created.text
     assert created.json()["exception"]["expires_at"] == "2099-12-31T00:00:00+00:00"
     risk.close()
@@ -86,12 +117,16 @@ def test_a_date_only_expiry_is_midnight_utc(super_admin_client):
 @pytest.mark.parametrize("value", ["not-a-date", "2026-13-01", ""])
 def test_an_unparseable_expiry_is_refused(super_admin_client, value):
     risk, finding_id = _org_with_finding(super_admin_client)
-    created = risk.post("/api/exceptions", json={
-        "target_type": "risk_finding", "target_id": finding_id,
-        "reason": "accepted for the pilot period with monitoring in place",
-        "compensating_control": "weekly manual review of flagged outputs",
-        "expires_at": value,
-    })
+    created = risk.post(
+        "/api/exceptions",
+        json={
+            "target_type": "risk_finding",
+            "target_id": finding_id,
+            "reason": "accepted for the pilot period with monitoring in place",
+            "compensating_control": "weekly manual review of flagged outputs",
+            "expires_at": value,
+        },
+    )
     assert created.status_code in {400, 422}, created.text
     risk.close()
 
@@ -117,7 +152,9 @@ def test_migration_normalises_legacy_offsets_so_they_expire_on_time(fresh_db):
     assert expire_due_exceptions() == 0
     with connect() as connection:
         _0028_exception_expiry_utc(connection)
-        stored = connection.execute("SELECT expires_at FROM governance_exceptions WHERE exception_id = 'e-legacy'").fetchone()
+        stored = connection.execute(
+            "SELECT expires_at FROM governance_exceptions WHERE exception_id = 'e-legacy'"
+        ).fetchone()
     assert stored["expires_at"] == lapsed.isoformat()
     assert expire_due_exceptions() == 1
 
@@ -128,8 +165,10 @@ def test_scope_indexes_exist_on_a_fresh_database(fresh_db):
     from app.storage.raw_events import connect
 
     wanted = {
-        "idx_governance_incidents_scope", "idx_governance_incidents_status",
-        "idx_governance_deployments_scope", "idx_prompt_templates_scope",
+        "idx_governance_incidents_scope",
+        "idx_governance_incidents_status",
+        "idx_governance_deployments_scope",
+        "idx_prompt_templates_scope",
     }
     with connect() as connection:
         if db.is_postgres():

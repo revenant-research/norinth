@@ -46,8 +46,7 @@ def is_postgres() -> bool:
     # set but not a recognizable postgres url; falling back to sqlite would let
     # each replica quietly run its own ephemeral database, so fail loudly
     raise RuntimeError(
-        f"NORINTH_DATABASE_URL is set but is not a postgresql:// URL: {url!r}. "
-        "Fix it or unset it to use local SQLite."
+        f"NORINTH_DATABASE_URL is set but is not a postgresql:// URL: {url!r}. Fix it or unset it to use local SQLite."
     )
 
 

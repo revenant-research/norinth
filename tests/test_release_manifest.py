@@ -45,9 +45,7 @@ def test_manifest_binds_the_file_bytes_and_resolves_a_digest(tmp_path: Path) -> 
         path.write_bytes(content)
     manifest = build_manifest("v0.2.2", "a" * 40, "sha256:" + "b" * 64, tmp_path)
     assert manifest["image"].endswith("@sha256:" + "b" * 64)
-    assert set(manifest["files"]) == {
-        "docker-compose.yml", "scripts/backup.sh", "scripts/restore.sh"
-    }
+    assert set(manifest["files"]) == {"docker-compose.yml", "scripts/backup.sh", "scripts/restore.sh"}
     path = tmp_path / "release-manifest.json"
     path.write_text(json.dumps(manifest), encoding="utf-8")
     resolved = _resolve(path)
@@ -70,9 +68,7 @@ def test_release_resolution_rejects_a_single_override_or_wrong_tag(tmp_path: Pat
         "source_sha": "a" * 40,
         "image_digest": "sha256:" + "b" * 64,
         "image": "ghcr.io/revenant-research/norinth@sha256:" + "b" * 64,
-        "files": {name: "c" * 64 for name in (
-            "docker-compose.yml", "scripts/backup.sh", "scripts/restore.sh"
-        )},
+        "files": {name: "c" * 64 for name in ("docker-compose.yml", "scripts/backup.sh", "scripts/restore.sh")},
     }
     path = tmp_path / "release-manifest.json"
     path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -84,11 +80,14 @@ def test_release_resolution_rejects_a_single_override_or_wrong_tag(tmp_path: Pat
     assert "does not match the requested tag" in wrong_tag.stderr
 
 
-@pytest.mark.parametrize("version,sha,digest", [
-    ("latest", "a" * 40, "sha256:" + "b" * 64),
-    ("v0.2.2", "short", "sha256:" + "b" * 64),
-    ("v0.2.2", "a" * 40, "latest"),
-])
+@pytest.mark.parametrize(
+    "version,sha,digest",
+    [
+        ("latest", "a" * 40, "sha256:" + "b" * 64),
+        ("v0.2.2", "short", "sha256:" + "b" * 64),
+        ("v0.2.2", "a" * 40, "latest"),
+    ],
+)
 def test_manifest_builder_rejects_floating_or_invalid_identity(
     tmp_path: Path, version: str, sha: str, digest: str
 ) -> None:

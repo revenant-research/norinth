@@ -166,11 +166,15 @@ def enforce_stage_policy(actor: ActorContext, target_type: str, target: dict, de
         )
     if undecided:
         try:
-            require_stage_role(actor, stages[0]["required_role"], {
-                "tenant_id": target.get("tenant_id"),
-                "project": target.get("project"),
-                "environment": target.get("environment"),
-            })
+            require_stage_role(
+                actor,
+                stages[0]["required_role"],
+                {
+                    "tenant_id": target.get("tenant_id"),
+                    "project": target.get("project"),
+                    "environment": target.get("environment"),
+                },
+            )
         except AuthorizationError as error:
             raise_forbidden(error)
 
@@ -389,7 +393,9 @@ def configure_risk_rule(payload: RiskRuleRequest, actor: ActorContext = Depends(
     # change, and a promotion in particular, is on the audit chain
     record_audit(
         actor_ref=actor.user_ref,
-        action="risk_rule.promote" if rule["previous_mode"] == "observe" and rule["mode"] == "enforce" else "risk_rule.configure",
+        action="risk_rule.promote"
+        if rule["previous_mode"] == "observe" and rule["mode"] == "enforce"
+        else "risk_rule.configure",
         tenant_id=tenant_id,
         target_type="risk_rule",
         target_id=rule["rule_id"],
@@ -407,8 +413,11 @@ def configure_risk_rule(payload: RiskRuleRequest, actor: ActorContext = Depends(
 @router.get("/api/retention-policy")
 def retention_policy(actor: ActorContext = Depends(current_actor)):
     tenant_id = _require_tenant_for_config(actor)
-    return {"tenant_id": tenant_id, "retention_days": retention_days_for(tenant_id),
-            "minimum_retention_days": MIN_RETENTION_DAYS}
+    return {
+        "tenant_id": tenant_id,
+        "retention_days": retention_days_for(tenant_id),
+        "minimum_retention_days": MIN_RETENTION_DAYS,
+    }
 
 
 @router.post("/api/retention-policy")
@@ -427,9 +436,14 @@ def configure_retention_policy(payload: RetentionPolicyRequest, actor: ActorCont
         policy = set_retention_days(tenant_id, payload.retention_days)
     except DomainError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    record_audit(actor_ref=actor.user_ref, action="retention.configure", tenant_id=tenant_id,
-                 target_type="retention", target_id=tenant_id,
-                 detail={"retention_days": payload.retention_days})
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="retention.configure",
+        tenant_id=tenant_id,
+        target_type="retention",
+        target_id=tenant_id,
+        detail={"retention_days": payload.retention_days},
+    )
     return {"retention_policy": policy}
 
 
@@ -453,7 +467,11 @@ def configure_owner_policy(payload: OwnerPolicyRequest, actor: ActorContext = De
         tenant_id=tenant_id,
         target_type="owner_policy",
         target_id=policy["policy_id"],
-        detail={"subject_type": policy["subject_type"], "owner_role": policy["owner_role"], "applies_to_status": policy.get("applies_to_status")},
+        detail={
+            "subject_type": policy["subject_type"],
+            "owner_role": policy["owner_role"],
+            "applies_to_status": policy.get("applies_to_status"),
+        },
     )
     return {"owner_policy": policy}
 
@@ -556,7 +574,9 @@ def incident_detail(incident_id: str, scope: ScopeFilter = Depends(scoped_depend
 
 
 @router.post("/api/incidents/{incident_id}/close")
-def close_incident(incident_id: str, payload: DeploymentGateDecisionRequest, actor: ActorContext = Depends(current_actor)):
+def close_incident(
+    incident_id: str, payload: DeploymentGateDecisionRequest, actor: ActorContext = Depends(current_actor)
+):
     # an incident id is unique only within its organization, so every step is
     # bound to the actor's tenant: the load, the status change and the decision
     incident = load_incident(incident_id, tenant_id=actor.tenant_id)
@@ -572,7 +592,13 @@ def close_incident(incident_id: str, payload: DeploymentGateDecisionRequest, act
     decision = record_decision(
         "incident", incident_id, "close", payload.rationale, actor.user_ref, tenant_id=actor.tenant_id
     )
-    record_audit(actor_ref=actor.user_ref, action="incident.close", tenant_id=incident.get("tenant_id"), target_type="incident", target_id=incident_id)
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="incident.close",
+        tenant_id=incident.get("tenant_id"),
+        target_type="incident",
+        target_id=incident_id,
+    )
     with connect() as connection:
         notify(
             connection,
@@ -580,7 +606,12 @@ def close_incident(incident_id: str, payload: DeploymentGateDecisionRequest, act
             event_type="incident.closed",
             subject=f"Incident closed: {incident.get('title') or incident_id}",
             text=f"{actor.user_ref} closed the incident for {incident.get('application_name')} / {incident.get('workflow_name')}.\n\nRationale: {payload.rationale}",
-            data={"incident_id": incident_id, "application_name": incident.get("application_name"), "severity": incident.get("severity"), "closed_by": actor.user_ref},
+            data={
+                "incident_id": incident_id,
+                "application_name": incident.get("application_name"),
+                "severity": incident.get("severity"),
+                "closed_by": actor.user_ref,
+            },
             to_roles=["org_admin", "risk_owner"],
             link=f"{public_base_url()}/#incident/{incident_id}",
         )
@@ -588,7 +619,9 @@ def close_incident(incident_id: str, payload: DeploymentGateDecisionRequest, act
 
 
 @router.post("/api/deployment-gates/{gate_id}/approve")
-def approve_deployment_gate(gate_id: str, payload: DeploymentGateDecisionRequest, actor: ActorContext = Depends(current_actor)):
+def approve_deployment_gate(
+    gate_id: str, payload: DeploymentGateDecisionRequest, actor: ActorContext = Depends(current_actor)
+):
     # a risk accepted under an exception that has since lapsed is not remediated;
     # expire first so the reopened finding blocks this release
     expire_due_exceptions()
@@ -604,7 +637,13 @@ def approve_deployment_gate(gate_id: str, payload: DeploymentGateDecisionRequest
     except DomainError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     decision = record_decision("deployment_gate", gate_id, "approve", payload.rationale, actor.user_ref)
-    record_audit(actor_ref=actor.user_ref, action="gate.approve", tenant_id=gate.get("tenant_id"), target_type="deployment_gate", target_id=gate_id)
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="gate.approve",
+        tenant_id=gate.get("tenant_id"),
+        target_type="deployment_gate",
+        target_id=gate_id,
+    )
     with connect() as connection:
         notify(
             connection,
@@ -612,7 +651,12 @@ def approve_deployment_gate(gate_id: str, payload: DeploymentGateDecisionRequest
             event_type="gate.approved",
             subject=f"Release gate approved: {gate.get('application_name')} / {gate.get('workflow_name')}",
             text=f"{actor.user_ref} approved the release gate for {gate.get('application_name')} / {gate.get('workflow_name')}.\n\nRationale: {payload.rationale}",
-            data={"gate_id": gate_id, "application_name": gate.get("application_name"), "workflow_name": gate.get("workflow_name"), "decided_by": actor.user_ref},
+            data={
+                "gate_id": gate_id,
+                "application_name": gate.get("application_name"),
+                "workflow_name": gate.get("workflow_name"),
+                "decided_by": actor.user_ref,
+            },
             to_users=[u for u in [gate.get("submitted_by"), gate.get("created_by")] if u],
             to_roles=["org_admin"],
             link=f"{public_base_url()}/#gate/{gate_id}",
@@ -621,7 +665,9 @@ def approve_deployment_gate(gate_id: str, payload: DeploymentGateDecisionRequest
 
 
 @router.post("/api/deployment-gates/{gate_id}/reject")
-def reject_deployment_gate(gate_id: str, payload: DeploymentGateDecisionRequest, actor: ActorContext = Depends(current_actor)):
+def reject_deployment_gate(
+    gate_id: str, payload: DeploymentGateDecisionRequest, actor: ActorContext = Depends(current_actor)
+):
     gate = load_deployment_gate(gate_id)
     gate["target_type"] = "deployment_gate"
     try:
@@ -631,7 +677,13 @@ def reject_deployment_gate(gate_id: str, payload: DeploymentGateDecisionRequest,
     enforce_segregation_of_duties(actor, "deployment_gate", gate)
     updated_gate = set_deployment_gate_status(gate_id, "rejected", actor.user_ref, payload.rationale)
     decision = record_decision("deployment_gate", gate_id, "reject", payload.rationale, actor.user_ref)
-    record_audit(actor_ref=actor.user_ref, action="gate.reject", tenant_id=gate.get("tenant_id"), target_type="deployment_gate", target_id=gate_id)
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="gate.reject",
+        tenant_id=gate.get("tenant_id"),
+        target_type="deployment_gate",
+        target_id=gate_id,
+    )
     with connect() as connection:
         notify(
             connection,
@@ -639,7 +691,12 @@ def reject_deployment_gate(gate_id: str, payload: DeploymentGateDecisionRequest,
             event_type="gate.rejected",
             subject=f"Release gate rejected: {gate.get('application_name')} / {gate.get('workflow_name')}",
             text=f"{actor.user_ref} rejected the release gate for {gate.get('application_name')} / {gate.get('workflow_name')}.\n\nRationale: {payload.rationale}",
-            data={"gate_id": gate_id, "application_name": gate.get("application_name"), "workflow_name": gate.get("workflow_name"), "decided_by": actor.user_ref},
+            data={
+                "gate_id": gate_id,
+                "application_name": gate.get("application_name"),
+                "workflow_name": gate.get("workflow_name"),
+                "decided_by": actor.user_ref,
+            },
             to_users=[u for u in [gate.get("submitted_by"), gate.get("created_by")] if u],
             to_roles=["org_admin"],
             link=f"{public_base_url()}/#gate/{gate_id}",
@@ -653,14 +710,23 @@ def owner_assignments(scope: ScopeFilter = Depends(scoped_dependency), page: Pag
 
 
 @router.post("/api/owner-assignments/{owner_assignment_id}/assign")
-def assign_owner_route(owner_assignment_id: str, payload: OwnerAssignmentRequest, actor: ActorContext = Depends(current_actor)):
+def assign_owner_route(
+    owner_assignment_id: str, payload: OwnerAssignmentRequest, actor: ActorContext = Depends(current_actor)
+):
     assignment = load_owner_assignment(owner_assignment_id)
     try:
         require_owner_assignment(actor, assignment)
     except AuthorizationError as error:
         raise_forbidden(error)
     result = assign_owner(owner_assignment_id, payload.owner_ref, actor.user_ref)
-    record_audit(actor_ref=actor.user_ref, action="owner.assign", tenant_id=assignment.get("tenant_id"), target_type="owner_assignment", target_id=owner_assignment_id, detail={"owner_ref": payload.owner_ref})
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="owner.assign",
+        tenant_id=assignment.get("tenant_id"),
+        target_type="owner_assignment",
+        target_id=owner_assignment_id,
+        detail={"owner_ref": payload.owner_ref},
+    )
     return {"owner_assignment": result}
 
 
@@ -704,18 +770,34 @@ def create_decision(payload: DecisionRequest, actor: ActorContext = Depends(curr
     enforce_segregation_of_duties(actor, payload.target_type, target)
     enforce_stage_policy(actor, payload.target_type, target, payload.decision)
     decision = record_decision(
-        payload.target_type, payload.target_id, payload.decision, payload.rationale, actor.user_ref, tenant_id=actor.tenant_id
+        payload.target_type,
+        payload.target_id,
+        payload.decision,
+        payload.rationale,
+        actor.user_ref,
+        tenant_id=actor.tenant_id,
     )
-    record_audit(actor_ref=actor.user_ref, action="review.decide", tenant_id=target.get("tenant_id"), target_type=payload.target_type, target_id=payload.target_id, detail={"decision": payload.decision})
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="review.decide",
+        tenant_id=target.get("tenant_id"),
+        target_type=payload.target_type,
+        target_id=payload.target_id,
+        detail={"decision": payload.decision},
+    )
     # these targets are gate blockers; without this the gate keeps reporting the
     # findings the reviewer just cleared until the next batch of telemetry
     if payload.target_type in {"risk_finding", "control_assessment", "change_event"} and target.get("application_name"):
-        refresh_deployment_gates([{
-            "tenant_id": target.get("tenant_id"),
-            "project": target.get("project"),
-            "environment": target.get("environment"),
-            "application_name": target.get("application_name"),
-        }])
+        refresh_deployment_gates(
+            [
+                {
+                    "tenant_id": target.get("tenant_id"),
+                    "project": target.get("project"),
+                    "environment": target.get("environment"),
+                    "application_name": target.get("application_name"),
+                }
+            ]
+        )
     return {"decision": decision}
 
 
@@ -757,7 +839,13 @@ def create_exception_route(payload: ExceptionRequest, actor: ActorContext = Depe
         actor.user_ref,
         tenant_id=actor.tenant_id,
     )
-    record_audit(actor_ref=actor.user_ref, action="risk.accept", tenant_id=target.get("tenant_id"), target_type=payload.target_type, target_id=payload.target_id)
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="risk.accept",
+        tenant_id=target.get("tenant_id"),
+        target_type=payload.target_type,
+        target_id=payload.target_id,
+    )
     return {"exception": exception}
 
 

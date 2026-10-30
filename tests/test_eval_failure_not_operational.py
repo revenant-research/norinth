@@ -64,7 +64,12 @@ def _model_call(tenant: str, span: str, status: str = "success") -> dict:
         span,
         "model.call",
         status,
-        {"provider": "openai", "model": "gpt-4o", "operation": "chat", "usage": {"input_tokens": 1, "output_tokens": 1}},
+        {
+            "provider": "openai",
+            "model": "gpt-4o",
+            "operation": "chat",
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        },
     )
 
 
@@ -119,7 +124,10 @@ def test_failed_eval_does_not_raise_operational_finding_on_rebuild(super_admin_c
 def test_passing_eval_raises_no_eval_finding(super_admin_client):
     org, headers = _org(super_admin_client, "evalpass")
     passing = _event(
-        "evalpass", "e1", "eval.result", "success",
+        "evalpass",
+        "e1",
+        "eval.result",
+        "success",
         {"eval_name": "faithfulness", "score": 0.9, "threshold": 0.8, "passed": True},
     )
     batch = [_model_call("evalpass", "m1"), passing]

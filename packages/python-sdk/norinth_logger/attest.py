@@ -90,9 +90,11 @@ def generate_keypair() -> tuple[str, str]:
     private_pem = private.private_bytes(
         serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
     ).decode("ascii")
-    public_pem = private.public_key().public_bytes(
-        serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
-    ).decode("ascii")
+    public_pem = (
+        private.public_key()
+        .public_bytes(serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo)
+        .decode("ascii")
+    )
     return private_pem, public_pem
 
 

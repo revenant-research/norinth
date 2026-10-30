@@ -54,8 +54,7 @@ def list_keys(actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
         environments = policy["body"].get("gates", {}).get("environments", {}) or {}
         names = set(environments) | {"*"}
         policy_required = {
-            name: bool(resolve_gate_policy(connection, tenant_id, name)["require_attested_evals"])
-            for name in names
+            name: bool(resolve_gate_policy(connection, tenant_id, name)["require_attested_evals"]) for name in names
         }
     active_count = sum(key["status"] == "active" for key in keys)
     return {
@@ -64,7 +63,9 @@ def list_keys(actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
         "key_opt_in": key_opt_in,
         "policy_required_environments": policy_required,
         "active_key_count": active_count,
-        "key_status": "no_active_key" if active_count == 0 and (key_opt_in or any(policy_required.values())) else "ready",
+        "key_status": "no_active_key"
+        if active_count == 0 and (key_opt_in or any(policy_required.values()))
+        else "ready",
     }
 
 

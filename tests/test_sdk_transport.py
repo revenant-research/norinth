@@ -50,7 +50,14 @@ def test_worker_survives_and_restarts_after_death():
     from norinth_logger.config import NorinthConfig
     from norinth_logger.transport import EventTransport
 
-    config = NorinthConfig(api_key="t", endpoint="http://127.0.0.1:9", async_transport=True, timeout_seconds=0.2, max_send_retries=0, retry_backoff_seconds=0)
+    config = NorinthConfig(
+        api_key="t",
+        endpoint="http://127.0.0.1:9",
+        async_transport=True,
+        timeout_seconds=0.2,
+        max_send_retries=0,
+        retry_backoff_seconds=0,
+    )
     transport = EventTransport(config)
     assert transport.thread_alive()
 

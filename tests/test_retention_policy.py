@@ -23,7 +23,8 @@ def _event(tenant_id: str, span: str, timestamp: str) -> dict:
         "project": "p1",
         "status": "success",
         "attributes": {
-            "provider": "openai", "model": "gpt-4o",
+            "provider": "openai",
+            "model": "gpt-4o",
             "usage": {"input_tokens": 5, "output_tokens": 5},
             "metadata": {"tenant_id": tenant_id, "application_name": "PayApp", "workflow_name": "wf"},
         },
@@ -36,8 +37,13 @@ def _org(super_admin_client, tenant_id: str, email: str, password: str):
 
     super_admin_client.post(
         "/api/admin/organizations",
-        json={"tenant_id": tenant_id, "name": tenant_id.title(), "admin_email": email,
-              "admin_display_name": "OA", "admin_password": password},
+        json={
+            "tenant_id": tenant_id,
+            "name": tenant_id.title(),
+            "admin_email": email,
+            "admin_display_name": "OA",
+            "admin_password": password,
+        },
     )
     client = TestClient(app)
     login_and_activate(client, email, password)
@@ -49,9 +55,7 @@ def _count_events(tenant_id: str) -> int:
     from app.storage.raw_events import connect
 
     with connect() as connection:
-        row = connection.execute(
-            "SELECT COUNT(*) AS n FROM sdk_events WHERE tenant_id = ?", (tenant_id,)
-        ).fetchone()
+        row = connection.execute("SELECT COUNT(*) AS n FROM sdk_events WHERE tenant_id = ?", (tenant_id,)).fetchone()
     return int(row["n"])
 
 
@@ -66,10 +70,16 @@ def test_retention_window_is_per_organization(super_admin_client):
 
     with TestClient(app) as anon:
         for tenant, token in (("keeper", keeper_token), ("ager", ager_token)):
-            resp = anon.post("/v1/events/batch", json={"events": [
-                _event(tenant, f"{tenant}_old", "2020-01-01T00:00:00Z"),
-                _event(tenant, f"{tenant}_new", datetime.now(UTC).isoformat()),
-            ]}, headers={"Authorization": f"Bearer {token}"})
+            resp = anon.post(
+                "/v1/events/batch",
+                json={
+                    "events": [
+                        _event(tenant, f"{tenant}_old", "2020-01-01T00:00:00Z"),
+                        _event(tenant, f"{tenant}_new", datetime.now(UTC).isoformat()),
+                    ]
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
             assert resp.status_code == 200, resp.text
 
     assert _count_events("keeper") == 2
@@ -108,8 +118,11 @@ def test_no_window_means_nothing_is_deleted(super_admin_client):
     from fastapi.testclient import TestClient
 
     with TestClient(app) as anon:
-        anon.post("/v1/events/batch", json={"events": [_event("acme", "old", "2020-01-01T00:00:00Z")]},
-                  headers={"Authorization": f"Bearer {token}"})
+        anon.post(
+            "/v1/events/batch",
+            json={"events": [_event("acme", "old", "2020-01-01T00:00:00Z")]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
 
     assert org.get("/api/retention-policy").json()["retention_days"] is None
     assert maintenance.run_once()["purged_events"] == {}
@@ -133,9 +146,15 @@ def test_ingest_time_backstops_a_future_dated_event(super_admin_client):
     from fastapi.testclient import TestClient
 
     with TestClient(app) as anon:
-        resp = anon.post("/v1/events/batch", json={"events": [
-            _event("future", "future_evt", "2035-01-01T00:00:00Z"),
-        ]}, headers={"Authorization": f"Bearer {token}"})
+        resp = anon.post(
+            "/v1/events/batch",
+            json={
+                "events": [
+                    _event("future", "future_evt", "2035-01-01T00:00:00Z"),
+                ]
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
         assert resp.status_code == 200, resp.text
     assert _count_events("future") == 1
 
@@ -167,8 +186,11 @@ def test_purge_is_recorded_in_the_audit_log(super_admin_client):
     from fastapi.testclient import TestClient
 
     with TestClient(app) as anon:
-        anon.post("/v1/events/batch", json={"events": [_event("acme", "old", "2020-01-01T00:00:00Z")]},
-                  headers={"Authorization": f"Bearer {token}"})
+        anon.post(
+            "/v1/events/batch",
+            json={"events": [_event("acme", "old", "2020-01-01T00:00:00Z")]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
     org.post("/api/retention-policy", json={"retention_days": 30})
     maintenance.run_once()
 

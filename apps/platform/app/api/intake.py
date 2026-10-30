@@ -105,12 +105,16 @@ def submit_intake(payload: IntakeRequest, actor: ActorContext = Depends(current_
 
 
 @router.post("/api/intake/{intake_id}/recertify")
-def recertify_intake(intake_id: str, payload: LifecycleActionRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
+def recertify_intake(
+    intake_id: str, payload: LifecycleActionRequest, actor: ActorContext = Depends(current_actor)
+) -> dict[str, Any]:
     return _lifecycle_transition(intake_id, payload, actor, status="recertified", action="lifecycle.recertify")
 
 
 @router.post("/api/intake/{intake_id}/retire")
-def retire_intake(intake_id: str, payload: LifecycleActionRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
+def retire_intake(
+    intake_id: str, payload: LifecycleActionRequest, actor: ActorContext = Depends(current_actor)
+) -> dict[str, Any]:
     return _lifecycle_transition(intake_id, payload, actor, status="retired", action="lifecycle.retire")
 
 

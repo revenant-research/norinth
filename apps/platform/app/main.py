@@ -59,11 +59,15 @@ STATIC_DIR = Path(__file__).resolve().parent / "dashboard" / "static"
 ASSETS_DIR = STATIC_DIR / "assets"
 INDEX_FILE = STATIC_DIR / "index.html"
 
-app = FastAPI(title="Norinth Platform", description="AI governance platform API: ingestion, inventory, risk, review workflow, release gates, compliance evidence.")
+app = FastAPI(
+    title="Norinth Platform",
+    description="AI governance platform API: ingestion, inventory, risk, review workflow, release gates, compliance evidence.",
+)
 
 # host-header trust is checked only where saml/oidc build callback urls (see
 # services/base_url.py), not globally: a global check would 400 health probes
 # that arrive with a localhost or pod-ip host
+
 
 def _validate_secret_key_at_startup() -> None:
     """fail fast on a malformed NORINTH_SECRET_KEY
@@ -99,9 +103,7 @@ def _outbox_pending() -> float:
     from app.storage.raw_events import connect
 
     with connect() as connection:
-        row = connection.execute(
-            "SELECT COUNT(*) AS n FROM notification_outbox WHERE status = 'pending'"
-        ).fetchone()
+        row = connection.execute("SELECT COUNT(*) AS n FROM notification_outbox WHERE status = 'pending'").fetchone()
     return float(row["n"])
 
 
@@ -185,9 +187,7 @@ async def _value_error_handler(request: Request, exc: ValueError):
     with the request id and the caller gets a generic one
     """
     # the json formatter attaches the request id from the contextvar
-    _error_logger.warning(
-        "unhandled ValueError on %s %s: %s", request.method, request.url.path, exc, exc_info=True
-    )
+    _error_logger.warning("unhandled ValueError on %s %s: %s", request.method, request.url.path, exc, exc_info=True)
     return JSONResponse(status_code=400, content={"detail": "Invalid request"})
 
 
@@ -288,7 +288,9 @@ def metrics(request: Request):
         user = load_platform_user(user_ref)
         if user and user.get("platform_role") == "super_admin":
             return PlainTextResponse(render_metrics(), media_type="text/plain; version=0.0.4")
-    return JSONResponse(status_code=403, content={"detail": "Metrics require NORINTH_METRICS_TOKEN or a platform administrator session"})
+    return JSONResponse(
+        status_code=403, content={"detail": "Metrics require NORINTH_METRICS_TOKEN or a platform administrator session"}
+    )
 
 
 @app.middleware("http")
@@ -436,11 +438,13 @@ class BodySizeLimitMiddleware:
     @staticmethod
     async def _reject(send, status: int, detail: str) -> None:
         body = json.dumps({"detail": detail}).encode("utf-8")
-        await send({
-            "type": "http.response.start",
-            "status": status,
-            "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())],
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": status,
+                "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())],
+            }
+        )
         await send({"type": "http.response.body", "body": body})
 
 
@@ -466,9 +470,7 @@ async def security_headers(request: Request, call_next):
     if os.getenv("NORINTH_TRUST_PROXY", "0").lower() in {"1", "true", "yes"}:
         scheme = (request.headers.get("x-forwarded-proto", scheme).split(",")[0].strip()) or scheme
     if scheme == "https":
-        response.headers.setdefault(
-            "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
-        )
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
 
 
@@ -480,7 +482,6 @@ if ASSETS_DIR.exists():
 def dashboard():
     if INDEX_FILE.exists():
         return HTMLResponse(
-            INDEX_FILE.read_text(encoding="utf-8"),
-            headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+            INDEX_FILE.read_text(encoding="utf-8"), headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
         )
     return HTMLResponse(dashboard_html(str(STATIC_DIR)), status_code=503)

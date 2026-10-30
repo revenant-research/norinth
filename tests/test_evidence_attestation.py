@@ -45,7 +45,13 @@ def _prompt() -> dict:
         "trace_id": "trc_prompt",
         "span_id": "spn_prompt",
         "timestamp": "2026-08-22T00:00:01Z",
-        "attributes": {"prompt_id": "triage-prompt", "version": "p1", "artifact_ref": "prompt:p1", "template": {"t": "x"}, "metadata": META},
+        "attributes": {
+            "prompt_id": "triage-prompt",
+            "version": "p1",
+            "artifact_ref": "prompt:p1",
+            "template": {"t": "x"},
+            "metadata": META,
+        },
     }
 
 
@@ -123,20 +129,47 @@ def test_sdk_and_platform_statements_are_identical():
     # the eval_name fallback (what the eval_result emitter actually sends), float
     # score precision, unicode, missing optionals, and the name-only fallback
     edge_cases = [
-        {"trace_id": "t", "span_id": "s", "timestamp": "2026-01-01T00:00:00Z", "name": "n",
-         "attributes": {"eval_name": "safety", "passed": True, "score": 0.5,
-                        "metadata": {"tenant_id": "a", "application_name": "App", "workflow_name": "w"}}},
-        {"trace_id": "t", "span_id": "s", "timestamp": "z",
-         "attributes": {"eval_id": "e", "passed": False, "score": 0.1 + 0.2, "metadata": {}}},
-        {"trace_id": "t", "span_id": "s", "timestamp": "z",
-         "attributes": {"eval_id": "e", "passed": True, "score": 1, "metadata": {"application_name": "Café- Køln"}}},
+        {
+            "trace_id": "t",
+            "span_id": "s",
+            "timestamp": "2026-01-01T00:00:00Z",
+            "name": "n",
+            "attributes": {
+                "eval_name": "safety",
+                "passed": True,
+                "score": 0.5,
+                "metadata": {"tenant_id": "a", "application_name": "App", "workflow_name": "w"},
+            },
+        },
+        {
+            "trace_id": "t",
+            "span_id": "s",
+            "timestamp": "z",
+            "attributes": {"eval_id": "e", "passed": False, "score": 0.1 + 0.2, "metadata": {}},
+        },
+        {
+            "trace_id": "t",
+            "span_id": "s",
+            "timestamp": "z",
+            "attributes": {"eval_id": "e", "passed": True, "score": 1, "metadata": {"application_name": "Café- Køln"}},
+        },
         {"attributes": {"passed": True}},
-        {"trace_id": "t", "span_id": "s", "timestamp": "z", "name": "fallback",
-         "attributes": {"passed": True, "score": 0, "metadata": {}}},
+        {
+            "trace_id": "t",
+            "span_id": "s",
+            "timestamp": "z",
+            "name": "fallback",
+            "attributes": {"passed": True, "score": 0, "metadata": {}},
+        },
         # both ids present: the only shape where the eval_id/eval_name fallback
         # ORDER matters, so a builder that reorders it diverges here
-        {"trace_id": "t", "span_id": "s", "timestamp": "z", "name": "n",
-         "attributes": {"eval_id": "the-id", "eval_name": "the-name", "passed": True, "score": 1, "metadata": {}}},
+        {
+            "trace_id": "t",
+            "span_id": "s",
+            "timestamp": "z",
+            "name": "n",
+            "attributes": {"eval_id": "the-id", "eval_name": "the-name", "passed": True, "score": 1, "metadata": {}},
+        },
     ]
     for case in edge_cases:
         assert sdk_statement(case) == platform_statement(case), case
@@ -225,9 +258,9 @@ def test_tampered_unknown_cross_tenant_and_revoked_attestations_are_rejected(org
     beta_private, beta_public = _keypair()
     with TestClient(app) as beta:
         login_and_activate(beta, "oa@beta.test", "ob-password-1")
-        beta_key_id = beta.post("/api/attestation-keys", json={"name": "beta-ci", "public_key_pem": beta_public}).json()[
-            "attestation_key"
-        ]["key_id"]
+        beta_key_id = beta.post(
+            "/api/attestation-keys", json={"name": "beta-ci", "public_key_pem": beta_public}
+        ).json()["attestation_key"]["key_id"]
     cross = sign_eval_result(_eval("cross"), private_key_pem=beta_private, key_id=beta_key_id)
     resp = client.post("/v1/events/batch", json={"events": [cross]}, headers=headers)
     assert resp.status_code == 400 and "belongs to another organization" in resp.text
@@ -270,9 +303,18 @@ def test_gate_counts_only_attested_evals_once_a_key_is_registered(org):
     # genuinely new telemetry in the same scope forces a gate recompute (a
     # duplicate event would now be a no-op and not re-evaluate the gate)
     recompute_ping = {
-        **BASE, "type": "model.call", "trace_id": "trc_recompute", "span_id": "spn_recompute",
-        "timestamp": "2026-08-22T00:00:05Z", "status": "success",
-        "attributes": {"provider": "openai", "model": "gpt-4o", "usage": {"input_tokens": 1, "output_tokens": 1}, "metadata": META},
+        **BASE,
+        "type": "model.call",
+        "trace_id": "trc_recompute",
+        "span_id": "spn_recompute",
+        "timestamp": "2026-08-22T00:00:05Z",
+        "status": "success",
+        "attributes": {
+            "provider": "openai",
+            "model": "gpt-4o",
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+            "metadata": META,
+        },
     }
     resp = client.post("/v1/events/batch", json={"events": [recompute_ping]}, headers=headers)
     assert resp.status_code == 200
@@ -290,11 +332,20 @@ def test_gate_counts_only_attested_evals_once_a_key_is_registered(org):
 
 def test_last_key_revocation_keeps_unsigned_evals_ineligible(org):
     client, headers = org
-    assert client.post("/v1/events/batch", json={"events": [_prompt(), _deployment(), _eval("plain")]}, headers=headers).status_code == 200
+    assert (
+        client.post(
+            "/v1/events/batch", json={"events": [_prompt(), _deployment(), _eval("plain")]}, headers=headers
+        ).status_code
+        == 200
+    )
     _, first_public = _keypair()
     _, second_public = _keypair()
-    first = client.post("/api/attestation-keys", json={"name": "first", "public_key_pem": first_public}).json()["attestation_key"]["key_id"]
-    second = client.post("/api/attestation-keys", json={"name": "rotation", "public_key_pem": second_public}).json()["attestation_key"]["key_id"]
+    first = client.post("/api/attestation-keys", json={"name": "first", "public_key_pem": first_public}).json()[
+        "attestation_key"
+    ]["key_id"]
+    second = client.post("/api/attestation-keys", json={"name": "rotation", "public_key_pem": second_public}).json()[
+        "attestation_key"
+    ]["key_id"]
     assert client.post(f"/api/attestation-keys/{first}/revoke").status_code == 200
     assert client.get("/api/attestation-keys").json()["active_key_count"] == 1
     assert client.post(f"/api/attestation-keys/{second}/revoke").status_code == 200
@@ -310,7 +361,9 @@ def test_last_key_revocation_keeps_unsigned_evals_ineligible(org):
     with connect() as connection:
         assert tenant_requires_attestation("acme", connection)
         assert not tenant_requires_attestation("other", connection)
-        version = dict(connection.execute("SELECT * FROM deployment_versions WHERE tenant_id = 'acme' LIMIT 1").fetchone())
+        version = dict(
+            connection.execute("SELECT * FROM deployment_versions WHERE tenant_id = 'acme' LIMIT 1").fetchone()
+        )
         evidence = gate_evidence_counts(connection, version)
     assert evidence["require_attested_evals"] is True
     assert evidence["passing_eval_count"] == 0
@@ -319,7 +372,9 @@ def test_last_key_revocation_keeps_unsigned_evals_ineligible(org):
 def test_migration_preserves_opt_in_with_only_revoked_keys(org):
     client, _ = org
     _, public_pem = _keypair()
-    key_id = client.post("/api/attestation-keys", json={"name": "old", "public_key_pem": public_pem}).json()["attestation_key"]["key_id"]
+    key_id = client.post("/api/attestation-keys", json={"name": "old", "public_key_pem": public_pem}).json()[
+        "attestation_key"
+    ]["key_id"]
     assert client.post(f"/api/attestation-keys/{key_id}/revoke").status_code == 200
     from app.storage.attestation_keys import tenant_requires_attestation
     from app.storage.migrations import run_migrations
@@ -342,7 +397,10 @@ def test_attestation_key_management_is_org_admin_and_tenant_bound(org, super_adm
     # super admins operate on orgs, not on tenant evidence keys
     assert super_admin_client.get("/api/attestation-keys").status_code == 403
     # garbage keys rejected before anything is stored
-    bad = client.post("/api/attestation-keys", json={"name": "x", "public_key_pem": "-----BEGIN PUBLIC KEY-----\nnope\n-----END PUBLIC KEY-----"})
+    bad = client.post(
+        "/api/attestation-keys",
+        json={"name": "x", "public_key_pem": "-----BEGIN PUBLIC KEY-----\nnope\n-----END PUBLIC KEY-----"},
+    )
     assert bad.status_code == 400
     # rsa keys refused, ed25519 only
     from cryptography.hazmat.primitives import serialization
@@ -356,7 +414,9 @@ def test_attestation_key_management_is_org_admin_and_tenant_bound(org, super_adm
     )
     assert client.post("/api/attestation-keys", json={"name": "rsa", "public_key_pem": rsa_pem}).status_code == 400
 
-    created = client.post("/api/attestation-keys", json={"name": "ci", "public_key_pem": public_pem}).json()["attestation_key"]
+    created = client.post("/api/attestation-keys", json={"name": "ci", "public_key_pem": public_pem}).json()[
+        "attestation_key"
+    ]
     assert created["fingerprint"].startswith("sha256:")
     assert created["status"] == "active"
 
@@ -368,5 +428,7 @@ def test_attestation_key_management_is_org_admin_and_tenant_bound(org, super_adm
     client.post("/api/org/role-assignments", json={"user_ref": "rev@acme.test", "role": "governance_reviewer"})
     with TestClient(app) as reviewer:
         login_and_activate(reviewer, "rev@acme.test", "rev-password-1")
-        assert reviewer.post("/api/attestation-keys", json={"name": "x", "public_key_pem": public_pem}).status_code == 403
+        assert (
+            reviewer.post("/api/attestation-keys", json={"name": "x", "public_key_pem": public_pem}).status_code == 403
+        )
         assert reviewer.post(f"/api/attestation-keys/{created['key_id']}/revoke").status_code == 403

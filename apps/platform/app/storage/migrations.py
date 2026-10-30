@@ -247,7 +247,9 @@ def _0010_cross_tenant_keys(connection) -> None:
         connection.execute(f"DROP TABLE {table}_old10")
     # rebuild the events dedup index to include tenant
     connection.execute("DROP INDEX IF EXISTS idx_sdk_events_span")
-    connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_sdk_events_span_tenant ON sdk_events(tenant_id, trace_id, span_id)")
+    connection.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_sdk_events_span_tenant ON sdk_events(tenant_id, trace_id, span_id)"
+    )
 
 
 def _0011_audit_hmac(connection) -> None:
@@ -331,7 +333,9 @@ def _0017_audit_hmac_key_id(connection) -> None:
     """
     if not _has_column(connection, "audit_logs", "hmac_key_id"):
         connection.execute("ALTER TABLE audit_logs ADD COLUMN hmac_key_id TEXT")
-        connection.execute("UPDATE audit_logs SET hmac_key_id = 'legacy' WHERE row_hmac IS NOT NULL AND hmac_key_id IS NULL")
+        connection.execute(
+            "UPDATE audit_logs SET hmac_key_id = 'legacy' WHERE row_hmac IS NOT NULL AND hmac_key_id IS NULL"
+        )
 
 
 def _0019_mfa(connection) -> None:
@@ -373,6 +377,8 @@ def _0019_mfa(connection) -> None:
         )
         """
     )
+
+
 def _0018_session_last_seen(connection) -> None:
     """activity timestamp on sessions for the idle timeout
 
@@ -408,12 +414,10 @@ def _0021_detail_view_indexes(connection) -> None:
     # project and environment, which a tenant-only scope leaves unconstrained, so
     # the planner could not use it and fell back to a scan
     connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_sdk_events_tenant_application "
-        "ON sdk_events(tenant_id, application_name)"
+        "CREATE INDEX IF NOT EXISTS idx_sdk_events_tenant_application ON sdk_events(tenant_id, application_name)"
     )
     connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_sdk_events_tenant_workflow "
-        "ON sdk_events(tenant_id, workflow_name)"
+        "CREATE INDEX IF NOT EXISTS idx_sdk_events_tenant_workflow ON sdk_events(tenant_id, workflow_name)"
     )
     connection.execute("CREATE INDEX IF NOT EXISTS idx_sdk_events_name ON sdk_events(name)")
 
@@ -497,9 +501,7 @@ def _0023_fold_ledger(connection) -> None:
     """
     if not _has_column(connection, "sdk_events", "folded_at"):
         connection.execute("ALTER TABLE sdk_events ADD COLUMN folded_at TEXT")
-        connection.execute(
-            "UPDATE sdk_events SET folded_at = COALESCE(ingested_at, timestamp) WHERE folded_at IS NULL"
-        )
+        connection.execute("UPDATE sdk_events SET folded_at = COALESCE(ingested_at, timestamp) WHERE folded_at IS NULL")
     if not _has_column(connection, "sdk_events", "counted_at"):
         connection.execute("ALTER TABLE sdk_events ADD COLUMN counted_at TEXT")
         connection.execute(
@@ -512,8 +514,7 @@ def _0023_fold_ledger(connection) -> None:
     # partial index so claiming pending rows stays O(pending), not a full-table
     # scan of all history; once the backlog drains the index is empty
     connection.execute(
-        "CREATE INDEX IF NOT EXISTS idx_sdk_events_fold_pending "
-        "ON sdk_events(tenant_id, id) WHERE folded_at IS NULL"
+        "CREATE INDEX IF NOT EXISTS idx_sdk_events_fold_pending ON sdk_events(tenant_id, id) WHERE folded_at IS NULL"
     )
 
 
@@ -674,7 +675,11 @@ MIGRATIONS: list[Migration] = [
     Migration(6, "inbound leads from the landing page", _0006_leads),
     Migration(7, "notification outbox, webhooks, invites", _0007_notifications),
     Migration(8, "outbox delivery claims for multi-replica workers", _0008_outbox_claims),
-    Migration(9, "tenant-scoped config tables (control library, risk rules, routing, owner policies)", _0009_config_table_tenancy),
+    Migration(
+        9,
+        "tenant-scoped config tables (control library, risk rules, routing, owner policies)",
+        _0009_config_table_tenancy,
+    ),
     Migration(10, "tenant-scoped record keys (deployments, incidents, prompts, event dedup)", _0010_cross_tenant_keys),
     Migration(11, "audit-chain HMAC anchor column", _0011_audit_hmac),
     Migration(12, "drop fabricated confidence score from risk tables", _0012_drop_risk_confidence),
@@ -687,7 +692,9 @@ MIGRATIONS: list[Migration] = [
     Migration(19, "totp multi-factor authentication", _0019_mfa),
     Migration(20, "per-organization mfa requirement", _0020_org_require_mfa),
     Migration(21, "workflow and system indexes for the detail views", _0021_detail_view_indexes),
-    Migration(22, "governance policy engine (policies, approval stages, vendor registry)", _0022_governance_policy_engine),
+    Migration(
+        22, "governance policy engine (policies, approval stages, vendor registry)", _0022_governance_policy_engine
+    ),
     Migration(23, "durable fold ledger on raw events for recoverable ingest", _0023_fold_ledger),
     Migration(24, "durable tenant attestation requirement", _0024_attestation_requirement),
     Migration(25, "control coverage and evidence freshness", _0025_control_coverage),

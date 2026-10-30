@@ -79,6 +79,7 @@ def _temp_password() -> str:
     """one-time password, user must reset on first sign in"""
     return f"Norinth-{secrets.token_hex(12)}"
 
+
 # roles an org admin may grant; super_admin excluded (platform plane)
 ASSIGNABLE_ORG_ROLES = [
     ORG_ADMIN,
@@ -195,7 +196,9 @@ def organizations(actor: ActorContext = Depends(current_actor)) -> dict[str, lis
 
 
 @router.post("/api/admin/organizations")
-def provision_organization(payload: CreateOrganizationRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
+def provision_organization(
+    payload: CreateOrganizationRequest, actor: ActorContext = Depends(current_actor)
+) -> dict[str, Any]:
     _guard_super_admin(actor)
     admin_email = normalize_email(payload.admin_email)
     if get_user_by_email(admin_email) is not None:
@@ -243,7 +246,9 @@ def provision_organization(payload: CreateOrganizationRequest, actor: ActorConte
 
 
 @router.post("/api/admin/organizations/{tenant_id}/status")
-def update_organization_status(tenant_id: str, payload: OrganizationStatusRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
+def update_organization_status(
+    tenant_id: str, payload: OrganizationStatusRequest, actor: ActorContext = Depends(current_actor)
+) -> dict[str, Any]:
     _guard_super_admin(actor)
     if payload.status not in {"active", "suspended"}:
         raise HTTPException(status_code=400, detail="status must be 'active' or 'suspended'")
@@ -339,8 +344,7 @@ def purge_old_events(payload: RetentionPurgeRequest, actor: ActorContext = Depen
             "scope": payload.tenant_id or "all_tenants",
         },
     )
-    return {"deleted": deleted, "retention_days": payload.retention_days,
-            "scope": payload.tenant_id or "all_tenants"}
+    return {"deleted": deleted, "retention_days": payload.retention_days, "scope": payload.tenant_id or "all_tenants"}
 
 
 @router.get("/api/admin/schema")
@@ -367,7 +371,9 @@ def all_users(actor: ActorContext = Depends(current_actor)) -> dict[str, list[di
 
 
 @router.post("/api/admin/users/{user_ref}/status")
-def update_account_status(user_ref: str, payload: AccountStatusRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
+def update_account_status(
+    user_ref: str, payload: AccountStatusRequest, actor: ActorContext = Depends(current_actor)
+) -> dict[str, Any]:
     """suspend or reactivate an account; cannot lock out the last super admin"""
     _guard_super_admin(actor)
     if payload.status not in {"active", "suspended"}:
@@ -447,7 +453,9 @@ def role_permission_matrix(actor: ActorContext = Depends(current_actor)) -> dict
 
 
 @router.post("/api/admin/role-permissions")
-def update_role_permission(payload: RolePermissionChange, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
+def update_role_permission(
+    payload: RolePermissionChange, actor: ActorContext = Depends(current_actor)
+) -> dict[str, Any]:
     # matrix is a platform-global default; only super admin edits it
     _guard_super_admin(actor)
     set_role_permission(payload.role, payload.permission, payload.granted)
@@ -592,7 +600,9 @@ def create_org_user(payload: CreateUserRequest, actor: ActorContext = Depends(cu
 
 
 @router.post("/api/org/users/{user_ref}/status")
-def update_org_user_status(user_ref: str, payload: AccountStatusRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
+def update_org_user_status(
+    user_ref: str, payload: AccountStatusRequest, actor: ActorContext = Depends(current_actor)
+) -> dict[str, Any]:
     """deactivate or reactivate a user in the admin's org"""
     tenant_id = _require_tenant(actor)
     try:
@@ -638,7 +648,9 @@ def reset_org_user_password(user_ref: str, actor: ActorContext = Depends(current
         {
             assignment["role"]
             for assignment in list_role_assignments(tenant_id=tenant_id)
-            if assignment["user_ref"] == user_ref and assignment["status"] == "active" and assignment["role"] in DECISION_ROLES
+            if assignment["user_ref"] == user_ref
+            and assignment["status"] == "active"
+            and assignment["role"] in DECISION_ROLES
         }
     )
     record_audit(
@@ -817,7 +829,9 @@ def org_role_assignments(actor: ActorContext = Depends(current_actor)) -> dict[s
 
 
 @router.post("/api/org/role-assignments")
-def change_org_role_assignment(payload: RoleAssignmentChange, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
+def change_org_role_assignment(
+    payload: RoleAssignmentChange, actor: ActorContext = Depends(current_actor)
+) -> dict[str, Any]:
     tenant_id = _require_tenant(actor)
     try:
         require_permission(actor, PERM_ROLE_ASSIGN, {"tenant_id": tenant_id})

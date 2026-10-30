@@ -152,9 +152,7 @@ def create_login_state(tenant_id: str) -> dict[str, str]:
         "code_verifier": secrets.token_urlsafe(64),
     }
     with connect() as connection:
-        connection.execute(
-            "DELETE FROM sso_login_states WHERE expires_at <= ?", (now.isoformat(),)
-        )
+        connection.execute("DELETE FROM sso_login_states WHERE expires_at <= ?", (now.isoformat(),))
         connection.execute(
             """
             INSERT INTO sso_login_states (state, tenant_id, nonce, code_verifier, created_at, expires_at)

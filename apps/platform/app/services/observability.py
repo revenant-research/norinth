@@ -34,9 +34,11 @@ request_id_var: ContextVar[str | None] = ContextVar("norinth_request_id", defaul
 
 # fields every LogRecord carries; anything else on the record came in via
 # `extra` and belongs in the json line
-_STANDARD_LOG_FIELDS = frozenset(
-    logging.LogRecord("", 0, "", 0, "", (), None).__dict__
-) | {"message", "asctime", "taskName"}
+_STANDARD_LOG_FIELDS = frozenset(logging.LogRecord("", 0, "", 0, "", (), None).__dict__) | {
+    "message",
+    "asctime",
+    "taskName",
+}
 
 
 class JsonLogFormatter(logging.Formatter):
@@ -110,7 +112,9 @@ def histogram_observe(
                 series["bucket_counts"][index] += 1
 
 
-def gauge_callback(name: str, help_text: str, callback: Callable[[], float | dict[tuple[tuple[str, str], ...], float]]) -> None:
+def gauge_callback(
+    name: str, help_text: str, callback: Callable[[], float | dict[tuple[tuple[str, str], ...], float]]
+) -> None:
     """register a gauge evaluated at scrape time (e.g. a queue depth query)"""
     with _lock:
         _gauges[name] = {"help": help_text, "callback": callback}

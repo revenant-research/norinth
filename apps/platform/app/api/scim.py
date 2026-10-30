@@ -253,7 +253,9 @@ def replace_user(user_ref: str, payload: ScimUserIn, tenant_id: str = Depends(sc
         set_user_external_id(user_ref, payload.externalId)
     if payload.active != (user.get("status") == "active"):
         _apply_active(user_ref, tenant_id, payload.active)
-    record_audit(actor_ref="scim", action="scim.user.replace", tenant_id=tenant_id, target_type="user", target_id=user_ref)
+    record_audit(
+        actor_ref="scim", action="scim.user.replace", tenant_id=tenant_id, target_type="user", target_id=user_ref
+    )
     return JSONResponse(media_type=SCIM_CONTENT_TYPE, content=_to_scim_user(load_platform_user(user_ref) or user))
 
 
@@ -286,7 +288,13 @@ def patch_user(user_ref: str, payload: ScimPatch, tenant_id: str = Depends(scim_
             elif key == "displayname":
                 from app.storage.workflow import upsert_platform_user
 
-                upsert_platform_user({"user_ref": user_ref, "display_name": str(val), "status": (load_platform_user(user_ref) or user)["status"]})
+                upsert_platform_user(
+                    {
+                        "user_ref": user_ref,
+                        "display_name": str(val),
+                        "status": (load_platform_user(user_ref) or user)["status"],
+                    }
+                )
             elif key == "externalid":
                 set_user_external_id(user_ref, None if val is None else str(val))
             # other attributes accepted and ignored (scim allows partial support)
@@ -330,7 +338,13 @@ def org_scim_tokens(actor: ActorContext = Depends(current_actor)) -> dict[str, A
 def create_org_scim_token(payload: ScimTokenRequest, actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _require_tenant_admin(actor)
     token, record = create_scim_token(tenant_id, payload.name, actor.user_ref)
-    record_audit(actor_ref=actor.user_ref, action="scim_token.create", tenant_id=tenant_id, target_type="scim_token", target_id=record["token_id"])
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="scim_token.create",
+        tenant_id=tenant_id,
+        target_type="scim_token",
+        target_id=record["token_id"],
+    )
     return {"scim_token": record, "token": token}
 
 
@@ -341,6 +355,11 @@ def revoke_org_scim_token(token_id: str, actor: ActorContext = Depends(current_a
         record = revoke_scim_token(token_id, tenant_id)
     except DomainError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
-    record_audit(actor_ref=actor.user_ref, action="scim_token.revoke", tenant_id=tenant_id, target_type="scim_token", target_id=token_id)
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="scim_token.revoke",
+        tenant_id=tenant_id,
+        target_type="scim_token",
+        target_id=token_id,
+    )
     return {"scim_token": record}
-

@@ -17,9 +17,16 @@ from tests.helpers import login_and_activate
 def _org(super_admin_client):
     from app.main import app
 
-    super_admin_client.post("/api/admin/organizations", json={
-        "tenant_id": "acme", "name": "Acme", "admin_email": "oa@acme.test",
-        "admin_display_name": "OA", "admin_password": "oa-password-1"})
+    super_admin_client.post(
+        "/api/admin/organizations",
+        json={
+            "tenant_id": "acme",
+            "name": "Acme",
+            "admin_email": "oa@acme.test",
+            "admin_display_name": "OA",
+            "admin_password": "oa-password-1",
+        },
+    )
     org = TestClient(app)
     org.__enter__()
     login_and_activate(org, "oa@acme.test", "oa-password-1")
@@ -41,8 +48,18 @@ def test_reset_of_a_decision_holder_ends_sessions_and_alerts_the_other_admins(su
     from app.storage.audit import list_audit_logs
 
     org = _org(super_admin_client)
-    assert org.post("/api/org/users", json={"email": "rev@acme.test", "display_name": "Rev", "password": "rev-pw-123456"}).status_code == 200
-    assert org.post("/api/org/role-assignments", json={"user_ref": "rev@acme.test", "role": "governance_reviewer"}).status_code == 200
+    assert (
+        org.post(
+            "/api/org/users", json={"email": "rev@acme.test", "display_name": "Rev", "password": "rev-pw-123456"}
+        ).status_code
+        == 200
+    )
+    assert (
+        org.post(
+            "/api/org/role-assignments", json={"user_ref": "rev@acme.test", "role": "governance_reviewer"}
+        ).status_code
+        == 200
+    )
 
     reviewer = TestClient(app)
     login_and_activate(reviewer, "rev@acme.test", "rev-pw-123456")
@@ -71,7 +88,12 @@ def test_reset_of_a_decision_holder_ends_sessions_and_alerts_the_other_admins(su
 
 def test_reset_of_a_plain_user_tells_the_user_only(super_admin_client):
     org = _org(super_admin_client)
-    assert org.post("/api/org/users", json={"email": "viewer@acme.test", "display_name": "V", "password": "viewer-pw-123456"}).status_code == 200
+    assert (
+        org.post(
+            "/api/org/users", json={"email": "viewer@acme.test", "display_name": "V", "password": "viewer-pw-123456"}
+        ).status_code
+        == 200
+    )
     assert org.post("/api/org/users/viewer@acme.test/reset-password").status_code == 200
     assert len(_outbox("account.reset_by_admin")) == 1
     assert _outbox("account.decision_holder_reset") == []

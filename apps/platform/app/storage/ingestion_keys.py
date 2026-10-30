@@ -37,12 +37,8 @@ def init_ingestion_keys() -> None:
             )
             """
         )
-        connection.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_ingestion_keys_hash ON ingestion_keys(key_hash)"
-        )
-        connection.execute(
-            "CREATE INDEX IF NOT EXISTS idx_ingestion_keys_tenant ON ingestion_keys(tenant_id)"
-        )
+        connection.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_ingestion_keys_hash ON ingestion_keys(key_hash)")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_ingestion_keys_tenant ON ingestion_keys(tenant_id)")
 
 
 def hash_token(token: str) -> str:

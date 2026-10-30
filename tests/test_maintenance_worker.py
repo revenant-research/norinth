@@ -16,23 +16,33 @@ def _org_with_a_review_task(super_admin_client):
 
     super_admin_client.post(
         "/api/admin/organizations",
-        json={"tenant_id": "acme", "name": "Acme", "admin_email": "oa@acme.test",
-              "admin_display_name": "OA", "admin_password": "oa-password-1"},
+        json={
+            "tenant_id": "acme",
+            "name": "Acme",
+            "admin_email": "oa@acme.test",
+            "admin_display_name": "OA",
+            "admin_password": "oa-password-1",
+        },
     )
     with TestClient(app) as org:
         login_and_activate(org, "oa@acme.test", "oa-password-1")
         # a reviewer to route the intake to; an unassigned task never ages
-        org.post("/api/org/users",
-                 json={"email": "rev@acme.test", "display_name": "Rev", "password": "rev-password-1"})
-        org.post("/api/org/role-assignments",
-                 json={"user_ref": "rev@acme.test", "role": "governance_reviewer"})
-        submitted = org.post("/api/intake", json={
-            "application_name": "PayApp", "use_case": "score inbound payment risk",
-            "description": "flags payments for manual review",
-            "intended_purpose": "reduce fraud losses",
-            "data_sensitivity": "confidential", "autonomy_level": "supervised",
-            "affects_individuals": True, "project": "p1", "environment": "prod",
-        })
+        org.post("/api/org/users", json={"email": "rev@acme.test", "display_name": "Rev", "password": "rev-password-1"})
+        org.post("/api/org/role-assignments", json={"user_ref": "rev@acme.test", "role": "governance_reviewer"})
+        submitted = org.post(
+            "/api/intake",
+            json={
+                "application_name": "PayApp",
+                "use_case": "score inbound payment risk",
+                "description": "flags payments for manual review",
+                "intended_purpose": "reduce fraud losses",
+                "data_sensitivity": "confidential",
+                "autonomy_level": "supervised",
+                "affects_individuals": True,
+                "project": "p1",
+                "environment": "prod",
+            },
+        )
         assert submitted.status_code == 200, submitted.text
 
 
@@ -75,24 +85,44 @@ def test_maintenance_pass_expires_a_lapsed_exception(super_admin_client):
 
     super_admin_client.post(
         "/api/admin/organizations",
-        json={"tenant_id": "acme", "name": "Acme", "admin_email": "oa@acme.test",
-              "admin_display_name": "OA", "admin_password": "oa-password-1"},
+        json={
+            "tenant_id": "acme",
+            "name": "Acme",
+            "admin_email": "oa@acme.test",
+            "admin_display_name": "OA",
+            "admin_password": "oa-password-1",
+        },
     )
     with TestClient(app) as org:
         login_and_activate(org, "oa@acme.test", "oa-password-1")
         token = org.post("/api/ingestion-keys", json={"name": "ci"}).json()["token"]
-        org.post("/api/org/users",
-                 json={"email": "gov@acme.test", "display_name": "Gov", "password": "gov-password-1"})
-        org.post("/api/org/role-assignments",
-                 json={"user_ref": "gov@acme.test", "role": "governance_admin"})
-        ingested = org.post("/v1/events/batch", json={"events": [{
-            "type": "model.call", "schema_version": "2026-01", "trace_id": "t1", "span_id": "s1",
-            "timestamp": "2026-08-22T00:00:00Z", "service": "svc", "environment": "prod", "project": "p1",
-            "status": "success",
-            "attributes": {"provider": "openai", "model": "gpt-4o",
-                           "usage": {"input_tokens": 5, "output_tokens": 5},
-                           "metadata": {"tenant_id": "acme", "application_name": "PayApp", "workflow_name": "wf"}},
-        }]}, headers={"Authorization": f"Bearer {token}"})
+        org.post("/api/org/users", json={"email": "gov@acme.test", "display_name": "Gov", "password": "gov-password-1"})
+        org.post("/api/org/role-assignments", json={"user_ref": "gov@acme.test", "role": "governance_admin"})
+        ingested = org.post(
+            "/v1/events/batch",
+            json={
+                "events": [
+                    {
+                        "type": "model.call",
+                        "schema_version": "2026-01",
+                        "trace_id": "t1",
+                        "span_id": "s1",
+                        "timestamp": "2026-08-22T00:00:00Z",
+                        "service": "svc",
+                        "environment": "prod",
+                        "project": "p1",
+                        "status": "success",
+                        "attributes": {
+                            "provider": "openai",
+                            "model": "gpt-4o",
+                            "usage": {"input_tokens": 5, "output_tokens": 5},
+                            "metadata": {"tenant_id": "acme", "application_name": "PayApp", "workflow_name": "wf"},
+                        },
+                    }
+                ]
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
         assert ingested.status_code == 200, ingested.text
 
     with connect() as connection:
@@ -104,12 +134,16 @@ def test_maintenance_pass_expires_a_lapsed_exception(super_admin_client):
 
     with TestClient(app) as gov:
         login_and_activate(gov, "gov@acme.test", "gov-password-1")
-        waived = gov.post("/api/exceptions", json={
-            "target_type": "risk_finding", "target_id": finding_id,
-            "reason": "accepted while the fix is scheduled",
-            "compensating_control": "weekly manual review by the payments lead",
-            "expires_at": "2099-12-31",
-        })
+        waived = gov.post(
+            "/api/exceptions",
+            json={
+                "target_type": "risk_finding",
+                "target_id": finding_id,
+                "reason": "accepted while the fix is scheduled",
+                "compensating_control": "weekly manual review by the payments lead",
+                "expires_at": "2099-12-31",
+            },
+        )
         assert waived.status_code == 200, waived.text
 
     with connect() as connection:

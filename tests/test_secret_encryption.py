@@ -64,6 +64,7 @@ def test_rotation_keeps_old_values_readable_and_writes_under_the_new_key(monkeyp
 
     # rotate: legacy stays in the ring for decryption, 2026a becomes primary
     import json
+
     monkeypatch.setenv("NORINTH_SECRET_KEYS", json.dumps({"2026a": new}))
     monkeypatch.setenv("NORINTH_SECRET_PRIMARY", "2026a")
 
@@ -91,6 +92,7 @@ def test_v1_ciphertext_still_decrypts_via_the_ring(monkeypatch):
     # this key lives in the ring under a non-legacy id; v1 has no id so decrypt
     # must find it by trying each key
     import json
+
     monkeypatch.delenv("NORINTH_SECRET_KEY", raising=False)
     monkeypatch.setenv("NORINTH_SECRET_KEYS", json.dumps({"2026a": key_b64}))
     monkeypatch.setenv("NORINTH_SECRET_PRIMARY", "2026a")
@@ -156,11 +158,20 @@ def test_sso_client_secret_is_ciphertext_at_rest(super_admin_client, monkeypatch
     )
     super_admin_client.post(
         "/api/admin/organizations",
-        json={"tenant_id": "acme", "name": "acme", "admin_email": "oa@acme.test", "admin_display_name": "OA", "admin_password": "oa-password-1"},
+        json={
+            "tenant_id": "acme",
+            "name": "acme",
+            "admin_email": "oa@acme.test",
+            "admin_display_name": "OA",
+            "admin_password": "oa-password-1",
+        },
     )
     with TestClient(app) as org:
         login_and_activate(org, "oa@acme.test", "oa-password-1")
-        resp = org.put("/api/org/sso", json={"issuer": "https://idp.example.test", "client_id": "c", "client_secret": "super-secret-value"})
+        resp = org.put(
+            "/api/org/sso",
+            json={"issuer": "https://idp.example.test", "client_id": "c", "client_secret": "super-secret-value"},
+        )
         assert resp.status_code == 200, resp.text
 
     with connect() as connection:

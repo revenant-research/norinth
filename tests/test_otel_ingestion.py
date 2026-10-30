@@ -62,7 +62,18 @@ def test_otel_mapper_skips_non_genai_spans():
 
     payload = {
         "resourceSpans": [
-            {"scopeSpans": [{"spans": [{"name": "GET /health", "attributes": [{"key": "http.method", "value": {"stringValue": "GET"}}]}]}]}
+            {
+                "scopeSpans": [
+                    {
+                        "spans": [
+                            {
+                                "name": "GET /health",
+                                "attributes": [{"key": "http.method", "value": {"stringValue": "GET"}}],
+                            }
+                        ]
+                    }
+                ]
+            }
         ]
     }
     assert otel_spans_to_events(payload) == []
@@ -78,13 +89,15 @@ def test_otel_mapper_records_executed_model_and_preserves_requested_model(client
     payload = _otlp_chat_span()
     span = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
     span["attributes"].append({"key": "gen_ai.response.model", "value": {"stringValue": "gpt-4o-actual"}})
-    event, = otel_spans_to_events(payload)
+    (event,) = otel_spans_to_events(payload)
     assert event["attributes"]["model"] == "gpt-4o-actual"
     assert event["attributes"]["requested_model"] == "gpt-4o"
     response = client.post("/v1/otel/traces", json=payload, headers={"Authorization": "Bearer dev"})
     assert response.status_code == 200, response.text
     with connect() as connection:
-        row = connection.execute("SELECT models FROM governance_applications WHERE tenant_id = 'tenant-local'").fetchone()
+        row = connection.execute(
+            "SELECT models FROM governance_applications WHERE tenant_id = 'tenant-local'"
+        ).fetchone()
     assert json.loads(row["models"]) == ["gpt-4o-actual"]
 
 
@@ -95,7 +108,7 @@ def test_otel_mapper_accepts_a_response_model_without_a_request_model():
     attributes = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["attributes"]
     attributes[:] = [attr for attr in attributes if attr["key"] != "gen_ai.request.model"]
     attributes.append({"key": "gen_ai.response.model", "value": {"stringValue": "actual-model"}})
-    event, = otel_spans_to_events(payload)
+    (event,) = otel_spans_to_events(payload)
     assert event["attributes"]["model"] == "actual-model"
     assert event["attributes"].get("requested_model") is None
 
@@ -172,10 +185,14 @@ def _many_genai_spans(n: int) -> dict:
         }
         for i in range(n)
     ]
-    return {"resourceSpans": [{
-        "resource": {"attributes": [{"key": "service.name", "value": {"stringValue": "otel-app"}}]},
-        "scopeSpans": [{"spans": spans}],
-    }]}
+    return {
+        "resourceSpans": [
+            {
+                "resource": {"attributes": [{"key": "service.name", "value": {"stringValue": "otel-app"}}]},
+                "scopeSpans": [{"spans": spans}],
+            }
+        ]
+    }
 
 
 def test_otel_endpoint_caps_the_number_of_spans_per_request(client):
@@ -232,8 +249,12 @@ def test_otel_mapper_preserves_numeric_attributes_that_overflow_conversion():
 
     from app.ingestion.otel import otel_spans_to_events
 
-    for kind, raw in (("intValue", float("inf")), ("intValue", float("-inf")),
-                      ("intValue", float("nan")), ("doubleValue", 10**400)):
+    for kind, raw in (
+        ("intValue", float("inf")),
+        ("intValue", float("-inf")),
+        ("intValue", float("nan")),
+        ("doubleValue", 10**400),
+    ):
         payload = _otlp_chat_span()
         span = payload["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
         span["attributes"].append({"key": "gen_ai.usage.input_tokens", "value": {kind: raw}})

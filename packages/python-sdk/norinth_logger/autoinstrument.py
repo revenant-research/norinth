@@ -29,7 +29,9 @@ def _error_summary(client, exc: BaseException) -> dict[str, Any]:
         return {"type": type(exc).__name__}
 
 
-def _record_patched_call(client, *, provider, operation, prompt_getter, args, kwargs, response, status, error_summary, started) -> None:
+def _record_patched_call(
+    client, *, provider, operation, prompt_getter, args, kwargs, response, status, error_summary, started
+) -> None:
     """record a patched provider call; runs in the host's finally block, so it
     swallows its own failures when the client is fail-open"""
     try:

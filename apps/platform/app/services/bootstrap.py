@@ -46,10 +46,7 @@ def seed_super_admin() -> None:
         return
     email = os.getenv("NORINTH_SUPER_ADMIN_EMAIL", DEFAULT_SUPER_ADMIN_EMAIL)
     password = os.getenv("NORINTH_SUPER_ADMIN_PASSWORD", DEFAULT_SUPER_ADMIN_PASSWORD)
-    using_defaults = (
-        os.getenv("NORINTH_SUPER_ADMIN_EMAIL") is None
-        or os.getenv("NORINTH_SUPER_ADMIN_PASSWORD") is None
-    )
+    using_defaults = os.getenv("NORINTH_SUPER_ADMIN_EMAIL") is None or os.getenv("NORINTH_SUPER_ADMIN_PASSWORD") is None
     create_platform_user(
         user_ref=email,
         display_name="Platform Super Admin",

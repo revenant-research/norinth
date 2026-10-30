@@ -84,7 +84,4 @@ def test_legacy_governance_plane_user_endpoints_removed(super_admin_client):
         # these endpoints allowed cross-tenant account overwrite and global
         # self-escalation; they are gone
         assert org.post("/api/users", json={"user_ref": "x", "display_name": "x"}).status_code == 404
-        assert (
-            org.post("/api/role-assignments", json={"user_ref": "x", "role": "governance_admin"}).status_code
-            == 404
-        )
+        assert org.post("/api/role-assignments", json={"user_ref": "x", "role": "governance_admin"}).status_code == 404

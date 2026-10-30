@@ -53,8 +53,12 @@ def init_prompts() -> None:
             )
             """
         )
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_prompt_templates_scope ON prompt_templates(tenant_id, project, environment)")
-        connection.execute("CREATE INDEX IF NOT EXISTS idx_prompt_versions_scope ON prompt_versions(tenant_id, project, environment)")
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_prompt_templates_scope ON prompt_templates(tenant_id, project, environment)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_prompt_versions_scope ON prompt_versions(tenant_id, project, environment)"
+        )
 
 
 def process_prompt_events(events: list[dict[str, Any]]) -> None:
@@ -74,7 +78,9 @@ def upsert_prompt_event(connection, event: dict[str, Any]) -> None:
 
     prompt_id = attrs["prompt_id"]
     version = attrs["version"]
-    version_id = prompt_version_key(metadata.get("tenant_id"), event["project"], event["environment"], prompt_id, version)
+    version_id = prompt_version_key(
+        metadata.get("tenant_id"), event["project"], event["environment"], prompt_id, version
+    )
     template_summary = json.dumps(as_object(attrs.get("template")), sort_keys=True)
     change_notes_summary = json.dumps(as_object(attrs.get("change_notes")), sort_keys=True)
     status = attrs.get("prompt_status") or event.get("status", "active")
@@ -177,11 +183,17 @@ def load_prompt_version(
     return None if row is None else dict(row)
 
 
+def list_prompt_templates(
+    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
+) -> list[dict[str, Any]]:
+    return scoped_rows(
+        "prompt_templates", tenant_id=tenant_id, project=project, environment=environment, order_by="last_seen"
+    )
 
 
-def list_prompt_templates(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
-    return scoped_rows("prompt_templates", tenant_id=tenant_id, project=project, environment=environment, order_by="last_seen")
-
-
-def list_prompt_versions(*, tenant_id: str | None = None, project: str | None = None, environment: str | None = None) -> list[dict[str, Any]]:
-    return scoped_rows("prompt_versions", tenant_id=tenant_id, project=project, environment=environment, order_by="observed_at")
+def list_prompt_versions(
+    *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
+) -> list[dict[str, Any]]:
+    return scoped_rows(
+        "prompt_versions", tenant_id=tenant_id, project=project, environment=environment, order_by="observed_at"
+    )

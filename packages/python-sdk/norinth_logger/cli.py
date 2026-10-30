@@ -20,6 +20,7 @@ logger = logging.getLogger("norinth_cli")
 
 AI_PROVIDERS = {"openai", "anthropic", "langchain", "cohere", "google.generativeai", "bedrock"}
 
+
 class AIScanner(ast.NodeVisitor):
     def __init__(self, filepath: Path) -> None:
         self.filepath = filepath
@@ -58,7 +59,7 @@ class AIScanner(ast.NodeVisitor):
                     # dynamic model arg; note it, can't resolve statically
                     model_name = f"<dynamic_from_var:{keyword.value.id}>"
                     self.models.add(model_name)
-                    
+
         # match provider call by function name
         func_name = None
         if isinstance(node.func, ast.Attribute):
@@ -67,13 +68,10 @@ class AIScanner(ast.NodeVisitor):
             func_name = node.func.id
 
         if func_name in {"create", "invoke", "predict", "complete", "stream"}:
-            self.calls.append({
-                "line": node.lineno,
-                "operation": func_name,
-                "model_detected": model_name
-            })
-            
+            self.calls.append({"line": node.lineno, "operation": func_name, "model_detected": model_name})
+
         self.generic_visit(node)
+
 
 def scan_directory(directory: str) -> dict[str, Any]:
     root_path = Path(directory).resolve()
@@ -85,7 +83,7 @@ def scan_directory(directory: str) -> dict[str, Any]:
         "providers_detected": set(),
         "models_detected": set(),
         "norinth_instrumentation_detected": False,
-        "ai_files": []
+        "ai_files": [],
     }
 
     ignore_dirs = {".git", ".venv", "venv", "env", "node_modules", "__pycache__", "build", "dist"}
@@ -95,40 +93,43 @@ def scan_directory(directory: str) -> dict[str, Any]:
         for file in files:
             if not file.endswith(".py"):
                 continue
-            
+
             filepath = Path(root) / file
             manifest["total_files_scanned"] += 1
-            
+
             try:
                 with open(filepath, encoding="utf-8") as f:
                     content = f.read()
-                
+
                 tree = ast.parse(content, filename=str(filepath))
                 scanner = AIScanner(filepath)
                 scanner.visit(tree)
-                
+
                 if scanner.providers or scanner.models or scanner.norinth_instrumented:
                     manifest["providers_detected"].update(scanner.providers)
                     manifest["models_detected"].update(scanner.models)
                     if scanner.norinth_instrumented:
                         manifest["norinth_instrumentation_detected"] = True
-                        
+
                     rel_path = filepath.relative_to(root_path)
-                    manifest["ai_files"].append({
-                        "file": str(rel_path),
-                        "providers": list(scanner.providers),
-                        "models": list(scanner.models),
-                        "instrumented": scanner.norinth_instrumented,
-                        "operations": scanner.calls
-                    })
+                    manifest["ai_files"].append(
+                        {
+                            "file": str(rel_path),
+                            "providers": list(scanner.providers),
+                            "models": list(scanner.models),
+                            "instrumented": scanner.norinth_instrumented,
+                            "operations": scanner.calls,
+                        }
+                    )
             except Exception as e:
                 logger.debug(f"Failed to scan {filepath}: {e}")
 
     # sets -> lists for json
     manifest["providers_detected"] = list(manifest["providers_detected"])
     manifest["models_detected"] = list(manifest["models_detected"])
-    
+
     return manifest
+
 
 # --- norinth CLI -------------------------------------------------------------------
 #
@@ -138,7 +139,14 @@ def scan_directory(directory: str) -> dict[str, Any]:
 #   norinth gate check            exit 0 only if the release gate is approved (CI)
 #   norinth attest keygen|sign    sign eval results so gates accept them as evidence
 
-ENV_KEYS = ("NORINTH_ENDPOINT", "NORINTH_API_KEY", "NORINTH_PROJECT", "NORINTH_ENVIRONMENT", "NORINTH_SERVICE", "NORINTH_APPLICATION_NAME")
+ENV_KEYS = (
+    "NORINTH_ENDPOINT",
+    "NORINTH_API_KEY",
+    "NORINTH_PROJECT",
+    "NORINTH_ENVIRONMENT",
+    "NORINTH_SERVICE",
+    "NORINTH_APPLICATION_NAME",
+)
 
 
 def _ok(msg: str) -> None:
@@ -149,7 +157,9 @@ def _bad(msg: str) -> None:
     print(f"  \u2717 {msg}")
 
 
-def _http(method: str, url: str, *, key: str | None = None, body: dict | None = None, timeout: float = 10.0) -> tuple[int, dict | str]:
+def _http(
+    method: str, url: str, *, key: str | None = None, body: dict | None = None, timeout: float = 10.0
+) -> tuple[int, dict | str]:
     data = json.dumps(body).encode("utf-8") if body is not None else None
     headers = {"Content-Type": "application/json", "User-Agent": "norinth-cli"}
     if key:
@@ -180,7 +190,13 @@ def _http(method: str, url: str, *, key: str | None = None, body: dict | None = 
 
 def _settings(args: argparse.Namespace) -> dict[str, str]:
     values = {k: os.environ.get(k, "") for k in ENV_KEYS}
-    for attr, env in (("endpoint", "NORINTH_ENDPOINT"), ("api_key", "NORINTH_API_KEY"), ("project", "NORINTH_PROJECT"), ("environment", "NORINTH_ENVIRONMENT"), ("service", "NORINTH_SERVICE")):
+    for attr, env in (
+        ("endpoint", "NORINTH_ENDPOINT"),
+        ("api_key", "NORINTH_API_KEY"),
+        ("project", "NORINTH_PROJECT"),
+        ("environment", "NORINTH_ENVIRONMENT"),
+        ("service", "NORINTH_SERVICE"),
+    ):
         if getattr(args, attr, None):
             values[env] = getattr(args, attr)
     if getattr(args, "api_key", None):
@@ -232,7 +248,9 @@ def _prompt(label: str, default: str = "", secret: bool = False) -> str:
 def cmd_init(args: argparse.Namespace) -> int:
     """write NORINTH_* settings to .env and print the setup snippet"""
     current = _settings(args)
-    endpoint = current["NORINTH_ENDPOINT"] or _prompt("Norinth endpoint (e.g. https://norinth.internal)", "http://localhost:8001")
+    endpoint = current["NORINTH_ENDPOINT"] or _prompt(
+        "Norinth endpoint (e.g. https://norinth.internal)", "http://localhost:8001"
+    )
     api_key = current["NORINTH_API_KEY"] or _prompt("Ingestion key (nrk_...)", secret=True)
     project = current["NORINTH_PROJECT"] or _prompt("Project", Path.cwd().name)
     environment = current["NORINTH_ENVIRONMENT"] or _prompt("Environment", "prod")
@@ -260,7 +278,9 @@ def cmd_init(args: argparse.Namespace) -> int:
         pass
     _ok(f"wrote {env_path} ({', '.join(values)}) — keep it out of version control")
     if providers:
-        _ok(f"detected {', '.join(providers)} in {manifest['total_files_scanned']} files; wrap each client to record its calls")
+        _ok(
+            f"detected {', '.join(providers)} in {manifest['total_files_scanned']} files; wrap each client to record its calls"
+        )
     else:
         print("  - no OpenAI/Anthropic clients detected statically; explicit events still work")
     print(
@@ -309,7 +329,12 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         "service": s["NORINTH_SERVICE"] or "norinth-doctor",
         "environment": s["NORINTH_ENVIRONMENT"] or "dev",
         "project": s["NORINTH_PROJECT"] or "doctor",
-        "attributes": {"mode": "observe", "fail_open": True, "failed_sends": 0, "metadata": {"source": "norinth doctor"}},
+        "attributes": {
+            "mode": "observe",
+            "fail_open": True,
+            "failed_sends": 0,
+            "metadata": {"source": "norinth doctor"},
+        },
     }
     status, body = _http("POST", f"{endpoint}/v1/events/batch", key=key, body={"events": [event]})
     if status == 200 and isinstance(body, dict) and body.get("accepted", 0) >= 1:
@@ -328,7 +353,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         _bad(f"POST /v1/events/batch returned {status}: {str(body)[:160]}")
 
     if failures == 0:
-        print("\nAll good. Open the dashboard: the event appears under Monitoring; your service appears in Inventory once it sends a model call.")
+        print(
+            "\nAll good. Open the dashboard: the event appears under Monitoring; your service appears in Inventory once it sends a model call."
+        )
         return 0
     return 1
 
@@ -370,7 +397,9 @@ def cmd_gate_check(args: argparse.Namespace) -> int:
             _bad(msg)
             return 1
         if status == 404:
-            _bad(f"no gate for deployment {args.deployment!r} version {args.version!r}: {body.get('detail') if isinstance(body, dict) else body}")
+            _bad(
+                f"no gate for deployment {args.deployment!r} version {args.version!r}: {body.get('detail') if isinstance(body, dict) else body}"
+            )
             return 2
         if status == 401:
             _bad("ingestion key rejected (401)")
@@ -388,7 +417,9 @@ def cmd_attest(args: argparse.Namespace) -> int:
     if args.attest_cmd == "keygen":
         return attest_module.main(["keygen"])
     if args.attest_cmd == "sign":
-        key_pem = os.environ.get("NORINTH_ATTEST_KEY") or (Path(args.key_file).read_text(encoding="utf-8") if args.key_file else "")
+        key_pem = os.environ.get("NORINTH_ATTEST_KEY") or (
+            Path(args.key_file).read_text(encoding="utf-8") if args.key_file else ""
+        )
         if not key_pem:
             _bad("provide the private key via NORINTH_ATTEST_KEY or --key-file")
             return 2
@@ -403,7 +434,10 @@ def cmd_attest(args: argparse.Namespace) -> int:
 
 def _add_connection_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--endpoint", help="Norinth base URL (default: NORINTH_ENDPOINT)")
-    parser.add_argument("--api-key", help="Ingestion key (default: NORINTH_API_KEY, which keeps it out of process lists and shell history)")
+    parser.add_argument(
+        "--api-key",
+        help="Ingestion key (default: NORINTH_API_KEY, which keeps it out of process lists and shell history)",
+    )
     parser.add_argument("--project")
     parser.add_argument("--environment")
     parser.add_argument("--service")
@@ -434,7 +468,9 @@ def build_parser() -> argparse.ArgumentParser:
     _add_connection_flags(check)
     check.add_argument("--deployment", required=True, help="deployment_id as sent in deployment.event")
     check.add_argument("--version", required=True, help="version as sent in deployment.event")
-    check.add_argument("--current", action="store_true", help="also require eligibility under current evidence and policy")
+    check.add_argument(
+        "--current", action="store_true", help="also require eligibility under current evidence and policy"
+    )
     check.add_argument("--wait", type=int, default=0, help="seconds to keep polling for approval (default: no wait)")
     check.add_argument("--poll", type=int, default=10, help="poll interval in seconds")
     check.set_defaults(func=cmd_gate_check)
@@ -453,7 +489,11 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     # bare `norinth <dir>` is treated as `scan <dir>`
-    if argv and argv[0] not in {"scan", "init", "doctor", "gate", "attest", "-h", "--help"} and not argv[0].startswith("-"):
+    if (
+        argv
+        and argv[0] not in {"scan", "init", "doctor", "gate", "attest", "-h", "--help"}
+        and not argv[0].startswith("-")
+    ):
         argv = ["scan", *argv]
     parser = build_parser()
     args = parser.parse_args(argv)

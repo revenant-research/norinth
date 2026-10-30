@@ -40,7 +40,11 @@ class WebhookRequest(BaseModel):
 @router.get("/api/org/webhooks")
 def list_hooks(actor: ActorContext = Depends(current_actor)) -> dict[str, Any]:
     tenant_id = _tenant(actor)
-    return {"webhooks": store.list_webhooks(tenant_id), "events": list(store.WEBHOOK_EVENTS), "smtp_configured": smtp_configured()}
+    return {
+        "webhooks": store.list_webhooks(tenant_id),
+        "events": list(store.WEBHOOK_EVENTS),
+        "smtp_configured": smtp_configured(),
+    }
 
 
 @router.post("/api/org/webhooks", status_code=201)
@@ -53,9 +57,23 @@ def create_hook(payload: WebhookRequest, actor: ActorContext = Depends(current_a
     unknown = [e for e in payload.events if e != "*" and e not in store.WEBHOOK_EVENTS]
     if unknown:
         raise HTTPException(status_code=400, detail=f"unknown events: {unknown}")
-    secret, record = store.create_webhook(tenant_id, name=payload.name, url=payload.url, events=payload.events, fmt=payload.format, created_by=actor.user_ref)
+    secret, record = store.create_webhook(
+        tenant_id,
+        name=payload.name,
+        url=payload.url,
+        events=payload.events,
+        fmt=payload.format,
+        created_by=actor.user_ref,
+    )
     # log only the masked host; a slack webhook path is a bearer secret
-    record_audit(actor_ref=actor.user_ref, action="webhook.create", tenant_id=tenant_id, target_type="webhook", target_id=record["webhook_id"], detail={"url": store.mask_url(payload.url), "events": payload.events})
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="webhook.create",
+        tenant_id=tenant_id,
+        target_type="webhook",
+        target_id=record["webhook_id"],
+        detail={"url": store.mask_url(payload.url), "events": payload.events},
+    )
     # signing secret shown once
     return {"webhook": record, "secret": secret}
 
@@ -65,7 +83,13 @@ def delete_hook(webhook_id: str, actor: ActorContext = Depends(current_actor)) -
     tenant_id = _tenant(actor)
     if not store.delete_webhook(webhook_id, tenant_id):
         raise HTTPException(status_code=404, detail="webhook not found")
-    record_audit(actor_ref=actor.user_ref, action="webhook.delete", tenant_id=tenant_id, target_type="webhook", target_id=webhook_id)
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="webhook.delete",
+        tenant_id=tenant_id,
+        target_type="webhook",
+        target_id=webhook_id,
+    )
 
 
 @router.post("/api/org/webhooks/{webhook_id}/test")
@@ -82,7 +106,14 @@ def test_hook(webhook_id: str, actor: ActorContext = Depends(current_actor)) -> 
             event_type="test",
             target=webhook_id,
             subject="Norinth test notification",
-            payload={"type": "test", "tenant_id": tenant_id, "subject": "Norinth test notification", "text": f"Sent by {actor.user_ref} from Identity & Integrations.", "data": {}, "link": None},
+            payload={
+                "type": "test",
+                "tenant_id": tenant_id,
+                "subject": "Norinth test notification",
+                "text": f"Sent by {actor.user_ref} from Identity & Integrations.",
+                "data": {},
+                "link": None,
+            },
         )
     result = deliver_pending(limit=20)
     refreshed = store.load_webhook(webhook_id, tenant_id) or {}

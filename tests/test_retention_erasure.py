@@ -56,9 +56,7 @@ def _provision_and_ingest(super_admin_client, tid, email):
 
 def test_purge_requires_matching_confirmation(super_admin_client):
     _provision_and_ingest(super_admin_client, "acme", "a@acme.test")
-    bad = super_admin_client.post(
-        "/api/admin/organizations/acme/purge", json={"confirm_tenant_id": "wrong"}
-    )
+    bad = super_admin_client.post("/api/admin/organizations/acme/purge", json={"confirm_tenant_id": "wrong"})
     assert bad.status_code == 400
 
 
@@ -70,27 +68,25 @@ def test_purge_erases_tenant_and_isolates_others(super_admin_client):
     assert preview.status_code == 200
     assert preview.json()["total_rows"] > 0
 
-    purged = super_admin_client.post(
-        "/api/admin/organizations/acme/purge", json={"confirm_tenant_id": "acme"}
-    )
+    purged = super_admin_client.post("/api/admin/organizations/acme/purge", json={"confirm_tenant_id": "acme"})
     assert purged.status_code == 200, purged.text
     assert purged.json()["purged"] is True
 
     from app.storage.raw_events import connect
 
     with connect() as connection:
-        acme_events = connection.execute(
-            "SELECT COUNT(*) AS n FROM sdk_events WHERE tenant_id = 'acme'"
-        ).fetchone()["n"]
-        beta_events = connection.execute(
-            "SELECT COUNT(*) AS n FROM sdk_events WHERE tenant_id = 'beta'"
-        ).fetchone()["n"]
-        acme_org = connection.execute(
-            "SELECT COUNT(*) AS n FROM organizations WHERE tenant_id = 'acme'"
-        ).fetchone()["n"]
-        acme_users = connection.execute(
-            "SELECT COUNT(*) AS n FROM platform_users WHERE tenant_id = 'acme'"
-        ).fetchone()["n"]
+        acme_events = connection.execute("SELECT COUNT(*) AS n FROM sdk_events WHERE tenant_id = 'acme'").fetchone()[
+            "n"
+        ]
+        beta_events = connection.execute("SELECT COUNT(*) AS n FROM sdk_events WHERE tenant_id = 'beta'").fetchone()[
+            "n"
+        ]
+        acme_org = connection.execute("SELECT COUNT(*) AS n FROM organizations WHERE tenant_id = 'acme'").fetchone()[
+            "n"
+        ]
+        acme_users = connection.execute("SELECT COUNT(*) AS n FROM platform_users WHERE tenant_id = 'acme'").fetchone()[
+            "n"
+        ]
 
     assert acme_events == 0  # acme's telemetry erased
     assert acme_org == 0  # organization removed
@@ -100,9 +96,7 @@ def test_purge_erases_tenant_and_isolates_others(super_admin_client):
 
 def test_purge_preserves_the_audit_chain(super_admin_client):
     _provision_and_ingest(super_admin_client, "acme", "a@acme.test")
-    super_admin_client.post(
-        "/api/admin/organizations/acme/purge", json={"confirm_tenant_id": "acme"}
-    )
+    super_admin_client.post("/api/admin/organizations/acme/purge", json={"confirm_tenant_id": "acme"})
     # tamper-evident audit log is retained, so its chain still verifies
     verify = super_admin_client.get("/api/admin/audit-logs/verify")
     assert verify.status_code == 200
@@ -126,14 +120,10 @@ def test_retention_purges_old_events(super_admin_client):
 
     # the scope has to be explicit; leaving it out is refused rather than
     # ageing out every organization
-    unscoped = super_admin_client.post(
-        "/api/admin/retention/purge-events", json={"retention_days": 1}
-    )
+    unscoped = super_admin_client.post("/api/admin/retention/purge-events", json={"retention_days": 1})
     assert unscoped.status_code == 400, unscoped.text
 
-    resp = super_admin_client.post(
-        "/api/admin/retention/purge-events", json={"retention_days": 1, "all_tenants": True}
-    )
+    resp = super_admin_client.post("/api/admin/retention/purge-events", json={"retention_days": 1, "all_tenants": True})
     assert resp.status_code == 200, resp.text
     assert resp.json()["deleted"] >= 1
 

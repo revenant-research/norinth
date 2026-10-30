@@ -17,11 +17,19 @@ INCIDENT_ID = "INC-A"
 
 def _incident_event(tenant_id: str) -> dict:
     return {
-        "type": "incident.event", "schema_version": "2026-01", "trace_id": f"trc_{tenant_id}",
-        "span_id": f"spn_{tenant_id}", "timestamp": "2026-08-22T00:00:00Z", "service": "svc",
-        "environment": "prod", "project": "p1", "status": "error",
+        "type": "incident.event",
+        "schema_version": "2026-01",
+        "trace_id": f"trc_{tenant_id}",
+        "span_id": f"spn_{tenant_id}",
+        "timestamp": "2026-08-22T00:00:00Z",
+        "service": "svc",
+        "environment": "prod",
+        "project": "p1",
+        "status": "error",
         "attributes": {
-            "incident_id": INCIDENT_ID, "title": f"{tenant_id} incident", "severity": "High",
+            "incident_id": INCIDENT_ID,
+            "title": f"{tenant_id} incident",
+            "severity": "High",
             "incident_status": "open",
             "metadata": {"tenant_id": tenant_id, "application_name": "PayApp", "workflow_name": "wf"},
         },
@@ -35,18 +43,34 @@ def _org_with_incident(super_admin_client, tenant_id: str) -> tuple[str, str]:
     admin_email, admin_password = f"oa@{tenant_id}.test", f"{tenant_id}-oa-pw-1"
     created = super_admin_client.post(
         "/api/admin/organizations",
-        json={"tenant_id": tenant_id, "name": tenant_id.title(), "admin_email": admin_email,
-              "admin_display_name": "OA", "admin_password": admin_password},
+        json={
+            "tenant_id": tenant_id,
+            "name": tenant_id.title(),
+            "admin_email": admin_email,
+            "admin_display_name": "OA",
+            "admin_password": admin_password,
+        },
     )
     assert created.status_code == 200, created.text
     gov_email, gov_password = f"gov@{tenant_id}.test", f"{tenant_id}-gov-pw-1"
     with TestClient(app) as org:
         login_and_activate(org, admin_email, admin_password)
         token = org.post("/api/ingestion-keys", json={"name": "ci"}).json()["token"]
-        assert org.post("/api/org/users", json={"email": gov_email, "display_name": "Gov", "password": gov_password}).status_code == 200
-        assert org.post("/api/org/role-assignments", json={"user_ref": gov_email, "role": "governance_admin"}).status_code == 200
-        sent = org.post("/v1/events/batch", json={"events": [_incident_event(tenant_id)]},
-                        headers={"Authorization": f"Bearer {token}"})
+        assert (
+            org.post(
+                "/api/org/users", json={"email": gov_email, "display_name": "Gov", "password": gov_password}
+            ).status_code
+            == 200
+        )
+        assert (
+            org.post("/api/org/role-assignments", json={"user_ref": gov_email, "role": "governance_admin"}).status_code
+            == 200
+        )
+        sent = org.post(
+            "/v1/events/batch",
+            json={"events": [_incident_event(tenant_id)]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
         assert sent.status_code == 200, sent.text
     return gov_email, gov_password
 
@@ -115,6 +139,8 @@ def test_each_organization_sees_only_its_own_incident_and_owner(super_admin_clie
 
 def test_the_platform_operator_cannot_close_a_tenant_incident(super_admin_client):
     _org_with_incident(super_admin_client, "acme")
-    closed = super_admin_client.post(f"/api/incidents/{INCIDENT_ID}/close", json={"rationale": "closed by the platform operator"})
+    closed = super_admin_client.post(
+        f"/api/incidents/{INCIDENT_ID}/close", json={"rationale": "closed by the platform operator"}
+    )
     assert closed.status_code in {403, 404}, closed.text
     assert _incident_rows()["acme"]["status"] == "open"

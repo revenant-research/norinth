@@ -71,11 +71,26 @@ def test_agentic_application_without_a_model_call_is_in_the_inventory(super_admi
         org,
         token,
         [
-            _event("agent.run", "a1", {"agent_name": "triage", "step_count": 1, "outcome": "completed",
-                                       "steps": [{"tool": "patient_lookup"}],
-                                       "metadata": _meta("ShadowAgentApp", workflow_name="triage")}),
-            _event("tool.call", "t1", {"tool_name": "patient_lookup", "status": "success",
-                                       "metadata": _meta("ShadowAgentApp", workflow_name="triage")}),
+            _event(
+                "agent.run",
+                "a1",
+                {
+                    "agent_name": "triage",
+                    "step_count": 1,
+                    "outcome": "completed",
+                    "steps": [{"tool": "patient_lookup"}],
+                    "metadata": _meta("ShadowAgentApp", workflow_name="triage"),
+                },
+            ),
+            _event(
+                "tool.call",
+                "t1",
+                {
+                    "tool_name": "patient_lookup",
+                    "status": "success",
+                    "metadata": _meta("ShadowAgentApp", workflow_name="triage"),
+                },
+            ),
         ],
     )
 
@@ -125,12 +140,40 @@ def test_ci_metadata_alone_does_not_create_an_application(super_admin_client):
         org,
         token,
         [
-            _event("prompt.event", "p1", {"prompt_id": "pr-1", "version": "v1", "artifact_ref": "sha256:a",
-                                          "status": "active", "metadata": meta}),
-            _event("deployment.event", "d1", {"deployment_id": "dep-1", "version": "v1",
-                                              "artifact_ref": "sha256:a", "status": "active", "metadata": meta}),
-            _event("eval.result", "e1", {"eval_name": "safety", "score": 0.9, "threshold": 0.5,
-                                         "passed": True, "prompt_version": "v1", "metadata": meta}),
+            _event(
+                "prompt.event",
+                "p1",
+                {
+                    "prompt_id": "pr-1",
+                    "version": "v1",
+                    "artifact_ref": "sha256:a",
+                    "status": "active",
+                    "metadata": meta,
+                },
+            ),
+            _event(
+                "deployment.event",
+                "d1",
+                {
+                    "deployment_id": "dep-1",
+                    "version": "v1",
+                    "artifact_ref": "sha256:a",
+                    "status": "active",
+                    "metadata": meta,
+                },
+            ),
+            _event(
+                "eval.result",
+                "e1",
+                {
+                    "eval_name": "safety",
+                    "score": 0.9,
+                    "threshold": 0.5,
+                    "passed": True,
+                    "prompt_version": "v1",
+                    "metadata": meta,
+                },
+            ),
         ],
     )
 
@@ -149,13 +192,30 @@ def test_model_calls_still_counts_only_model_calls(super_admin_client):
         org,
         token,
         [
-            _event("model.call", "m1", {"provider": "openai", "model": "gpt-4o",
-                                        "usage": {"input_tokens": 10, "output_tokens": 5}, "metadata": meta}),
-            _event("model.call", "m2", {"provider": "openai", "model": "gpt-4o",
-                                        "usage": {"input_tokens": 1, "output_tokens": 2}, "metadata": meta}),
+            _event(
+                "model.call",
+                "m1",
+                {
+                    "provider": "openai",
+                    "model": "gpt-4o",
+                    "usage": {"input_tokens": 10, "output_tokens": 5},
+                    "metadata": meta,
+                },
+            ),
+            _event(
+                "model.call",
+                "m2",
+                {
+                    "provider": "openai",
+                    "model": "gpt-4o",
+                    "usage": {"input_tokens": 1, "output_tokens": 2},
+                    "metadata": meta,
+                },
+            ),
             _event("tool.call", "t2", {"tool_name": "lookup", "status": "success", "metadata": meta}),
-            _event("agent.run", "a2", {"agent_name": "a", "step_count": 0, "outcome": "ok",
-                                       "steps": [], "metadata": meta}),
+            _event(
+                "agent.run", "a2", {"agent_name": "a", "step_count": 0, "outcome": "ok", "steps": [], "metadata": meta}
+            ),
         ],
     )
 
@@ -174,8 +234,11 @@ def test_model_calls_still_counts_only_model_calls(super_admin_client):
 def test_events_without_an_application_name_do_not_invent_a_workflow(super_admin_client):
     org, token = _org(super_admin_client)
     # sdk.health names a lifecycle state, not a workflow
-    _ingest(org, token, [{**_event("sdk.health", "h1", {"mode": "observe", "metadata": {"tenant_id": "acme"}}),
-                          "name": "initialized"}])
+    _ingest(
+        org,
+        token,
+        [{**_event("sdk.health", "h1", {"mode": "observe", "metadata": {"tenant_id": "acme"}}), "name": "initialized"}],
+    )
 
     workflows = {w["workflow_name"] for w in org.get("/api/workflows").json()["workflows"]}
     assert "initialized" not in workflows, workflows

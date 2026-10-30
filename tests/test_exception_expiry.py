@@ -26,16 +26,21 @@ def test_expired_exception_reopens_the_finding(fresh_db):
     with connect() as connection:
         finding = connection.execute("SELECT status FROM risk_findings WHERE finding_id = 'f1'").fetchone()
         exc = connection.execute("SELECT status FROM governance_exceptions WHERE exception_id = 'e1'").fetchone()
-    assert finding["status"] == "open"   # reopened on expiry
+    assert finding["status"] == "open"  # reopened on expiry
     assert exc["status"] == "expired"
 
     # still-active exception with future expiry is untouched
     with connect() as connection:
         connection.execute("UPDATE risk_findings SET status = 'waived' WHERE finding_id = 'f1'")
-        connection.execute("UPDATE governance_exceptions SET status = 'active', expires_at = '2999-01-01T00:00:00+00:00' WHERE exception_id = 'e1'")
+        connection.execute(
+            "UPDATE governance_exceptions SET status = 'active', expires_at = '2999-01-01T00:00:00+00:00' WHERE exception_id = 'e1'"
+        )
     assert expire_due_exceptions() == 0
     with connect() as connection:
-        assert connection.execute("SELECT status FROM risk_findings WHERE finding_id = 'f1'").fetchone()["status"] == "waived"
+        assert (
+            connection.execute("SELECT status FROM risk_findings WHERE finding_id = 'f1'").fetchone()["status"]
+            == "waived"
+        )
 
 
 def test_exception_requires_a_future_date(super_admin_client):

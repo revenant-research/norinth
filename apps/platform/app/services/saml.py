@@ -80,7 +80,10 @@ def build_authn_redirect(tenant_id: str, base_url: str) -> tuple[str, str]:
     deflated = zlib.compress(xml.encode("utf-8"))[2:-4]
     saml_request = base64.b64encode(deflated).decode("ascii")
     separator = "&" if "?" in config["idp_sso_url"] else "?"
-    return f"{config['idp_sso_url']}{separator}{parse.urlencode({'SAMLRequest': saml_request, 'RelayState': tenant_id})}", request_id
+    return (
+        f"{config['idp_sso_url']}{separator}{parse.urlencode({'SAMLRequest': saml_request, 'RelayState': tenant_id})}",
+        request_id,
+    )
 
 
 # --- Response ---------------------------------------------------------------------
@@ -202,11 +205,15 @@ def process_response(saml_response_b64: str, base_url: str, expected_request_id:
         if values:
             attributes[attr.get("Name", "")] = values[0]
     email = (
-        attributes.get("email")
-        or attributes.get("mail")
-        or attributes.get("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress")
-        or (name_id if "@" in name_id else "")
-    ).strip().lower()
+        (
+            attributes.get("email")
+            or attributes.get("mail")
+            or attributes.get("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress")
+            or (name_id if "@" in name_id else "")
+        )
+        .strip()
+        .lower()
+    )
     if not email:
         raise SamlError("identity provider did not supply an email (NameID or email attribute)")
     domain = config.get("allowed_email_domain")

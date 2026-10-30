@@ -56,7 +56,9 @@ def validate_external_url(url: str) -> None:
     if not host:
         raise EgressError("URL has no host")
     try:
-        infos = socket.getaddrinfo(host, parsed.port or (443 if parsed.scheme == "https" else 80), proto=socket.IPPROTO_TCP)
+        infos = socket.getaddrinfo(
+            host, parsed.port or (443 if parsed.scheme == "https" else 80), proto=socket.IPPROTO_TCP
+        )
     except socket.gaierror as error:
         raise EgressError(f"could not resolve host {host!r}") from error
     for info in infos:
@@ -144,7 +146,5 @@ def safe_urlopen(url_or_request: Any, *, timeout: float = 10.0):
     if _allow_private():
         # dev bypass: no pinning, plain opener (still follows redirects)
         return urllib.request.build_opener().open(url_or_request, timeout=timeout)
-    opener = urllib.request.build_opener(
-        _PinnedHTTPHandler(), _PinnedHTTPSHandler(), _ValidatingRedirectHandler()
-    )
+    opener = urllib.request.build_opener(_PinnedHTTPHandler(), _PinnedHTTPSHandler(), _ValidatingRedirectHandler())
     return opener.open(url_or_request, timeout=timeout)

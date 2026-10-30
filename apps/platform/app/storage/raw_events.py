@@ -52,6 +52,7 @@ def deserialize_raw_event(stored: str) -> dict[str, Any]:
 def _as_object(value):
     return value if isinstance(value, dict) else {}
 
+
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[2] / "data" / "norinth.sqlite3"
 
 
@@ -124,10 +125,31 @@ def init_storage() -> None:
 
 # columns written per event; ingested_at is stamped by SQL, not a bound param
 _EVENT_COLUMNS = [
-    "event_type", "schema_version", "trace_id", "span_id", "parent_span_id", "timestamp", "service",
-    "environment", "project", "system", "name", "status", "duration_ms", "tenant_id", "user_id",
-    "application_name", "workflow_name", "use_case", "model_purpose", "provider", "model",
-    "operation", "input_tokens", "output_tokens", "raw_event",
+    "event_type",
+    "schema_version",
+    "trace_id",
+    "span_id",
+    "parent_span_id",
+    "timestamp",
+    "service",
+    "environment",
+    "project",
+    "system",
+    "name",
+    "status",
+    "duration_ms",
+    "tenant_id",
+    "user_id",
+    "application_name",
+    "workflow_name",
+    "use_case",
+    "model_purpose",
+    "provider",
+    "model",
+    "operation",
+    "input_tokens",
+    "output_tokens",
+    "raw_event",
 ]
 # keep each multi-row INSERT well under postgres's 65535 bound-parameter limit
 _INSERT_CHUNK = 500
@@ -177,7 +199,9 @@ def insert_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
         by_tenant: dict[str, int] = {}
         for event in inserted:
             metadata = _as_object((event.get("attributes") or {}).get("metadata"))
-            by_tenant[metadata.get("tenant_id") or "unknown"] = by_tenant.get(metadata.get("tenant_id") or "unknown", 0) + 1
+            by_tenant[metadata.get("tenant_id") or "unknown"] = (
+                by_tenant.get(metadata.get("tenant_id") or "unknown", 0) + 1
+            )
         for tenant, count in by_tenant.items():
             counter_inc("norinth_ingest_events_total", "Events accepted, by tenant", {"tenant": tenant}, count)
             counter_inc("norinth_ingest_batches_total", "Batches that inserted events, by tenant", {"tenant": tenant})
@@ -195,9 +219,7 @@ def insert_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
 _FOLD_ID_CHUNK = 500
 
 
-def claim_unfolded(
-    tenant_id: str | None, *, limit: int, max_attempts: int | None = None
-) -> list[dict[str, Any]]:
+def claim_unfolded(tenant_id: str | None, *, limit: int, max_attempts: int | None = None) -> list[dict[str, Any]]:
     """oldest pending rows for a tenant, as [{"id", "event"}], for folding
 
     max_attempts excludes rows that have already failed that many folds so a
@@ -227,8 +249,7 @@ def mark_folded(ids: list[int]) -> None:
             chunk = ids[start : start + _FOLD_ID_CHUNK]
             placeholders = ", ".join("?" for _ in chunk)
             connection.execute(
-                f"UPDATE sdk_events SET folded_at = datetime('now') "
-                f"WHERE folded_at IS NULL AND id IN ({placeholders})",
+                f"UPDATE sdk_events SET folded_at = datetime('now') WHERE folded_at IS NULL AND id IN ({placeholders})",
                 tuple(chunk),
             )
 
@@ -518,9 +539,7 @@ def count_distinct(
     # column is a fixed identifier chosen by callers, never user input
     where, params = _event_filters(tenant_id, project, environment, None)
     with connect() as connection:
-        row = connection.execute(
-            f"SELECT COUNT(DISTINCT {column}) AS count FROM sdk_events {where}", params
-        ).fetchone()
+        row = connection.execute(f"SELECT COUNT(DISTINCT {column}) AS count FROM sdk_events {where}", params).fetchone()
     return int(row["count"])
 
 

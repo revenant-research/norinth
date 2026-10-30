@@ -16,7 +16,16 @@ def _org(super_admin_client, tenant: str):
     from app.main import app
     from fastapi.testclient import TestClient
 
-    super_admin_client.post("/api/admin/organizations", json={"tenant_id": tenant, "name": tenant, "admin_email": f"a@{tenant}.test", "admin_display_name": "A", "admin_password": f"{tenant}-admin-pw-1"})
+    super_admin_client.post(
+        "/api/admin/organizations",
+        json={
+            "tenant_id": tenant,
+            "name": tenant,
+            "admin_email": f"a@{tenant}.test",
+            "admin_display_name": "A",
+            "admin_password": f"{tenant}-admin-pw-1",
+        },
+    )
     org = TestClient(app)
     login_and_activate(org, f"a@{tenant}.test", f"{tenant}-admin-pw-1")
     token = org.post("/api/ingestion-keys", json={"name": "k"}).json()["token"]
@@ -35,19 +44,75 @@ def test_cross_tenant_record_overwrite_is_impossible(super_admin_client):
     def batch(tenant: str, deploy_ver: str, artifact: str, prompt_ver: str, eval_passed: bool) -> list[dict]:
         m = _meta(tenant)
         return [
-            {**BASE, "type": "deployment.event", "trace_id": "t_dep", "span_id": "s_dep", "timestamp": "2026-08-22T00:00:01Z",
-             "attributes": {"deployment_id": "prod-api", "version": deploy_ver, "artifact_ref": artifact, "prompt_version": prompt_ver, "deployment_status": "pending", "metadata": m}},
-            {**BASE, "type": "prompt.event", "trace_id": "t_pr", "span_id": "s_pr", "timestamp": "2026-08-22T00:00:01Z",
-             "attributes": {"prompt_id": "triage", "version": prompt_ver, "artifact_ref": "pr:" + prompt_ver, "template": {"x": tenant}, "metadata": m}},
-            {**BASE, "type": "incident.event", "trace_id": "t_in", "span_id": "s_in", "timestamp": "2026-08-22T00:00:01Z", "name": "n",
-             "attributes": {"incident_id": "INC-1", "title": f"{tenant} incident", "severity": "high", "metadata": m}},
-            {**BASE, "type": "eval.result", "trace_id": "t_ev", "span_id": "s_ev", "timestamp": "2026-08-22T00:00:01Z", "status": "success",
-             "attributes": {"eval_id": "safety", "passed": eval_passed, "score": 0.9, "metadata": m}},
+            {
+                **BASE,
+                "type": "deployment.event",
+                "trace_id": "t_dep",
+                "span_id": "s_dep",
+                "timestamp": "2026-08-22T00:00:01Z",
+                "attributes": {
+                    "deployment_id": "prod-api",
+                    "version": deploy_ver,
+                    "artifact_ref": artifact,
+                    "prompt_version": prompt_ver,
+                    "deployment_status": "pending",
+                    "metadata": m,
+                },
+            },
+            {
+                **BASE,
+                "type": "prompt.event",
+                "trace_id": "t_pr",
+                "span_id": "s_pr",
+                "timestamp": "2026-08-22T00:00:01Z",
+                "attributes": {
+                    "prompt_id": "triage",
+                    "version": prompt_ver,
+                    "artifact_ref": "pr:" + prompt_ver,
+                    "template": {"x": tenant},
+                    "metadata": m,
+                },
+            },
+            {
+                **BASE,
+                "type": "incident.event",
+                "trace_id": "t_in",
+                "span_id": "s_in",
+                "timestamp": "2026-08-22T00:00:01Z",
+                "name": "n",
+                "attributes": {
+                    "incident_id": "INC-1",
+                    "title": f"{tenant} incident",
+                    "severity": "high",
+                    "metadata": m,
+                },
+            },
+            {
+                **BASE,
+                "type": "eval.result",
+                "trace_id": "t_ev",
+                "span_id": "s_ev",
+                "timestamp": "2026-08-22T00:00:01Z",
+                "status": "success",
+                "attributes": {"eval_id": "safety", "passed": eval_passed, "score": 0.9, "metadata": m},
+            },
         ]
 
-    assert acme.post("/v1/events/batch", json={"events": batch("acme", "1.0.0", "sha256:acme-good", "pv-acme", True)}, headers=ah).status_code == 200
+    assert (
+        acme.post(
+            "/v1/events/batch", json={"events": batch("acme", "1.0.0", "sha256:acme-good", "pv-acme", True)}, headers=ah
+        ).status_code
+        == 200
+    )
     # beta sends the same ids with hostile values
-    assert beta.post("/v1/events/batch", json={"events": batch("beta", "9.9.9", "sha256:beta-evil", "pv-beta", False)}, headers=bh).status_code == 200
+    assert (
+        beta.post(
+            "/v1/events/batch",
+            json={"events": batch("beta", "9.9.9", "sha256:beta-evil", "pv-beta", False)},
+            headers=bh,
+        ).status_code
+        == 200
+    )
 
     # acme's records untouched
     dep = acme.get("/api/deployments").json()["deployments"]

@@ -101,7 +101,9 @@ def retire(agent_id: str, actor: ActorContext = Depends(current_actor)) -> dict[
     if load_registered_agent(agent_id, tenant_id) is None:
         raise HTTPException(status_code=404, detail="agent not found in this organization")
     agent = retire_agent(agent_id, tenant_id)
-    record_audit(actor_ref=actor.user_ref, action="agent.retire", tenant_id=tenant_id, target_type="agent", target_id=agent_id)
+    record_audit(
+        actor_ref=actor.user_ref, action="agent.retire", tenant_id=tenant_id, target_type="agent", target_id=agent_id
+    )
     return {"agent": agent}
 
 

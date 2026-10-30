@@ -80,9 +80,7 @@ def resolve_scim_token(token: str | None) -> dict[str, Any] | None:
             return None
         # a token for a purged or suspended org is dead: purge removes the org
         # row, and suspension must stop provisioning
-        org = connection.execute(
-            "SELECT status FROM organizations WHERE tenant_id = ?", (row["tenant_id"],)
-        ).fetchone()
+        org = connection.execute("SELECT status FROM organizations WHERE tenant_id = ?", (row["tenant_id"],)).fetchone()
         if org is None or org["status"] != "active":
             return None
         connection.execute(

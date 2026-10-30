@@ -101,11 +101,28 @@ def emit(
     written = 0
     email_status = "pending" if smtp_configured() else "skipped_no_smtp"
     for email in sorted(recipients):
-        store.enqueue(connection, tenant_id=tenant_id, channel="email", event_type=event_type, target=email, subject=subject, payload=body, status=email_status)
+        store.enqueue(
+            connection,
+            tenant_id=tenant_id,
+            channel="email",
+            event_type=event_type,
+            target=email,
+            subject=subject,
+            payload=body,
+            status=email_status,
+        )
         written += 1
     if tenant_id:
         for hook in store.active_webhooks_for(connection, tenant_id, event_type):
-            store.enqueue(connection, tenant_id=tenant_id, channel="webhook", event_type=event_type, target=hook["webhook_id"], subject=subject, payload=body)
+            store.enqueue(
+                connection,
+                tenant_id=tenant_id,
+                channel="webhook",
+                event_type=event_type,
+                target=hook["webhook_id"],
+                subject=subject,
+                payload=body,
+            )
             written += 1
     return written
 
@@ -221,7 +238,9 @@ def deliver_pending(limit: int = 50) -> dict[str, int]:
             sent += 1
         else:
             failed += 1
-            log.warning("notification %s via %s failed (attempt %s): %s", row["event_type"], row["channel"], attempts, error)
+            log.warning(
+                "notification %s via %s failed (attempt %s): %s", row["event_type"], row["channel"], attempts, error
+            )
     return {"sent": sent, "failed": failed}
 
 

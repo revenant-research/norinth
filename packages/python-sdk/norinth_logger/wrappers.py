@@ -109,7 +109,9 @@ class WrappedCallable:
         self._record(response, kwargs, started, "success", None)
         return response
 
-    def _record(self, response: Any, kwargs: dict[str, Any], started: float, status: str, exc: BaseException | None) -> None:
+    def _record(
+        self, response: Any, kwargs: dict[str, Any], started: float, status: str, exc: BaseException | None
+    ) -> None:
         # this runs on the host's call path after the provider has answered, so
         # nothing in it may raise into the host: an argument whose truth value
         # is ambiguous, a response object that will not summarize, anything

@@ -207,7 +207,15 @@ def record_audit(
                         raise RuntimeError("Audit database contradicts the retained checkpoint")
             created_at = connection.execute("SELECT datetime('now') AS now").fetchone()["now"]
             row_hash = _compute_row_hash(
-                CURRENT_HASH_VERSION, prev_hash, created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json
+                CURRENT_HASH_VERSION,
+                prev_hash,
+                created_at,
+                actor_ref,
+                tenant_id,
+                action,
+                target_type,
+                target_id,
+                detail_json,
             )
             if row_hash is None:
                 raise RuntimeError(f"no audit hasher registered for version {CURRENT_HASH_VERSION}")
@@ -218,7 +226,20 @@ def record_audit(
                     (created_at, actor_ref, tenant_id, action, target_type, target_id, detail, prev_hash, row_hash, row_hmac, hmac_key_id, hash_version)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json, prev_hash, row_hash, row_hmac, hmac_key_id, CURRENT_HASH_VERSION),
+                (
+                    created_at,
+                    actor_ref,
+                    tenant_id,
+                    action,
+                    target_type,
+                    target_id,
+                    detail_json,
+                    prev_hash,
+                    row_hash,
+                    row_hmac,
+                    hmac_key_id,
+                    CURRENT_HASH_VERSION,
+                ),
             )
             count = previous_count + 1
             connection.execute("COMMIT")
@@ -284,7 +305,12 @@ def _verify_audit_chain_unlocked(*, tenant_id: str | None = None, check_checkpoi
             row["detail"],
         )
         if recomputed is None:
-            return {"ok": False, "entries": len(rows), "broken_at": row["id"], "reason": f"unknown hash version {version}"}
+            return {
+                "ok": False,
+                "entries": len(rows),
+                "broken_at": row["id"],
+                "reason": f"unknown hash version {version}",
+            }
         if row["prev_hash"] != expected_prev or row["row_hash"] != recomputed:
             return {"ok": False, "entries": len(rows), "broken_at": row["id"], "reason": "hash chain"}
         # A configured key requires a valid signature on every row. Never
@@ -300,24 +326,51 @@ def _verify_audit_chain_unlocked(*, tenant_id: str | None = None, check_checkpoi
         return {"ok": True, "entries": len(rows), "broken_at": None, "chain_ok": True}
     checkpoints, checkpoint_error = read_checkpoints(ring)
     if checkpoint_error not in (None, "unavailable", "verification_key_unavailable"):
-        return {"ok": False, "entries": len(rows), "broken_at": None, "reason": checkpoint_error,
-                "chain_ok": True, "completeness_ok": False, "checkpoint_status": "invalid"}
+        return {
+            "ok": False,
+            "entries": len(rows),
+            "broken_at": None,
+            "reason": checkpoint_error,
+            "chain_ok": True,
+            "completeness_ok": False,
+            "checkpoint_status": "invalid",
+        }
     if not checkpoints:
-        return {"ok": True, "entries": len(rows), "broken_at": None, "chain_ok": True,
-                "completeness_ok": None, "checkpoint_status": checkpoint_error or "unavailable",
-                "unanchored_entries": len(rows)}
+        return {
+            "ok": True,
+            "entries": len(rows),
+            "broken_at": None,
+            "chain_ok": True,
+            "completeness_ok": None,
+            "checkpoint_status": checkpoint_error or "unavailable",
+            "unanchored_entries": len(rows),
+        }
     latest = checkpoints[-1]
     if len(rows) < latest["count"] or (len(rows) == latest["count"] and expected_prev != latest["head_hash"]):
-        return {"ok": False, "entries": len(rows), "broken_at": None, "reason": "checkpoint mismatch",
-                "chain_ok": True, "completeness_ok": False, "checkpoint_status": "mismatch",
-                "checkpoint": latest}
+        return {
+            "ok": False,
+            "entries": len(rows),
+            "broken_at": None,
+            "reason": "checkpoint mismatch",
+            "chain_ok": True,
+            "completeness_ok": False,
+            "checkpoint_status": "mismatch",
+            "checkpoint": latest,
+        }
     # A newer database may contain an interval not yet independently anchored,
     # such as after an outage or a commit preceding a checkpoint write.
     unanchored = len(rows) - latest["count"]
     if unanchored and rows[latest["count"] - 1]["row_hash"] != latest["head_hash"]:
-        return {"ok": False, "entries": len(rows), "broken_at": None, "reason": "checkpoint mismatch",
-                "chain_ok": True, "completeness_ok": False, "checkpoint_status": "mismatch",
-                "checkpoint": latest}
+        return {
+            "ok": False,
+            "entries": len(rows),
+            "broken_at": None,
+            "reason": "checkpoint mismatch",
+            "chain_ok": True,
+            "completeness_ok": False,
+            "checkpoint_status": "mismatch",
+            "checkpoint": latest,
+        }
     from datetime import UTC, datetime, timedelta
 
     age = datetime.now(UTC) - datetime.fromisoformat(latest["created_at"])
@@ -325,11 +378,17 @@ def _verify_audit_chain_unlocked(*, tenant_id: str | None = None, check_checkpoi
     prior_unanchored = latest["anchored_from"] - 1
     reconciled = any(entry.get("kind") == "reconcile" for entry in checkpoints)
     current = fresh and unanchored == 0 and prior_unanchored == 0 and not reconciled
-    return {"ok": True, "entries": len(rows), "broken_at": None, "chain_ok": True,
-            "completeness_ok": current,
-            "checkpoint_status": "partial_history" if prior_unanchored or reconciled else "current" if current else "stale",
-            "checkpoint": latest, "unanchored_entries": unanchored,
-            "unanchored_before_checkpoint": prior_unanchored}
+    return {
+        "ok": True,
+        "entries": len(rows),
+        "broken_at": None,
+        "chain_ok": True,
+        "completeness_ok": current,
+        "checkpoint_status": "partial_history" if prior_unanchored or reconciled else "current" if current else "stale",
+        "checkpoint": latest,
+        "unanchored_entries": unanchored,
+        "unanchored_before_checkpoint": prior_unanchored,
+    }
 
 
 def validate_audit_at_startup() -> None:
@@ -354,8 +413,15 @@ def reconcile_audit_after_restore(*, reason: str, expected_seal: str) -> dict[st
             raise RuntimeError("Audit HMAC key is required for checkpoint reconciliation")
         with connect() as connection:
             head = connection.execute("SELECT row_hash FROM audit_logs ORDER BY id DESC LIMIT 1").fetchone()
-        reconcile_checkpoint(chain["entries"], head["row_hash"] if head else GENESIS_HASH,
-                             reason, expected_seal, primary, _audit_keyring()[primary], _audit_keyring())
+        reconcile_checkpoint(
+            chain["entries"],
+            head["row_hash"] if head else GENESIS_HASH,
+            reason,
+            expected_seal,
+            primary,
+            _audit_keyring()[primary],
+            _audit_keyring(),
+        )
         return _verify_audit_chain_unlocked()
 
 
@@ -375,9 +441,7 @@ def _audit_filters(tenant_id: str | None, actor_ref: str | None, action: str | N
     return where, params
 
 
-def count_audit_logs(
-    *, tenant_id: str | None = None, actor_ref: str | None = None, action: str | None = None
-) -> int:
+def count_audit_logs(*, tenant_id: str | None = None, actor_ref: str | None = None, action: str | None = None) -> int:
     where, params = _audit_filters(tenant_id, actor_ref, action)
     with connect() as connection:
         row = connection.execute(f"SELECT COUNT(*) AS count FROM audit_logs {where}", params).fetchone()

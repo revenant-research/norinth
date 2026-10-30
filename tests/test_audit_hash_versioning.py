@@ -17,8 +17,14 @@ def _write_some_entries(n: int = 3) -> None:
     from app.storage.audit import record_audit
 
     for i in range(n):
-        record_audit(actor_ref=f"u{i}", action="test.action", tenant_id="acme",
-                     target_type="thing", target_id=str(i), detail={"i": i})
+        record_audit(
+            actor_ref=f"u{i}",
+            action="test.action",
+            tenant_id="acme",
+            target_type="thing",
+            target_id=str(i),
+            detail={"i": i},
+        )
 
 
 def test_a_fresh_chain_verifies_and_stamps_the_current_version(fresh_db):
@@ -45,6 +51,7 @@ def test_a_future_algorithm_leaves_todays_rows_verifiable(fresh_db):
 
     def _hash_v2(prev_hash, created_at, actor_ref, tenant_id, action, target_type, target_id, detail_json):
         import hashlib
+
         return "v2:" + hashlib.sha256(f"{prev_hash}{created_at}{action}".encode()).hexdigest()
 
     audit._HASHERS[2] = _hash_v2

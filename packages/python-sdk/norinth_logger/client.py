@@ -250,7 +250,9 @@ class NorinthClient:
             system=system or (parent.system if parent else None),
             metadata={**(parent.metadata if parent else {}), **inferred, "workflow_name": trace_name},
         )
-        return _Span(name=trace_name, parent=parent, context=context, token=set_context(context), started=perf_counter())
+        return _Span(
+            name=trace_name, parent=parent, context=context, token=set_context(context), started=perf_counter()
+        )
 
     def _close_span(self, span: _Span, function_ref: str, args: tuple[Any, ...], kwargs: dict[str, Any]) -> None:
         try:
@@ -556,7 +558,9 @@ class NorinthClient:
                     "prompt_status": status,
                     "owner_ref": owner_ref,
                     "template": summarize_value(template, self.config.capture_content, self.config.fingerprint_key),
-                    "change_notes": summarize_value(change_notes, self.config.capture_content, self.config.fingerprint_key),
+                    "change_notes": summarize_value(
+                        change_notes, self.config.capture_content, self.config.fingerprint_key
+                    ),
                     "metadata": event_metadata,
                 },
             )

@@ -47,6 +47,7 @@ def _capture_content(value: Any) -> Any:
         return {redact_text(str(key)): _capture_content(item) for key, item in value.items()}
     return _OMIT_CONTENT
 
+
 GOVERNANCE_CONTEXT_FIELDS = {
     "user_id",
     "application_name",

@@ -84,9 +84,7 @@ class NorinthConfig:
         """
         if self.signing_secret:
             return self.signing_secret
-        return hmac.new(
-            self.api_key.encode("utf-8"), b"norinth-fingerprint-key-v1", hashlib.sha256
-        ).hexdigest()
+        return hmac.new(self.api_key.encode("utf-8"), b"norinth-fingerprint-key-v1", hashlib.sha256).hexdigest()
 
     @property
     def fingerprint_key_is_public(self) -> bool:
