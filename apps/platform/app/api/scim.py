@@ -31,6 +31,7 @@ from app.storage.scim import (
 from app.storage.sso import load_sso_configuration
 from app.storage.workflow import (
     create_platform_user,
+    get_user_by_email,
     list_platform_users,
     load_platform_user,
     set_user_status,
@@ -194,7 +195,7 @@ def _display_name(payload: ScimUserIn) -> str:
 @router.post("/scim/v2/Users", status_code=201)
 def create_user(payload: ScimUserIn, tenant_id: str = Depends(scim_tenant)):
     email = payload.userName.strip().lower()
-    existing = load_platform_user(email)
+    existing = get_user_by_email(email)  # finds accounts created before addresses were normalised
     if existing is not None:
         if existing.get("tenant_id") != tenant_id:
             return _scim_error(409, "userName belongs to another organization", "uniqueness")

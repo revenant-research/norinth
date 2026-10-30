@@ -175,6 +175,7 @@ def login(payload: LoginRequest, request: Request, response: Response) -> dict[s
                 detail={"subjects": newly_locked, "source_ip": client_ip(request)},
             )
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    assert user is not None  # authenticated implies an active account was found
     clear_attempts(account)
     # rehash if kdf params are outdated, now that we have the verified plaintext.
     # upgrade_password_hash, not set_user_password: a transparent rehash must not

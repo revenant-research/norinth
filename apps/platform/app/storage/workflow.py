@@ -680,9 +680,23 @@ def set_user_status(user_ref: str, status: str) -> dict[str, Any]:
         return dict(connection.execute("SELECT * FROM platform_users WHERE user_ref = ?", (user_ref,)).fetchone())
 
 
+def normalize_email(email: str) -> str:
+    """the one spelling of an address every path stores and looks up
+
+    identity providers, SCIM and the login form all lowercase; an account
+    created by an administrator must be found by the same spelling, or a
+    leaver deprovisioned through SCIM keeps a second, mixed-case account
+    """
+    return email.strip().lower()
+
+
 def get_user_by_email(email: str) -> dict[str, Any] | None:
+    """case-insensitive, so accounts created before addresses were normalised
+    are still found by their lowercase spelling"""
     with connect() as connection:
-        row = connection.execute("SELECT * FROM platform_users WHERE email = ?", (email,)).fetchone()
+        row = connection.execute(
+            "SELECT * FROM platform_users WHERE LOWER(email) = ? ORDER BY created_at LIMIT 1", (normalize_email(email),)
+        ).fetchone()
     return None if row is None else dict(row)
 
 
