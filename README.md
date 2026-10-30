@@ -116,7 +116,9 @@ the SDK before it leaves your process. By default, prompts, completions,
 metadata values, agent step inputs and outputs, tool arguments, and error
 messages are sent as keyed hashes, not text. The hash key comes from your
 signing secret, or is derived from your API key if you have not set one, so
-the hashes cannot be reversed by guessing. A fixed set of labels that the
+the hashes cannot be reversed by guessing as long as the key is one the
+platform issued; the SDK warns at startup when it is running on the public
+development default. A fixed set of labels that the
 platform reads (application name, workflow name, use case, and similar) is sent
 in the clear. Capturing raw content is a separate, explicit setting.
 
@@ -361,7 +363,8 @@ Run the same checks CI does with `make lint` and `make test`.
 The SDK only observes. It records structured metadata and keyed hashes of
 inputs and outputs, not the raw text, and it never blocks your application. The
 hashes cannot be reversed by guessing: they are HMACs keyed by your signing
-secret, or by a key derived from your API key when no secret is set. The same
+secret, or by a key derived from your API key when no secret is set (the SDK
+warns when that key is the public development default). The same
 rule covers everything your application passes, not just prompts and
 completions: metadata, agent steps, tool arguments and results, usage payloads,
 matched guardrail rules, and error messages. With capture off, only a fixed set

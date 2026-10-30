@@ -144,8 +144,11 @@ themselves; the platform strips it and sets it only after verification.
   of inputs and outputs, not raw content. The fingerprint is always a keyed
   HMAC-SHA256 — never a bare digest a dictionary attack could reverse for
   short prompts, codes or record numbers. The key is `NORINTH_SIGNING_SECRET`
-  when set; otherwise it is derived from your api key, so a default install is
-  keyed with zero configuration. Rotating the api key rotates the derived key
+  when set; otherwise it is derived from your api key, so an install with a
+  platform-issued key is keyed with zero configuration. With no key set at
+  all the SDK falls back to the public development key `dev`, which makes
+  every fingerprint guessable, and it warns at startup until you set one.
+  Rotating the api key rotates the derived key
   (old and new fingerprints stop linking) — pin `NORINTH_SIGNING_SECRET` if
   fingerprint continuity across services or key rotation matters to you.
 - **Fail-open with durability.** If the platform is unreachable or transport

@@ -8,6 +8,24 @@ Semantic Versioning.
 
 ### Added
 
+- **Connected-system governance workspace.** A standalone, reusable workspace
+  for systems that execute outside the platform, with scoped read-only
+  snapshots for server adapters, the distinction between an absent human
+  approval and a current review requirement, and decisions bound to the
+  digest of the record that was reviewed. (#236)
+- **Portable execution governance contracts.** Release, permit and
+  delegation contracts that an executing system can verify independently of
+  the platform, with human decisions and delegated approvals bound to the
+  reviewed record digest and the reviewed material retained immutably.
+  (#235)
+- **Current release eligibility, separate from approval history.** The gate
+  check reports whether a release is eligible right now under the scope's
+  current evidence without rewriting the approval that was given. (#232)
+- **The executed model in the OpenTelemetry inventory.** A span whose
+  response names a different model from the request (routers, aliases) is
+  inventoried under the model that answered, and the requested model is
+  kept beside it. (#231)
+
 - **Observe mode for an organization's own risk rules.** Every open finding
   counts toward a release gate, so a new custom rule blocked every release as
   soon as it was added. `POST /api/risk-rules` now takes `mode`: `observe` or
@@ -42,6 +60,59 @@ Semantic Versioning.
   image and source overrides. (#176)
 
 ### Security
+
+- **Closing an incident touched every organization's incident with that
+  id.** An incident id is chosen by the reporting client and is unique only
+  within its organization, but the close route and the decision target
+  lookup selected and updated by id alone. Every read and write of one
+  incident is now bound to the caller's organization, and the owner lookup
+  in the incident list matches on the same scope.
+- **A SAML response is refused from a browser that did not start the
+  login.** A missing request cookie skipped the browser binding, which
+  allowed a login-CSRF where a victim is signed in as the attacker. The
+  assertion consumer service now refuses such a response, as the OIDC
+  callback already did.
+- **The SDK keeps its content boundary and its fail-open guarantee on every
+  path.** The FastAPI middleware sent inferred request-body fields in the
+  clear; the transport and CLI followed HTTP redirects with the ingestion
+  key attached; argument inspection and post-call recording could raise
+  into the host application. All three are fixed, the trace decorator now
+  awaits async functions inside the span, the exit flush is bounded, and a
+  client running on the default `dev` key warns that its fingerprints are
+  guessable.
+- **Exception expiry is stored in UTC.** Expiry was compared as text, so a
+  value written with a non-zero offset lapsed hours late or early and a
+  release gate could be approved on a lapsed risk acceptance in that window.
+  Migration 28 normalises rows written earlier.
+- **Control, owner-policy and review-routing changes are on the audit
+  chain**, and the listing endpoints for owner and review-queue policies
+  return the policies in force for the caller's organization rather than
+  the platform defaults only.
+- **An organization administrator's password reset is terminal and
+  visible.** It ends the target's sessions, notifies the target, records
+  the target's decision roles on the audit entry, and alerts the other
+  administrators when the target holds a decision role.
+- Login attempts against unknown or inactive accounts now cost the same as
+  a real verification, so response time no longer reveals which emails
+  exist. Turning off a second factor is throttled and audited like login
+  failures. The metrics bearer token is compared in constant time.
+- Email addresses are stored and looked up in one spelling, so an account
+  created by an administrator and one provisioned by SCIM or an identity
+  provider cannot diverge by case.
+
+### Fixed
+
+- An OTLP span carrying a list or object where a scalar belongs now answers
+  400 naming the path instead of 500 at the SQL binding, so a collector no
+  longer retries it forever. The fuzz harness asserts every mapped column
+  is scalar.
+- A suspended invitee who follows their invite link no longer consumes the
+  single-use token.
+- Migration 29 restores the incident, deployment and prompt-template scope
+  indexes that migration 10 dropped with the tables it rebuilt.
+- CI checks formatting with the same `ruff format` hook pre-commit runs, and
+  the whole tree is formatted so the hook no longer rewrites files a
+  contributor did not touch.
 
 - **Loosening the governance policy takes two people.** A policy version that
   removes an approval stage or replaces its role, lengthens or removes a
