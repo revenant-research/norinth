@@ -9,7 +9,7 @@ import math
 import os
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from starlette.concurrency import run_in_threadpool
 
 from app.dependencies import ingestion_tenant
@@ -19,6 +19,7 @@ from app.services.attestation import AttestationError, verify_eval_attestation
 from app.storage.attestation_keys import load_active_attestation_key, touch_attestation_key
 from app.storage.audit import record_audit
 from app.storage.deployments import find_gate_for_release
+from app.storage.errors import DomainError
 from app.storage.fold import batch_scopes as batch_scopes  # re-exported: tests import it from this module
 from app.storage.fold import fold_pending
 from app.storage.raw_events import insert_events
@@ -229,15 +230,29 @@ def _ingest(events: list[dict[str, Any]], tenant_id: str) -> dict[str, Any]:
 
 
 @router.get("/v1/gates/check")
-def gate_check(deployment_id: str, version: str, tenant_id: str = Depends(ingestion_tenant)) -> dict[str, Any]:
+def gate_check(
+    response: Response,
+    deployment_id: str = Query(min_length=1),
+    version: str = Query(min_length=1),
+    project: str | None = Query(default=None, min_length=1),
+    environment: str | None = Query(default=None, min_length=1),
+    tenant_id: str = Depends(ingestion_tenant),
+) -> dict[str, Any]:
     """release-gate status for ci; read-only, tenant-bound, minimal"""
-    gate = find_gate_for_release(tenant_id, deployment_id, version)
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        gate = find_gate_for_release(tenant_id, deployment_id, version, project=project, environment=environment)
+    except DomainError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if gate is None:
         raise HTTPException(status_code=404, detail="no release gate for that deployment and version (has the deployment.event been ingested?)")
     return {
         "gate_id": gate["gate_id"],
         "deployment_id": gate["deployment_id"],
         "version": gate["version"],
+        "project": gate["project"],
+        "environment": gate["environment"],
+        "artifact_ref": gate["artifact_ref"],
         "application_name": gate["application_name"],
         "workflow_name": gate["workflow_name"],
         "status": gate["gate_status"],
@@ -245,4 +260,5 @@ def gate_check(deployment_id: str, version: str, tenant_id: str = Depends(ingest
         "blocking": None if gate["gate_status"] == "approved" else gate.get("required_reason"),
         "decided_by": gate.get("actor_ref"),
         "decided_at": gate.get("decided_at"),
+        "current_eligibility": gate["current_eligibility"],
     }

@@ -6,7 +6,7 @@
 # images are pinned by digest as well as tag: a tag is mutable, so tag-only pins
 # mean the image audited is not necessarily the image shipped. The tag is kept
 # alongside for readability. Refresh both together when bumping a base image.
-FROM node:26-alpine@sha256:ef24c5053d50fdc3e4e56eb4e7ddb7861874ab0fdc797046ba897581deb8e868 AS frontend
+FROM node:26-alpine@sha256:0b36e8c136b94cd4fcf02188228e76c31ad5872eef3fec8cbd2eee500cfd9e80 AS frontend
 WORKDIR /src/frontend
 COPY apps/platform/frontend/package.json apps/platform/frontend/package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -15,7 +15,7 @@ COPY apps/platform/frontend/ ./
 RUN npm run build
 
 # ---- Stage 2: runtime ----------------------------------------------------------
-FROM python:3.14-slim@sha256:cad9a2c871761c413caa6fdd6441c783451e740a48aaeba60ae62a8b53525ef6
+FROM python:3.14-slim@sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8
 
 # Non-root runtime user
 RUN groupadd --system norinth && useradd --system --gid norinth --home /app norinth
