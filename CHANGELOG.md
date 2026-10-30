@@ -6,6 +6,8 @@ Semantic Versioning.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-30
+
 ### Added
 
 - **Vendor evidence references that expire.** A vendor's agreements and
