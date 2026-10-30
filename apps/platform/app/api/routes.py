@@ -351,7 +351,22 @@ def configure_control(payload: ControlDefinitionRequest, actor: ActorContext = D
     except AuthorizationError as error:
         raise_forbidden(error)
     tenant_id = _require_tenant_for_config(actor)
-    return {"control": upsert_control_definition(payload.model_dump(), tenant_id)}
+    control = upsert_control_definition(payload.model_dump(), tenant_id)
+    # a control's evidence requirements decide what counts as a missing control
+    # on every release gate, so each change is on the audit chain
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="control.configure",
+        tenant_id=tenant_id,
+        target_type="control",
+        target_id=control["control_id"],
+        detail={
+            "evidence_event_types": control["evidence_event_types"],
+            "required_fields": control["required_fields"],
+            "coverage_basis": control.get("coverage_basis"),
+        },
+    )
+    return {"control": control}
 
 
 @router.get("/api/risk-rules")
@@ -420,7 +435,7 @@ def configure_retention_policy(payload: RetentionPolicyRequest, actor: ActorCont
 
 @router.get("/api/owner-policies")
 def owner_policies(actor: ActorContext = Depends(current_actor)):
-    return build_owner_policies()
+    return build_owner_policies(actor.tenant_id)
 
 
 @router.post("/api/owner-policies")
@@ -430,7 +445,17 @@ def configure_owner_policy(payload: OwnerPolicyRequest, actor: ActorContext = De
     except AuthorizationError as error:
         raise_forbidden(error)
     tenant_id = _require_tenant_for_config(actor)
-    return {"owner_policy": upsert_owner_policy(payload.model_dump(), tenant_id)}
+    policy = upsert_owner_policy(payload.model_dump(), tenant_id)
+    # routing decides who is accountable for a finding, so it is audited
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="owner_policy.configure",
+        tenant_id=tenant_id,
+        target_type="owner_policy",
+        target_id=policy["policy_id"],
+        detail={"subject_type": policy["subject_type"], "owner_role": policy["owner_role"], "applies_to_status": policy.get("applies_to_status")},
+    )
+    return {"owner_policy": policy}
 
 
 # user and role management is not exposed here; it lives on the org-admin plane
@@ -439,7 +464,7 @@ def configure_owner_policy(payload: OwnerPolicyRequest, actor: ActorContext = De
 
 @router.get("/api/review-queue-policies")
 def review_queue_policies(actor: ActorContext = Depends(current_actor)):
-    return build_review_queue_policies()
+    return build_review_queue_policies(actor.tenant_id)
 
 
 @router.post("/api/review-queue-policies")
@@ -449,7 +474,21 @@ def configure_review_queue_policy(payload: ReviewQueuePolicyRequest, actor: Acto
     except AuthorizationError as error:
         raise_forbidden(error)
     tenant_id = _require_tenant_for_config(actor)
-    return {"review_queue_policy": upsert_review_queue_policy(payload.model_dump(), tenant_id)}
+    policy = upsert_review_queue_policy(payload.model_dump(), tenant_id)
+    record_audit(
+        actor_ref=actor.user_ref,
+        action="review_queue_policy.configure",
+        tenant_id=tenant_id,
+        target_type="review_queue_policy",
+        target_id=policy["policy_id"],
+        detail={
+            "task_type": policy["task_type"],
+            "assigned_role": policy["assigned_role"],
+            "due_days": policy["due_days"],
+            "escalation_days": policy["escalation_days"],
+        },
+    )
+    return {"review_queue_policy": policy}
 
 
 @router.get("/api/change-events")

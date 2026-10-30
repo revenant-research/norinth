@@ -611,8 +611,8 @@ def build_risk_rules(tenant_id: str | None = None) -> dict[str, list[dict[str, A
     return {"risk_rules": list_configured_risk_rules(tenant_id)}
 
 
-def build_owner_policies() -> dict[str, list[dict[str, Any]]]:
-    return {"owner_policies": list_configured_owner_policies()}
+def build_owner_policies(tenant_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
+    return {"owner_policies": list_configured_owner_policies(tenant_id)}
 
 
 def build_platform_users(tenant_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
@@ -623,8 +623,8 @@ def build_role_assignments(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]
     return {"role_assignments": list_role_assignments(**scope.model_dump())}
 
 
-def build_review_queue_policies() -> dict[str, list[dict[str, Any]]]:
-    return {"review_queue_policies": list_review_queue_policies()}
+def build_review_queue_policies(tenant_id: str | None = None) -> dict[str, list[dict[str, Any]]]:
+    return {"review_queue_policies": list_review_queue_policies(tenant_id)}
 
 
 def build_deployments(scope: ScopeFilter) -> dict[str, list[dict[str, Any]]]:

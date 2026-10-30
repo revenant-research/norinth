@@ -1161,14 +1161,16 @@ def count_active_role_assignments(role: str | None = None) -> int:
     return int(row["count"])
 
 
-def list_review_queue_policies() -> list[dict[str, Any]]:
+def list_review_queue_policies(tenant_id: str | None = None) -> list[dict[str, Any]]:
+    """the platform defaults with the tenant's own policies laid over them,
+    which is the set the routing actually applies for that tenant"""
     with connect() as connection:
-        return list_queue_policies(connection)
+        return list_queue_policies(connection, tenant_id)
 
 
-def list_configured_owner_policies() -> list[dict[str, Any]]:
+def list_configured_owner_policies(tenant_id: str | None = None) -> list[dict[str, Any]]:
     with connect() as connection:
-        return list_owner_policies(connection)
+        return list_owner_policies(connection, tenant_id)
 
 
 def list_decisions(
