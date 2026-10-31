@@ -34,8 +34,8 @@ jobs:
         run: python3 scripts/check_license_headers.py
       - name: Type check (mypy)
         run: mypy apps/platform/app packages/python-sdk/norinth_logger
-      - name: Test (pytest)
-        run: pytest
+      - name: Test (pytest, one worker per CPU)
+        run: pytest -n auto
 
   python-postgres:
     name: Python tests (PostgreSQL)
@@ -67,7 +67,8 @@ jobs:
       - name: Test against PostgreSQL
         env:
           NORINTH_TEST_DATABASE_URL: postgresql://norinth:norinth@127.0.0.1:5432/norinth_test
-        run: pytest
+        # each worker gets its own database (norinth_test_gw0, ...): see tests/conftest.py
+        run: pytest -n auto
 
   frontend:
     name: Frontend (typecheck + build)

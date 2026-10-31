@@ -24,6 +24,33 @@ sys.path.insert(0, str(PLATFORM_DIR))
 
 # backend selection; default sqlite file, NORINTH_TEST_DATABASE_URL runs against postgres (schema dropped/recreated per test)
 POSTGRES_TEST_URL = os.getenv("NORINTH_TEST_DATABASE_URL")
+
+
+def _postgres_url_for_worker(base_url: str, worker: str) -> str:
+    """a database of its own for each pytest-xdist worker
+
+    every postgres test drops and recreates the public schema, so workers that
+    shared one database would wipe each other's tables mid-test. each worker
+    gets <base>_<worker> (norinth_test_gw0, ...), created on first use
+    """
+    from urllib.parse import urlsplit, urlunsplit
+
+    import psycopg
+    from psycopg import sql
+
+    # stays a postgresql:// URL: storage/db.py refuses any other form
+    parts = urlsplit(base_url)
+    name = f"{parts.path.lstrip('/')}_{worker}"
+    with psycopg.connect(base_url, autocommit=True) as connection:
+        exists = connection.execute("SELECT 1 FROM pg_database WHERE datname = %s", (name,)).fetchone()
+        if not exists:
+            connection.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+    return urlunsplit(parts._replace(path=f"/{name}"))
+
+
+_XDIST_WORKER = os.getenv("PYTEST_XDIST_WORKER")
+if POSTGRES_TEST_URL and _XDIST_WORKER:
+    POSTGRES_TEST_URL = _postgres_url_for_worker(POSTGRES_TEST_URL, _XDIST_WORKER)
 if POSTGRES_TEST_URL:
     os.environ["NORINTH_DATABASE_URL"] = POSTGRES_TEST_URL
 else:
