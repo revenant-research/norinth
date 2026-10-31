@@ -9,7 +9,7 @@ from typing import Any
 from .entities import as_object, entity_id
 from .errors import RecordNotFound
 from .raw_events import connect
-from .scoping import count_scoped_rows
+from .scoping import count_scoped_rows, scope_clause
 
 
 def init_incidents() -> None:
@@ -285,18 +285,7 @@ def list_incidents(
     limit: int | None = None,
     offset: int = 0,
 ) -> list[dict[str, Any]]:
-    clauses: list[str] = []
-    params: dict[str, Any] = {}
-    if tenant_id:
-        clauses.append("tenant_id = :tenant_id")
-        params["tenant_id"] = tenant_id
-    if project:
-        clauses.append("project = :project")
-        params["project"] = project
-    if environment:
-        clauses.append("environment = :environment")
-        params["environment"] = environment
-    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    where, params = scope_clause(tenant_id, project, environment)
     window = ""
     if limit is not None:
         window = " LIMIT :limit OFFSET :offset"

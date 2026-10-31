@@ -8,6 +8,7 @@ from typing import Any
 from .entities import decode_json, encode_json, entity_id
 from .errors import DomainError
 from .raw_events import connect
+from .scoping import scope_clause
 
 # inputs to the risk tier; order matters, higher index is higher risk
 DATA_SENSITIVITY_LEVELS = ["public", "internal", "confidential", "restricted"]
@@ -176,18 +177,7 @@ def _seed_intake_review_task(connection, intake_id: str, record: dict[str, Any],
 def list_intake(
     *, tenant_id: str | None = None, project: str | None = None, environment: str | None = None
 ) -> list[dict[str, Any]]:
-    clauses: list[str] = []
-    params: dict[str, Any] = {}
-    if tenant_id:
-        clauses.append("tenant_id = :tenant_id")
-        params["tenant_id"] = tenant_id
-    if project:
-        clauses.append("project = :project")
-        params["project"] = project
-    if environment:
-        clauses.append("environment = :environment")
-        params["environment"] = environment
-    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    where, params = scope_clause(tenant_id, project, environment)
     with connect() as connection:
         rows = connection.execute(f"SELECT * FROM ai_use_cases {where} ORDER BY updated_at DESC", params).fetchall()
     return [_decode_intake(row) for row in rows]
