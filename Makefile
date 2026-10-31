@@ -36,11 +36,11 @@ fmt: ## Auto-format and fix lint
 type: ## Type-check the platform and SDK
 	mypy apps/platform/app packages/python-sdk/norinth_logger
 
-test: ## Run the test suite
-	pytest
+test: ## Run the test suite (parallel, one worker per CPU)
+	pytest -n auto
 
 test-postgres: ## Run the test suite against PostgreSQL (needs NORINTH_TEST_DATABASE_URL)
-	NORINTH_TEST_DATABASE_URL=$${NORINTH_TEST_DATABASE_URL:?set to a postgresql:// URL} pytest
+	NORINTH_TEST_DATABASE_URL=$${NORINTH_TEST_DATABASE_URL:?set to a postgresql:// URL} pytest -n auto
 
 test-frontend: ## Run frontend unit tests (vitest)
 	cd apps/platform/frontend && npm test
