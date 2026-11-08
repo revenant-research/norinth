@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: "3.11"
       - name: Install Python deps (hash-pinned)
@@ -74,7 +74,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -124,7 +124,7 @@ jobs:
           done <<< "${{ steps.meta.outputs.tags }}"
           docker buildx imagetools create $args "${IMAGE}@${{ steps.build.outputs.digest }}"
       - name: Install cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
       - name: Sign image (keyless, Sigstore)
         run: cosign sign --yes "${IMAGE}@${{ steps.build.outputs.digest }}"
       - name: Generate SBOM (SPDX) with syft
@@ -185,7 +185,7 @@ jobs:
         working-directory: packages/python-sdk
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: "3.11"
       - name: Version must match the tag
@@ -203,7 +203,7 @@ jobs:
           path: packages/python-sdk/dist/*
       - name: Publish to PyPI (trusted publishing)
         if: vars.PYPI_PUBLISH == 'true'
-        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           packages-dir: packages/python-sdk/dist
           attestations: true
@@ -288,14 +288,14 @@ jobs:
           printf '**Provenance:** `gh attestation verify <file> --repo %s` (or `--bundle norinth-%s.sigstore.json` offline)\n' \
             "${{ github.repository }}" "$VERSION" >> notes.md
       - name: Install cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
       - name: Sign the checksums file (keyless, Sigstore)
         run: |
           cosign sign-blob --yes SHA256SUMS \
             --output-signature SHA256SUMS.sig --output-certificate SHA256SUMS.pem
           printf '**Checksums:** `cosign verify-blob SHA256SUMS --signature SHA256SUMS.sig --certificate SHA256SUMS.pem --certificate-identity-regexp "%s" --certificate-oidc-issuer https://token.actions.githubusercontent.com`\n' \
             "$IDENTITY" >> notes.md
-      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+      - uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           body_path: notes.md
           prerelease: true
@@ -326,7 +326,7 @@ jobs:
             --pattern SHA256SUMS --pattern SHA256SUMS.sig --pattern SHA256SUMS.pem \
             --dir "$RUNNER_TEMP/release-assets"
       - name: Install cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
       - name: Verify the published release assets against signed checksums
         run: |
           cd "$RUNNER_TEMP/release-assets"
@@ -392,7 +392,7 @@ jobs:
       packages: write
     steps:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
-      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
